@@ -1,0 +1,35 @@
+3rdparty-as — third-party IMS Application Server
+Copyright 2026 Dolan Shu
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+sippy (https://github.com/sippy/b2bua)
+    SIP stack and B2BUA framework, pinned at 2.4.2.
+    License: BSD-2-Clause.
+    This product pins exactly one SIP stack version; see ADR-0001.
+
+--------------------------------------------------------------------------------
+Test-only components (used under testbed/, never distributed with the product)
+--------------------------------------------------------------------------------
+
+SIPp — GPL. Used for internal load testing only. It is not shipped, not linked
+into any product artefact and not a runtime dependency.
+
+--------------------------------------------------------------------------------
+Standards references
+--------------------------------------------------------------------------------
+
+RFC 3261 (SIP), RFC 4566 (SDP, pass-through only), RFC 8688 (608 Rejected),
+3GPP TS 24.229 (IMS call control, iFC/ISC), 3GPP TS 23.228 (IMS architecture).

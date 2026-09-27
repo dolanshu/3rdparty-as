@@ -1,0 +1,30 @@
+[project]
+name = "as-translation"
+version = "0.1.0"
+description = "Number-translation AS: the two-legged B2BUA use case"
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Dolan Shu", email = "dolan.d.shu@gmail.com" }]
+keywords = ["sip", "ims", "b2bua", "number-translation"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Telecommunications Industry",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Communications :: Telephony",
+]
+
+dependencies = [
+  "as-platform",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/as_translation"]
+
+[tool.uv.sources]
+as-platform = { workspace = true }

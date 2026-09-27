@@ -1,0 +1,25 @@
+[project]
+name = "as-config-service"
+version = "0.1.0"
+description = "Rule version repository, change orders and staged distribution to AS instances"
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Dolan Shu", email = "dolan.d.shu@gmail.com" }]
+keywords = ["sip", "ims", "configuration", "change-management"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Telecommunications Industry",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Communications :: Telephony",
+]
+
+dependencies = []
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/as_config_service"]

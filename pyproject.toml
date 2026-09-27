@@ -1,0 +1,146 @@
+# ============================================================================
+# 3rdparty-as — uv workspace root (virtual manifest)
+#
+# This file is deliberately NOT a Python package: it carries no [project] table.
+# It is the single home of
+#   * the uv workspace member list,
+#   * the shared dev toolchain,
+#   * one set of tool configurations (ruff / mypy / pytest) that every member is
+#     checked against. A member must not declare its own (guarded by
+#     tests/test_workspace_layout.py).
+#
+# Versioning has exactly two homes, and tests/ enforces that separation:
+#   * ./VERSION                          — the product release version
+#   * <member>/pyproject.toml [project].version
+#                                        — that component's interface version
+# A member must never carry its own VERSION file. That duplication is the drift
+# this repository was created to kill; see ADR-0018 in docs/architecture/adr/.
+# ============================================================================
+
+[tool.uv.workspace]
+members = [
+  "platform",
+  "apps/translation",
+  "apps/anti-fraud",
+  "services/config-service",
+  "services/console",
+  "testbed/simulators",
+  "testbed/load",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.9",
+  "pytest>=8.0",
+  "ruff>=0.5",
+  "tomli>=2.0; python_version < '3.11'",
+]
+
+# ---------------------------------------------------------------------------
+# pytest — one collector for the whole repository.
+# Layers are selected by marker, which is what the four CI gates run:
+#   ① fast  -m "unit or contract"   ② integration  ③ e2e  ④ performance
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests", "platform", "apps", "services", "testbed"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "unit: pure logic, no sockets",
+  "contract: language-agnostic contract cases, replayed against every implementation",
+  "integration: AS against a simulated peer on localhost sockets",
+  "e2e: complete call flows including error branches, console included",
+  "performance: capacity baseline; nightly and release only",
+]
+
+# ---------------------------------------------------------------------------
+# ruff — `src` lists every member's src/ so cross-member imports are sorted as
+# first-party. Adding a member means adding its src/ here; the layout guard in
+# tests/ checks the two lists agree.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = [
+  "platform/src",
+  "apps/translation/src",
+  "apps/anti-fraud/src",
+  "services/config-service/src",
+  "services/console/src",
+  "testbed/simulators/src",
+  "testbed/load/src",
+]
+extend-exclude = [".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+  "A",   # builtins shadowing
+  "B",   # bugbear
+  "C4",  # comprehensions
+  "D",   # pydocstyle
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # isort
+  "N",   # pep8 naming
+  "SIM", # simplify
+  "UP",  # pyupgrade
+  "W",   # pycodestyle warnings
+]
+ignore = [
+  "D203", # 1 blank line before class docstring (conflicts with D211)
+  "D213", # multi-line summary on the second line (conflicts with D212)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**/*.py" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# ---------------------------------------------------------------------------
+# mypy — strict, src-only (tests are not type-checked, as in the POC).
+# Every member src/ is on mypy_path so a member can check its imports of another
+# member without depending on how the editable install is wired. The separator is
+# POSIX ':' — see CONTRIBUTING.md if you ever develop on Windows.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+files = [
+  "platform/src",
+  "apps/translation/src",
+  "apps/anti-fraud/src",
+  "services/config-service/src",
+  "services/console/src",
+  "testbed/simulators/src",
+  "testbed/load/src",
+]
+mypy_path = "platform/src:apps/translation/src:apps/anti-fraud/src:services/config-service/src:services/console/src:testbed/simulators/src:testbed/load/src"
+explicit_package_bases = true
+warn_unused_configs = false
+warn_redundant_casts = true
+warn_return_any = true
+strict_optional = true
+disallow_untyped_defs = true
+disallow_untyped_calls = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+plugins = []
+
+# sippy ships without type information; it stays confined to the SIP adapter.
+[[tool.mypy.overrides]]
+module = ["sippy.*"]
+ignore_missing_imports = true
+
+# Redis and the OTel SDK are introduced with the state store and the
+# observability rework respectively; declared now so the overrides have one home.
+[[tool.mypy.overrides]]
+module = ["redis", "redis.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["opentelemetry.*"]
+ignore_missing_imports = true
