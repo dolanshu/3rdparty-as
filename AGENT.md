@@ -221,6 +221,7 @@ CI 跑同样的四层：① 快（`unit or contract`）→ ② 集成 → ③ e2
 3. 读 `docs/plan.md` 中当前里程碑章节
 4. 读 `docs/acceptance/criteria.md` 中该里程碑的验收项
 5. 确认当前分支（由维护者命名或批准）
+6. **首任务 subagent 判定**：收到维护者的首个任务时，先判断是否涉及文件改动（新建 / 编辑 / 删除）。是 —— 立即派 writing subagent，再做其他规划或讨论；否 —— 进入只读模式。
 
 **结束仪式**：
 

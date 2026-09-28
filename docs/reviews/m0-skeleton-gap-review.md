@@ -3,7 +3,7 @@
 > 评审人：AI agent（grilling session）
 > 日期：2026-09-27
 > 范围：当前 `master` 上的 M0 骨架，对照 `docs/plan.md` §2–§3 与 `docs/architecture/新系统整体架构.md` §0 决策账本
-> 状态：评审中，G1/O-A 已关闭，其余待修改；O-F 维持阻塞裁决，待 ADR-0019 Accepted 后关闭
+> 状态：评审中，G1/O-A/O-F/O-H 已关闭；G4 自动解决；G2/G3/G5/G6/G7/G8/G9/G10/G11/G12 待修改
 
 ## 评审方法
 
@@ -199,7 +199,7 @@
 | G1 | §2 G1 | `make gate` 在骨架阶段失败（integration 层无测试导致 exit 5） | 接受 | `gate` 目标改为 `lint type test-unit`，M0 只跑 ① 层 | 已修改 | `make gate` 全绿 | G1 与 O-A 为同一问题的 gap 与 open question 两面 |
 | G2 | §2 G2 | CI 监听 `main`，仓库默认分支是 `master` | 待裁决 | CI 改为监听 `master` | 待修改 | CI 在 master push 时触发 | |
 | G3 | §2 G3 | 18 个 ADR 只有注册表无正文 | 接受 | M0 签字后写第一批 ADR（0001/0002/0003/0018） | 待修改 | ADR 文件存在且通过评审 | 与 O-B 对应 |
-| G4 | §2 G4 | `platform/pyproject.toml` 注释与双栈决策不一致 | 部分接受 | 注释改为反映 ADR-0019 当前候选状态（sippy 退出生产栈，选型进行中） | 待修改 | 注释与架构文档决策 8 一致 | 原"双栈并行"假设已被 ADR-0019 推翻 |
+| G4 | §2 G4 | `platform/pyproject.toml` 注释与双栈决策不一致 | 部分接受 | 注释改为反映 ADR-0019 当前候选状态（sippy 退出生产栈，选型进行中） | 已关闭 | platform/pyproject.toml L18-24 注释已更新，明确 ADR-0019 记录选型结果 | 之前会话中已被更新，自动解决 |
 | G5 | §2 G5 | `AGENT.md` 与 `plan.md`/架构文档大量重复 | 接受 | 重写 `AGENT.md`，聚焦一致性规则，重复内容用链接 | 待修改 | 维护者 review 通过 | 与 G6 同属 AGENT.md 重写范围 |
 | G6 | §2 G6 | `AGENT.md` 缺少 subagent/协作规则 | 接受 | 在 `AGENT.md` 中增加 AI Agent 协作规则节 | 待修改 | 维护者 review 通过 | 与 G5 同属 AGENT.md 重写范围 |
 | G7 | §2 G7 | services 未声明依赖 | 接受 | 在各 service README 中列出未来依赖方向 | 待修改 | README 含依赖说明 | |
@@ -213,6 +213,6 @@
 | O-C | §5 O-C | `AGENT.md` 重写后是否需要单独 review | 接受 | 重写后由维护者单独评审 | 待修改 | 有独立 review record | 与 G5/G6 对应 |
 | O-D | §5 O-D | `.env.example` 和最小 compose/helm 是否纳入 M0 | 接受 | 纳入 M0，作为目标形态占位；不绑定具体 SIP 镜像 | 待修改 | 文件存在 | 与 G9/G10 对应 |
 | O-E | §5 O-E | 当前 master 上的 pre-roadmap commit 是否保留历史 | 待裁决 | 由维护者决定；建议保留并标注 baseline | 待修改 | 维护者签字确认 | 与 G11 对应 |
-| **O-F** | **§5 O-F** | **SIP stack 选型是否阻塞 M0 签字** | **接受（维持原裁决）** | **ADR-0019 必须 Accepted 后 M0 才能签字** | **已裁决，待 ADR-0019 Accepted 后关闭** | **ADR-0019 状态转为 Accepted，plan.md §5.1 O2 解除阻塞** | **维护者 2026-09-28 裁决：维持阻塞，不解绑** |
+| **O-F** | **§5 O-F** | **SIP stack 选型是否阻塞 M0 签字** | **接受（维持原裁决）** | **ADR-0019 必须 Accepted 后 M0 才能签字** | **已关闭** | **ADR-0019 状态已转为 Accepted，plan.md O2 解除阻塞** | **维护者 2026-09-28 完成选型（reSIProcate）** |
 | O-G | §5 O-G | 当前 `sippy==2.4.2` 是保留占位还是立即移除 | 接受 | 立即从 `platform/pyproject.toml` 移除，sippy 降级为 testbed 基线参考 | 待修改 | platform/pyproject.toml 不含 sippy 生产依赖 | 原裁决已生效，待执行 |
-| O-H | §5 O-H | 是否新增 ADR-0019 取代原 ADR-0011 | 接受 | 新增 ADR-0019，不覆盖原 ADR-0011 编号 | 已修改 | ADR-0019 草案已存在 | ADR-0019 仍为 Draft，待 Accepted |
+| O-H | §5 O-H | 是否新增 ADR-0019 取代原 ADR-0011 | 接受 | 新增 ADR-0019，不覆盖原 ADR-0011 编号 | 已修改 | ADR-0019 草案已存在 | ADR-0019 已于 2026-09-28 转为 Accepted，选定 reSIProcate |

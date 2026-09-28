@@ -13,9 +13,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
   # Layer ④ is a baseline, not a commit gate: it runs nightly, on demand and on
   # tags, so a slow or noisy capacity run never blocks a merge.
   schedule:
