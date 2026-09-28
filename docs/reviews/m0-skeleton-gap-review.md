@@ -197,17 +197,17 @@
 | ID | 来源 | 问题摘要 | 裁决 | 修改方案 | 状态 | 验证方式 | 备注 |
 |---|---|---|---|---|---|---|---|
 | G1 | §2 G1 | `make gate` 在骨架阶段失败（integration 层无测试导致 exit 5） | 接受 | `gate` 目标改为 `lint type test-unit`，M0 只跑 ① 层 | 已修改 | `make gate` 全绿 | G1 与 O-A 为同一问题的 gap 与 open question 两面 |
-| G2 | §2 G2 | CI 监听 `main`，仓库默认分支是 `master` | 待裁决 | CI 改为监听 `master` | 待修改 | CI 在 master push 时触发 | |
+| G2 | §2 G2 | CI 监听 `main`，仓库默认分支是 `master` | 待裁决 | CI 改为监听 `master` | 已关闭 | `.github/workflows/ci.yml` L16-18 分支改为 `master` | |
 | G3 | §2 G3 | 18 个 ADR 只有注册表无正文 | 接受 | M0 签字后写第一批 ADR（0001/0002/0003/0018） | 待修改 | ADR 文件存在且通过评审 | 与 O-B 对应 |
 | G4 | §2 G4 | `platform/pyproject.toml` 注释与双栈决策不一致 | 部分接受 | 注释改为反映 ADR-0019 当前候选状态（sippy 退出生产栈，选型进行中） | 已关闭 | platform/pyproject.toml L18-24 注释已更新，明确 ADR-0019 记录选型结果 | 之前会话中已被更新，自动解决 |
-| G5 | §2 G5 | `AGENT.md` 与 `plan.md`/架构文档大量重复 | 接受 | 重写 `AGENT.md`，聚焦一致性规则，重复内容用链接 | 待修改 | 维护者 review 通过 | 与 G6 同属 AGENT.md 重写范围 |
-| G6 | §2 G6 | `AGENT.md` 缺少 subagent/协作规则 | 接受 | 在 `AGENT.md` 中增加 AI Agent 协作规则节 | 待修改 | 维护者 review 通过 | 与 G5 同属 AGENT.md 重写范围 |
-| G7 | §2 G7 | services 未声明依赖 | 接受 | 在各 service README 中列出未来依赖方向 | 待修改 | README 含依赖说明 | |
-| G8 | §2 G8 | 所有 README 都是占位符 | 接受 | 每个 README 加 3–5 行职责说明 + 链接 | 待修改 | 所有 README 有实际内容 | |
-| G9 | §2 G9 | 缺少 `.env.example` | 接受 | 添加最小 `.env.example`，列出各进程 env var | 待修改 | 文件存在且可作为模板 | |
-| G10 | §2 G10 | deploy/helm 和 deploy/compose 只有 README | 接受 | 添加最小 compose.yml 和 Chart.yaml + values.yaml | 待修改 | 骨架文件存在 | 与 O-D 对应 |
-| G11 | §2 G11 | 当前 commit 已 push 但不作为 roadmap | 接受 | 在 plan.md §0 或 CHANGELOG 中增加 baseline 说明 | 待修改 | 文档明确区分 pre-roadmap 与正式基线 | 与 O-E 对应 |
-| G12 | §2 G12 | 未记录 POC 冻结点 | 接受 | 在 `migration/triage.md` 顶部记录 POC HEAD hash | 待修改 | 文件含具体 commit hash | |
+| G5 | §2 G5 | `AGENT.md` 与 `plan.md`/架构文档大量重复 | 接受 | 重写 `AGENT.md`，聚焦一致性规则，重复内容用链接 | 已关闭 | AGENT.md 通过链接指向 plan.md/架构文档，无重复内容（见 §1 L14、§4 L112、§15 L273） | 与 G6 同属 AGENT.md 重写范围 |
+| G6 | §2 G6 | `AGENT.md` 缺少 subagent/协作规则 | 接受 | 在 `AGENT.md` 中增加 AI Agent 协作规则节 | 已关闭 | AGENT.md §10 已含完整 subagent 协作规则（§10.1-10.4，见 L168-224） | 与 G5 同属 AGENT.md 重写范围 |
+| G7 | §2 G7 | services 未声明依赖 | 接受 | 在各 service README 中列出未来依赖方向 | 已关闭 | `services/config-service/README.md` 与 `services/console/README.md` 已添加未来依赖节（含 platform/PG/Redis/OTel 等依赖方向说明） | |
+| G8 | §2 G8 | 所有 README 都是占位符 | 接受 | 每个 README 加 3–5 行职责说明 + 链接 | 已关闭 | 全仓库 README 扫描确认均含实质内容（apps/translation、apps/anti-fraud、platform、services/*、testbed/*、deploy/* 均有 10+ 行内容 + ADR/架构文档链接） | |
+| G9 | §2 G9 | 缺少 `.env.example` | 接受 | 添加最小 `.env.example`，列出各进程 env var | 已关闭 | 仓库根目录 `.env.example` 已创建，分 5 节列出 SIP 信令面/Redis Sentinel/PostgreSQL/OTel/进程通用环境变量模板 | |
+| G10 | §2 G10 | deploy/helm 和 deploy/compose 只有 README | 接受 | 添加最小 compose.yml 和 Chart.yaml + values.yaml | 已关闭 | `deploy/helm/Chart.yaml` + `values.yaml` + `deploy/compose/compose.yml` 骨架文件已创建 | 与 O-D 对应 |
+| G11 | §2 G11 | 当前 commit 已 push 但不作为 roadmap | 接受 | 在 plan.md §0 或 CHANGELOG 中增加 baseline 说明 | 已关闭 | plan.md §0 新增基线说明小节 | 与 O-E 对应 |
+| G12 | §2 G12 | 未记录 POC 冻结点 | 接受 | 在 `migration/triage.md` 顶部记录 POC HEAD hash | 已关闭 | `docs/migration/triage.md` L14 记录 POC 冻结点 `4ddf3df3` | |
 | O-A | §5 O-A | `make gate` 是否只在 M0 跑 ① 层 | 接受 | M0 期间 `gate` 依赖 `test-unit`，M2 引入 integration 测试后再调整 | 已修改 | `make gate` 全绿 | 与 G1 为同一问题 |
 | O-B | §5 O-B | ADR-0001/0002/0003/0018 是否作为 M0 签字后第一批 | 接受 | M0 签字后优先写这四个 ADR；若 ADR-0019 先 Accepted 则优先 | 待修改 | ADR 文件存在且通过评审 | 与 G3 对应 |
 | O-C | §5 O-C | `AGENT.md` 重写后是否需要单独 review | 接受 | 重写后由维护者单独评审 | 待修改 | 有独立 review record | 与 G5/G6 对应 |
@@ -234,3 +234,12 @@
   - ✅ O-F（ADR-0019 阻塞）已关闭
   - ✅ O-H（ADR-0019 取代 ADR-0011）已关闭
 - **已知后续项**（不阻塞 M0 签字）：G3（ADR skeleton）、G5+G6（AGENT.md 重写）、G7–G12（README/配置/部署骨架）—— 归入 M1+ 处理
+
+---
+
+## 7. M1 阶段 M0 gap 补全记录
+
+- **补全日期**：2026-09-28
+- **补全范围**：G2/G5/G6/G12（已完成确认）+ G7–G11（实际补全）+ G3（ADR-0001/0002/0003/0018 从 skeleton → draft）
+- **未处理**：无。全部 M0 gap 已关闭或转为 draft 状态待后续评审
+- **门禁**：`make gate` 全绿（49 files formatted、ruff/mypy 干净、44 tests passed）
