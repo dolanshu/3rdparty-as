@@ -55,4 +55,4 @@ AS **只实现 ISC 语义**（被 S-CSCF 按 iFC 触发），不实现"网外特
 
 - [`../新系统整体架构.md`](../新系统整体架构.md) §1.1 关键认知修正
 - `testbed/simulators/` 仿真器设计 —— S-SBC 透明桥接行为基线
-- [ADR-0016](0016-security-boundary.md) 边界内安全：对端白名单 + 端到端 TLS
+- [ADR-0016](0016-in-boundary-security.md) 边界内安全：对端白名单 + 端到端 TLS

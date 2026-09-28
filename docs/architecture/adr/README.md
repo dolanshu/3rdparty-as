@@ -18,9 +18,9 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | [0002](0002-per-usecase-process-state-redis.md) | 运行时模型：一个用例一个进程，状态外置到 Redis | 2 | accepted ✓ |
 | [0003](0003-s-sbc-transparent-bridge.md) | 单一 ISC 接入语义 —— S-SBC 是透明桥接，不是第二种业务语义 | 10 | accepted ✓ |
 | 0004 | 不做媒体；保留一个媒体 seam 并写明触发条件 | 11 | skeleton |
-| 0005 | OTel 三信号，后端中立，导出绝不能阻塞呼叫路径；呼叫轨迹保留独立查询通道 | 12 | skeleton |
-| 0006 | 配置治理：PostgreSQL 版本库 + 变更单状态机，而非 GitOps | 13 | skeleton |
-| 0007 | 数据面拆分：Redis 存运行态，PostgreSQL 存治理态 | 14 | skeleton |
+| [0005](0005-observability-otel.md) | OTel 三信号，后端中立，导出绝不能阻塞呼叫路径；呼叫轨迹保留独立查询通道 | 12 | accepted ✓ |
+| [0006](0006-config-governance.md) | 配置治理：PostgreSQL 版本库 + 变更单状态机，而非 GitOps | 13 | accepted ✓ |
+| [0007](0007-data-plane-split.md) | 数据面拆分：Redis 存运行态，PostgreSQL 存治理态 | 14 | accepted ✓ |
 | 0008 | 冗余：站点内 N+1 零单点；跨站点 1+1 温备，非双活 | 7 | skeleton |
 | 0009 | ISSU 是 draining，不是在途状态迁移 | §6.2 | skeleton |
 | 0010 | 扩缩容：自定义指标 HPA + 缩容保护控制器 | 15 | skeleton |
@@ -29,11 +29,12 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | 0013 | Helm 是唯一生产形态；compose 仅作开发环境 | 6 | skeleton |
 | 0014 | 三层 testbed；真实 socket 压测；不是 v1 交付物 | 16 | skeleton |
 | 0015 | 研发模式：分层 TDD、ADR 制度化、四层 CI 门禁 | 17 | skeleton |
-| 0016 | 边界内安全：对端白名单、端到端 TLS、控制台鉴权、全量审计。不做 LI、不做计费 | 18 | skeleton |
+| [0016](0016-in-boundary-security.md) | 边界内安全：对端白名单、端到端 TLS、控制台鉴权、全量审计。不做 LI、不做计费 | 18 | accepted ✓ |
 | 0017 | 不做 CDR：不采集、不投递、不归档 —— 由呼叫轨迹替代 | 4 | skeleton |
 | [0018](0018-release-versioning.md) | 一个产品 release 版本，独立的组件接口版本 | §11.3 | accepted ✓ |
 | [0019](0019-sip-stack-selection.md) | 生产 SIP 协议栈选型（推翻 0011 的栈前提；选定 reSIProcate；go-b2bua / libre 为备选；rsipstack 因 Rust 不在团队技术栈内被否决） | 8 | **accepted** |
-| [0020](0020-feature-capability-gating.md) | Feature 能力门控：分层（部署级总开关 + 运行态细粒度覆盖），复用配置治理变更流水线 | 19 | draft |
+| [0020](0020-feature-capability-gating.md) | Feature 能力门控：分层（部署级总开关 + 运行态细粒度覆盖），复用配置治理变更流水线 | 19 | accepted ✓ |
+| [0021](0021-runtime-override-granularity.md) | 运行态覆盖的判定粒度与 schema：号段 + 稳定哈希百分比，判定幂等（裁决未决项 D7） | — | accepted ✓ |
 
 ## 规则
 
