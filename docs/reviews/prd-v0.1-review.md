@@ -17,40 +17,40 @@
 
 | # | 位置 | 问题 | 依据 | 建议修改 | 状态 |
 |---|---|---|---|---|---|
-| A1 | REQ-F-8 | 协议上不可能成立：PRD 写"向下游发送 BYE → 收到 487"，但 §15.1.2 规定 "the UAS core MUST generate a 2xx response to the BYE" —— BYE 的应答只能是 2xx，487 只能是被 CANCEL 的 INVITE 事务的最终响应（§9.2："If the UAS has not issued a final response for the original request... If the original request was an INVITE, the UAS SHOULD immediately respond to the INVITE with a 487 (Request Terminated)."）。§15 进一步给出取舍："The CANCEL attempts to force a non-2xx response to the INVITE (in particular, a 487). Therefore, if a UAC wishes to give up on its call attempt entirely, it can send a CANCEL. If the INVITE results in 2xx final response(s)... MAY terminate them with BYE." —— **未收到最终响应用 CANCEL，已收到 2xx 才用 BYE**。另漏写"入腿 487 + 上游 ACK"（§6 SIP Transaction："If the request is INVITE and the final response is a non-2xx, the transaction also includes an ACK to the response."）。**结论强度**：§6 的 B2BUA 定义 "Since it is a concatenation of a UAC and UAS, no explicit definitions are needed for its behavior." —— RFC 不规定 B2BUA 的**跨腿编排**，但每条腿各自作为 UAC/UAS 仍受 §9/§15 约束；故"出腿在无最终响应阶段必须能产生 487"是协议约束（只能是 CANCEL），具体编排仍属契约层决策 | RFC 3261 §15、§15.1.2、§9.2、§6（L1，已逐字核对）；POC 基线 `S4-caller-cancel`（L3 旁证，非权威） | ① 删掉"发 BYE → 收 487"：出腿尚无最终响应时用 CANCEL 终止，出腿已 2xx 时用 BYE；② 补"入腿 487 + 上游 ACK"；③ 两分支都要写进需求与验收 | 待修改 |
-| A2 | REQ-F-2 与 test-plan REQ-F-2 冲突 | test-plan 断言"上游 INVITE Call-ID(C1) ≠ 上游 BYE Call-ID(C2)"。RFC 3261 §8.1.1.4 原文："The Call-ID header field acts as a unique identifier to group together a series of messages. It MUST be the same for all requests and responses sent by either UA in a dialog." —— 同一对话内 Call-ID 必须相同，故该断言必错。基线实测与 RFC 相符（入腿 INVITE 与入腿 BYE 同为 `48f64baa94fdfcfdd79af4128905d375`，出腿为 `-b2b_1`） | RFC 3261 §8.1.1.4（L1，规范依据，已逐字核对）；`S1-basic-call/01-in-invite-trunk.txt` 与 `13-out-bye-trunk.txt`（L3 旁证） | 断言改为"入腿 Call-ID ≠ 出腿 Call-ID"，并补"同一腿内 INVITE/200/ACK/BYE 的 Call-ID 必须一致" | 待修改 |
-| A3 | 多处 RFC 3261 章节号 | 章节号错误：Request-URI 标 §6.2（§6 是 Definitions；应为 §8.1.1.1 / §19.1）；Route 标 §7.1（§7.1 是 Requests；应为 §20.34 + 处理见 §16.4）；Record-Route 反向成 route set 标 §16.13（§16 止于 16.12；实为 §12.1.2）；404 标 §21.4.4（21.4.4 是 403 Forbidden，404 是 **21.4.5**）；603 标 §21.6.5（应为 **21.6.2**）；SDP offer/answer 标 §18（§18 是 Transport；offer/answer 在 §13.2.1/§13.3.1，格式在 RFC 3264）；B2BUA 标 §12（B2BUA 定义在 **§6 Definitions**，§12 是 Dialogs） | RFC 3261 原文目录 | 逐条修正；建议在 PRD 头部加一句"章节号以 RFC 3261 原文为准" | 待修改 |
-| A4 | REQ-F-5 | "上游 INVITE 带的 Route 头必须在下游 INVITE 里保留"协议上可疑：按 §16.4/§16.12，Route 由被寻址实体**消费**；复制到出腿会让下游把请求再送回运营商侧代理，可能成环。且 test-plan 只断言字符串相等 —— 错误实现也会通过 | RFC 3261 §16.4 逐字："If the first value in the Route header field indicates this proxy, the proxy MUST remove that value from the request."（L1，正文已核对）+ §6 Route Set / Loose Routing 定义。**适用对象注意**：该 MUST 约束的是 proxy；对我们这个 B2BUA 无直接 MUST（§6：B2BUA 行为未定义），故结论强度为"定义 + proxy 规则类比"，非直接 MUST | 改为"寻址到我们的 Route 必须被消费；需要沿用的路由信息由路由策略显式生成"；验收改为检查下游请求实际发往的目标，而非头域字符串 | 待修改 |
-| A5 | REQ-F-11 | "CANCEL 到达后不再 accept 新的最终响应"与 RFC 3261 §9.1 冲突：下游已发 200 OK 时 CANCEL 无效，必须走 BYE 拆对话。test-plan 只断言"我们返回 487"，仅覆盖一个分支 | RFC 3261 §9 逐字："CANCEL has no effect on a request to which a UAS has already given a final response."；§9.1："If the original request has generated a final response, the CANCEL SHOULD NOT be sent, as it is an effective no-op"；§9.2 同上（L1，正文已核对） | 拆两分支：① CANCEL 先于最终响应到达 → 487；② 最终响应已到达 → 200 OK + BYE；两条都要验收 | 待修改 |
+| A1 | REQ-F-8 | 协议上不可能成立：PRD 写"向下游发送 BYE → 收到 487"，但 §15.1.2 规定 "the UAS core MUST generate a 2xx response to the BYE" —— BYE 的应答只能是 2xx，487 只能是被 CANCEL 的 INVITE 事务的最终响应（§9.2："If the UAS has not issued a final response for the original request... If the original request was an INVITE, the UAS SHOULD immediately respond to the INVITE with a 487 (Request Terminated)."）。§15 进一步给出取舍："The CANCEL attempts to force a non-2xx response to the INVITE (in particular, a 487). Therefore, if a UAC wishes to give up on its call attempt entirely, it can send a CANCEL. If the INVITE results in 2xx final response(s)... MAY terminate them with BYE." —— **未收到最终响应用 CANCEL，已收到 2xx 才用 BYE**。另漏写"入腿 487 + 上游 ACK"（§6 SIP Transaction："If the request is INVITE and the final response is a non-2xx, the transaction also includes an ACK to the response."）。**结论强度**：§6 的 B2BUA 定义 "Since it is a concatenation of a UAC and UAS, no explicit definitions are needed for its behavior." —— RFC 不规定 B2BUA 的**跨腿编排**，但每条腿各自作为 UAC/UAS 仍受 §9/§15 约束；故"出腿在无最终响应阶段必须能产生 487"是协议约束（只能是 CANCEL），具体编排仍属契约层决策 | RFC 3261 §15、§15.1.2、§9.2、§6（L1，已逐字核对）；POC 基线 `S4-caller-cancel`（L3 旁证，非权威） | ① 删掉"发 BYE → 收 487"：出腿尚无最终响应时用 CANCEL 终止，出腿已 2xx 时用 BYE；② 补"入腿 487 + 上游 ACK"；③ 两分支都要写进需求与验收 | 已修改 |
+| A2 | REQ-F-2 与 test-plan REQ-F-2 冲突 | test-plan 断言"上游 INVITE Call-ID(C1) ≠ 上游 BYE Call-ID(C2)"。RFC 3261 §8.1.1.4 原文："The Call-ID header field acts as a unique identifier to group together a series of messages. It MUST be the same for all requests and responses sent by either UA in a dialog." —— 同一对话内 Call-ID 必须相同，故该断言必错。基线实测与 RFC 相符（入腿 INVITE 与入腿 BYE 同为 `48f64baa94fdfcfdd79af4128905d375`，出腿为 `-b2b_1`） | RFC 3261 §8.1.1.4（L1，规范依据，已逐字核对）；`S1-basic-call/01-in-invite-trunk.txt` 与 `13-out-bye-trunk.txt`（L3 旁证） | 断言改为"入腿 Call-ID ≠ 出腿 Call-ID"，并补"同一腿内 INVITE/200/ACK/BYE 的 Call-ID 必须一致 | 已修改 |
+| A3 | 多处 RFC 3261 章节号 | 章节号错误：Request-URI 标 §6.2（§6 是 Definitions；应为 §8.1.1.1 / §19.1）；Route 标 §7.1（§7.1 是 Requests；应为 §20.34 + 处理见 §16.4）；Record-Route 反向成 route set 标 §16.13（§16 止于 16.12；实为 §12.1.2）；404 标 §21.4.4（21.4.4 是 403 Forbidden，404 是 **21.4.5**）；603 标 §21.6.5（应为 **21.6.2**）；SDP offer/answer 标 §18（§18 是 Transport；offer/answer 在 §13.2.1/§13.3.1，格式在 RFC 3264）；B2BUA 标 §12（B2BUA 定义在 **§6 Definitions**，§12 是 Dialogs） | RFC 3261 原文目录 | 逐条修正；建议在 PRD 头部加一句"章节号以 RFC 3261 原文为准" | 已修改 |
+| A4 | REQ-F-5 | "上游 INVITE 带的 Route 头必须在下游 INVITE 里保留"协议上可疑：按 §16.4/§16.12，Route 由被寻址实体**消费**；复制到出腿会让下游把请求再送回运营商侧代理，可能成环。且 test-plan 只断言字符串相等 —— 错误实现也会通过 | RFC 3261 §16.4 逐字："If the first value in the Route header field indicates this proxy, the proxy MUST remove that value from the request."（L1，正文已核对）+ §6 Route Set / Loose Routing 定义。**适用对象注意**：该 MUST 约束的是 proxy；对我们这个 B2BUA 无直接 MUST（§6：B2BUA 行为未定义），故结论强度为"定义 + proxy 规则类比"，非直接 MUST | 改为"寻址到我们的 Route 必须被消费；需要沿用的路由信息由路由策略显式生成"；验收改为检查下游请求实际发往的目标，而非头域字符串 | 已修改（部分接受） |
+| A5 | REQ-F-11 | "CANCEL 到达后不再 accept 新的最终响应"与 RFC 3261 §9.1 冲突：下游已发 200 OK 时 CANCEL 无效，必须走 BYE 拆对话。test-plan 只断言"我们返回 487"，仅覆盖一个分支 | RFC 3261 §9 逐字："CANCEL has no effect on a request to which a UAS has already given a final response."；§9.1："If the original request has generated a final response, the CANCEL SHOULD NOT be sent, as it is an effective no-op"；§9.2 同上（L1，正文已核对） | 拆两分支：① CANCEL 先于最终响应到达 → 487；② 最终响应已到达 → 200 OK + BYE；两条都要验收 | 已修改 |
 
 ## B 类：覆盖缺口（有行为或已排期，但没有 REQ 编号 → 追溯链断）
 
 | # | 缺口 | 证据 | 建议修改 | 状态 |
 |---|---|---|---|---|
-| B1 | §0 宣称的第二类服务对象（业务方：翻译/反欺诈/智能路由提供商）在 §1/§2 完全没有用户故事与 REQ | prd.md §0 vs §1 三个 actor | 补 Actor：业务方用户故事 + 对应 REQ-F；或收回 §0 的承诺 | 待修改 |
-| B2 | 控制台/配置管理能力没有 REQ-F：US-1/2/3/4 只映射到 F-1、F-6、F-7、NF-7、NF-10；规则 CRUD、审批流、轨迹查询、灰度分发、回滚本身没有功能需求号。NF-10 讲的是"不走 GitOps"，不是"要有配置治理能力" | prd.md §1 L28-58 | 新增 REQ-F-12… 覆盖规则管理、审批流、轨迹查询、灰度与回滚 | 待修改 |
-| B3 | "翻译"主路径无需求：命中翻译规则后做什么（改号？选哪个对端？）没定义；F-1/F-3 只讲序列与 Request-URI 改写 | prd.md §2.1/§2.2 | 补一条"命中翻译规则后的处理"需求 | 待修改 |
-| B4 | 规则匹配语义缺失：匹配主叫还是被叫（US-2 说"主叫号码命中"，REQ-F-7 说"目标号码"——自相矛盾）、最长前缀 vs 优先级、冲突裁决；"阻止 > 翻译"只出现在 test-plan 验收里，是隐性需求 | prd.md US-2 vs REQ-F-7 | 在 REQ-F-6/F-7 明确匹配对象与冲突裁决规则 | 待修改 |
-| B5 | 无 REQ-S-*（安全）：AGENT.md §13 红线（对端白名单、与 S-SBC 端到端 TLS、证书热轮换、控制台操作鉴权+审计）在 requirement 层没有编号。`reviews/requirements-m1-review.md` Gap 3 裁决"由 NF-5 隐含覆盖"不成立 —— NF-5 只讲桥接语义，不含安全语义 | AGENT.md §13 | 新增 REQ-S-* 分组承接安全红线；M2 引入 TLS 前必须落地 | 待修改 |
-| B6 | 无可观测性需求：OTel 三信号、告警规则集已排进 M2/M5，无 REQ 可追溯 | plan.md §4 | 补可观测性 REQ-NF | 待修改 |
-| B7 | 指标口径冲突：test-plan REQ-NF-7 写死"轨迹保留期默认 7 天"，而 plan.md O4 把保留期列为未决（客户合规要求） | test-plan.md §2 vs plan.md §5.1 | 两者对齐：保留期标为待定，或在 requirement 层显式裁决默认值 | 待修改 |
+| B1 | §0 宣称的第二类服务对象（业务方：翻译/反欺诈/智能路由提供商）在 §1/§2 完全没有用户故事与 REQ | prd.md §0 vs §1 三个 actor | 补 Actor：业务方用户故事 + 对应 REQ-F；或收回 §0 的承诺 | 已修改 |
+| B2 | 控制台/配置管理能力没有 REQ-F：US-1/2/3/4 只映射到 F-1、F-6、F-7、NF-7、NF-10；规则 CRUD、审批流、轨迹查询、灰度分发、回滚本身没有功能需求号。NF-10 讲的是"不走 GitOps"，不是"要有配置治理能力" | prd.md §1 L28-58 | 新增 REQ-F-12… 覆盖规则管理、审批流、轨迹查询、灰度与回滚 | 已修改 |
+| B3 | "翻译"主路径无需求：命中翻译规则后做什么（改号？选哪个对端？）没定义；F-1/F-3 只讲序列与 Request-URI 改写 | prd.md §2.1/§2.2 | 补一条"命中翻译规则后的处理"需求 | 已修改 |
+| B4 | 规则匹配语义缺失：匹配主叫还是被叫（US-2 说"主叫号码命中"，REQ-F-7 说"目标号码"——自相矛盾）、最长前缀 vs 优先级、冲突裁决；"阻止 > 翻译"只出现在 test-plan 验收里，是隐性需求 | prd.md US-2 vs REQ-F-7 | 在 REQ-F-6/F-7 明确匹配对象与冲突裁决规则 | 已修改 |
+| B5 | 无 REQ-S-*（安全）：AGENT.md §13 红线（对端白名单、与 S-SBC 端到端 TLS、证书热轮换、控制台操作鉴权+审计）在 requirement 层没有编号。`reviews/requirements-m1-review.md` Gap 3 裁决"由 NF-5 隐含覆盖"不成立 —— NF-5 只讲桥接语义，不含安全语义 | AGENT.md §13 | 新增 REQ-S-* 分组承接安全红线；M2 引入 TLS 前必须落地 | 已修改（推翻 M1 Gap 3 裁决） |
+| B6 | 无可观测性需求：OTel 三信号、告警规则集已排进 M2/M5，无 REQ 可追溯 | plan.md §4 | 补可观测性 REQ-NF | 已修改 |
+| B7 | 指标口径冲突：test-plan REQ-NF-7 写死"轨迹保留期默认 7 天"，而 plan.md O4 把保留期列为未决（客户合规要求） | test-plan.md §2 vs plan.md §5.1 | 两者对齐：保留期标为待定，或在 requirement 层显式裁决默认值 | 已修改 |
 
 ## C 类：一致性与表述
 
 | # | 位置 | 问题 | 建议修改 | 状态 |
 |---|---|---|---|---|
-| C1 | US-1 vs US-4 | "保存后规则立即生效" 与 "审批通过才生效" 矛盾 | 裁决草稿态是否生效，两处统一 | 待修改 |
-| C2 | §4 | 治理需求标"全部为 P2"，但 §2/§3 只定义了 P0/P1 | 补 P2 定义或改标注 | 待修改 |
-| C3 | US-9 | 混入设计语言（"LoadBalancer 自动把新 INVITE 路由到 v1.3.0"），违反已裁决的"PRD 不写设计" | 改为需求语言 | 待修改 |
-| C4 | US-8 | "呼叫在 2 秒内恢复"引入无来源的时延承诺，与 AGENT.md L38"M6 前不发布数字"精神冲突 | 删除数字或标为待 M6 冻结 | 待修改 |
-| C5 | REQ-NF-9 / REQ-NF-6 | 非目标（单租户 on-prem、不做媒体）被写成 P0 需求，且与 §0 非目标重复三遍 | 移入"边界/非目标"节，不占 REQ-NF 号 | 待修改 |
-| C6 | §3.1/§3.2 | 编号乱序（1,2,3,5,9 / 4,6,7,8,10,11,12）；NF-4（ISSU）归入"扩展与治理"，但更像核心连续性能力，且与 NF-1 重叠 | 重排或加注说明 | 待修改 |
-| C7 | REQ-G-3 vs REQ-G-4 | G-3 验收要求 `make gate` 含 AST 扫描步骤，G-4/AGENT.md §9 把 `make gate` 定义为四步（format/check/mypy/pytest） | 澄清 AST 扫描属于 gate 还是 CI | 待修改 |
-| C8 | 全部 REQ | 27 条 REQ 的验收标准全部外链 test-plan，而 test-plan 自身状态为"占位，具体 test case 待 M2 补" —— v0.1 事实上没有可执行验收 | 在 PRD 头部显式标注此风险 | 待修改 |
-| C9 | REQ-NF-6/7/8 | 其依据 ADR-0004/0016/0017 在注册表里仍是 skeleton（无文件）；§6 的"已有 ADR"只列了有文件的 6 个 | 在对应 REQ 后标注"依据 ADR 尚未落地" | 待修改 |
-| C10 | REQ-F-9 | "路由依据是 Via branch + Route 头 + Call-ID" 不严谨：对话匹配是 Call-ID + local/remote tag（§12），Via branch 属事务匹配（§17.2.3） | 改为对话匹配表述 | 待修改 |
-| C11 | §1 未覆盖表 | 表说 REQ-F-9/10/11 未覆盖，但 §2.3 已写了它们的业务描述（实为"无用户故事"） | 改表头措辞 | 待修改 |
-| C12 | test-plan §REQ-F-8 vs 基线 S4 | CANCEL 时点不一致：`S4-caller-cancel/README.md` 写 CANCEL 发在"收到 180 Ringing **之前**"；test-plan 写"在 180 Ringing **之后**、200 OK 之前"。两个窗口的竞态行为不同，验收会跑出两套结果 | 与基线对齐，或明确两个窗口都要覆盖 | 待修改 |
+| C1 | US-1 vs US-4 | "保存后规则立即生效" 与 "审批通过才生效" 矛盾 | 裁决草稿态是否生效，两处统一 | 已修改 |
+| C2 | §4 | 治理需求标"全部为 P2"，但 §2/§3 只定义了 P0/P1 | 补 P2 定义或改标注 | 已修改（部分接受） |
+| C3 | US-9 | 混入设计语言（"LoadBalancer 自动把新 INVITE 路由到 v1.3.0"），违反已裁决的"PRD 不写设计" | 改为需求语言 | 已修改 |
+| C4 | US-8 | "呼叫在 2 秒内恢复"引入无来源的时延承诺，与 AGENT.md L38"M6 前不发布数字"精神冲突 | 删除数字或标为待 M6 冻结 | 已修改 |
+| C5 | REQ-NF-9 / REQ-NF-6 | 非目标（单租户 on-prem、不做媒体）被写成 P0 需求，且与 §0 非目标重复三遍 | 移入"边界/非目标"节，不占 REQ-NF 号 | 已修改（部分接受） |
+| C6 | §3.1/§3.2 | 编号乱序（1,2,3,5,9 / 4,6,7,8,10,11,12）；NF-4（ISSU）归入"扩展与治理"，但更像核心连续性能力，且与 NF-1 重叠 | 重排或加注说明 | 已修改（部分接受） |
+| C7 | REQ-G-3 vs REQ-G-4 | G-3 验收要求 `make gate` 含 AST 扫描步骤，G-4/AGENT.md §9 把 `make gate` 定义为四步（format/check/mypy/pytest） | 澄清 AST 扫描属于 gate 还是 CI | 已修改 |
+| C8 | 全部 REQ | 27 条 REQ 的验收标准全部外链 test-plan，而 test-plan 自身状态为"占位，具体 test case 待 M2 补" —— v0.1 事实上没有可执行验收 | 在 PRD 头部显式标注此风险 | 已修改 |
+| C9 | REQ-NF-6/7/8 | 其依据 ADR-0004/0016/0017 在注册表里仍是 skeleton（无文件）；§6 的"已有 ADR"只列了有文件的 6 个 | 在对应 REQ 后标注"依据 ADR 尚未落地" | 已修改 |
+| C10 | REQ-F-9 | "路由依据是 Via branch + Route 头 + Call-ID" 不严谨：对话匹配是 Call-ID + local/remote tag（§12），Via branch 属事务匹配（§17.2.3） | 改为对话匹配表述 | 已修改 |
+| C11 | §1 未覆盖表 | 表说 REQ-F-9/10/11 未覆盖，但 §2.3 已写了它们的业务描述（实为"无用户故事"） | 改表头措辞 | 已修改 |
+| C12 | test-plan §REQ-F-8 vs 基线 S4 | CANCEL 时点不一致：`S4-caller-cancel/README.md` 写 CANCEL 发在"收到 180 Ringing **之前**"；test-plan 写"在 180 Ringing **之后**、200 OK 之前"。两个窗口的竞态行为不同，验收会跑出两套结果 | 与基线对齐，或明确两个窗口都要覆盖 | 已修改 |
 
 ## Adjudication 汇总
 
