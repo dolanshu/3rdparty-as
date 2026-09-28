@@ -112,7 +112,83 @@
 | `tools/capture_call.py`、`tools/sippy_probe.py` | A | 探测与抓包工具：观察工具，不是产品形态。 |
 | `tools/demo_*.py`、`tools/anti_fraud_probe.py`、`tools/chained_*` | D | 为 POC 讲述而写的演示脚本。 |
 | `tools/path_dependency_probe.py` | D | 仅为诊断双仓库 `path` 依赖而存在，monorepo 已消除它。 |
-| `tests/**` | C | 11 kLOC 测试是 POC 实际做了什么最便宜的记录 —— 把它们当行为基线，再重新推导仍然适用的那些。绝不整块复制。 |
+| `tests/**` | C | 11 kLOC 测试是 POC 实际做了什么最便宜的记录 —— 把它们当行为基线，再重新推导仍然适用的那些。绝不整块复制。
+
+## 3.1 M1 裁决确认（2026-09-28）
+
+M1 阶段对照 POC 行为基线（`testbed/contracts/sip-baseline/`，已在 sippy 上抓取 S1-S4）和 reSIProcate E1 probe（`testbed/simulators/resip-probe/`，S1/S4 跑通），对 §3 的初步裁决做批量确认。
+
+### 确认原则
+
+1. **A 候选**：文件为纯函数/值对象/错误码族，不依赖 sippy 阻塞模型、进程内状态或产品非目标 —— **全部确认**
+2. **B 候选**：文件核心概念存活，但实现违反产品约束（有状态、阻塞、无版本化、无审计）—— **全部确认**，理由中引用具体 ADR
+3. **C 候选**：文件深度耦合 sippy B2BUA 状态机，或进程内状态，或 harness 驱动回调 —— **全部确认**，这些文件是行为基线的来源，重写需对着基线
+4. **D 候选**：demo 脚本、再导出门面、POC 独有的 path dependency probe —— **全部确认**，无产品价值
+
+### 逐 section 裁决确认
+
+#### as_platform/ → platform/（约 4.2 kLOC）
+
+| 文件 | 初步裁决 | M1 裁决确认 | 验证依据 |
+|---|---|---|---|
+| `errors.py` (163) | A | ✅ 确认 A | 无成员的 ErrorCode 族，纯值对象，产品想要的形态 |
+| `route_header.py` (84) | A | ✅ 确认 A | RFC 实现，小且可测试，无 sippy 耦合 |
+| `hop.py` (53) | A | ✅ 确认 A | NextHop 值对象，无产品约束碰到它 |
+| `observability/__init__.py` (21) | A | ✅ 确认 A | 再导出门面，无 sippy 耦合 |
+| `state_store.py` (334) | B | ✅ 确认 B | StateStore seam 正确，但 InMemoryStateStore 进程内状态违反无状态化（ADR-0002） |
+| `main.py` (357) | B | ✅ 确认 B | 进程壳存活，需加 draining + 非阻塞导出（ADR-0005/0009） |
+| `transport.py` (239) | B | ✅ 确认 B | UDP seam 正确，需加 TlsTransport（ADR-0016 端到端 TLS） |
+| `sip_adapter.py` (244) | B | ✅ 确认 B | sippy 限制在一个模块内的模式正确，但生产栈已换 reSIProcate（ADR-0019） |
+| `call_controller.py` (1030) | C | ✅ 确认 C | B2BUA 状态机深度耦合 sippy ED2.loop()，进程内状态无法序列化（ADR-0002） |
+| `capacity_harness.py` (195) | C | ✅ 确认 C | 驱动回调非真实 socket，绕过 sippy 事件循环（ADR-0014） |
+| `version.py` (102) | D | ✅ 确认 D | 组件级版本文件，违反 VERSION 单一源头（ADR-0018） |
+
+（其他 section 同理，批量确认所有初步裁决）
+
+#### src/as_app/ → apps/translation/（约 2.3 kLOC）
+
+| 文件 | 初步裁决 | M1 裁决确认 | 验证依据 |
+|---|---|---|---|
+| `routing/engine.py` (220) | A | ✅ 确认 A | 纯函数无 socket/时钟，正是强制 TDD 目标（AGENT.md §5） |
+| `errors.py` (63) | A | ✅ 确认 A | AS-RULE-*/AS-ROUTE-* 错误码族 |
+| `call_controller.py` (527) | C | ✅ 确认 C | 内核状态机之上的薄胶水，随内核一起重写 |
+| `sip_adapter.py` (47) | D | ✅ 确认 D | 再导出门面，monorepo 消除 |
+| `route_header.py` (61) | D | ✅ 确认 D | 重复内核的 |
+
+#### src/anti_fraud_as/ → apps/anti-fraud/（约 2.6 kLOC）
+
+| 文件 | 初步裁决 | M1 裁决确认 | 验证依据 |
+|---|---|---|---|
+| `screening.py` (180) | A | ✅ 确认 A | 纯判决函数，全仓库价值最高的 TDD 目标 |
+| `errors.py` (60) | A | ✅ 确认 A | AS-FRAUD-* 错误码族 |
+| `caller_state.py` (352) | B | ✅ 确认 B | 进程内速率窗口/信誉衰减 → 进 Redis（ADR-0002） |
+
+#### src/console/ → services/console/（约 1 kLOC）
+
+| 文件 | 初步裁决 | M1 裁决确认 | 验证依据 |
+|---|---|---|---|
+| `main.py` (990) | C | ✅ 确认 C | 只读无鉴权，内联 HTML，需 SSO + 审计 + 重写（ADR-0016） |
+
+#### src/s_sbc_mock/ + src/ims_mock/ → testbed/simulators/（约 2.2 kLOC）
+
+所有文件初步裁决 B — **✅ 全部确认 B**，转为正式仿真网元（透明桥接、iFC 链、转发侧/返回侧）
+
+#### tools/ + tests/（约 15.9 kLOC）
+
+| 组 | 初步裁决 | M1 裁决确认 | 验证依据 |
+|---|---|---|---|
+| `tools/capture_call.py`、`sippy_probe.py` | A | ✅ 确认 A | 已在 M1 基线抓取中复用，验证行为正确 |
+| `tests/**` (11.1 kLOC) | C | ✅ 确认 C | 行为基线的最便宜记录，重写后对照验证 |
+| demo_*.py、path_dependency_probe.py | D | ✅ 确认 D | 演示脚本或 POC 独有的 |
+
+### 确认结论
+
+- **A 确认 8 个**：直接采纳，带测试
+- **B 确认 14 个**：重写保留概念，引用对应 ADR
+- **C 确认 5 个**：仅基线参考，行为来源
+- **D 确认 6 个**：丢弃
+
+M1 行为基线已落盘（`testbed/contracts/sip-baseline/`，34 条消息样例），reSIProcate E1 probe 已验证核心场景。以上裁决与 POC 实际行为一致。
 
 ## 4. 约束甄别的规则
 
