@@ -1,0 +1,9 @@
+SIP/2.0 404 Not Found
+Via: SIP/2.0/UDP 127.0.0.1:45100;rport=45100;branch=z9hG4bKc38108107c1167f5c60394561b107bc4
+From: <sip:+86216180001@127.0.0.1>;tag=3ba1e20ac5de1ade4a6460f7e67bb08f
+To: <sip:+99912345678@127.0.0.1>;tag=79982175b3d018d8c7c0547a1fba104c
+Call-ID: f416ec8940c4df8fe3687a2885b596c5
+CSeq: 386913211 INVITE
+Server: 3rd-party AS POC
+Content-Length: 0
+

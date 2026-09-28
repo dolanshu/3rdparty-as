@@ -1,0 +1,9 @@
+SIP/2.0 100 Trying
+Via: SIP/2.0/UDP 127.0.0.1:48558;rport=48558;branch=z9hG4bKe7e773af7d1dba2c8147df2216720a02
+From: <sip:+86216180001@127.0.0.1>;tag=52a38b3eb2c1a4f852f8d62240eb3983
+To: <sip:+8616800000000@127.0.0.1>
+Call-ID: 02d2a69d75906a1680b21d0e3877c988
+CSeq: 1336075447 INVITE
+Server: 3rd-party AS POC
+Content-Length: 0
+

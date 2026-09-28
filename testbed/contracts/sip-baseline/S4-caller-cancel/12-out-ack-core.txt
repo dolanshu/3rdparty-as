@@ -1,0 +1,10 @@
+ACK sip:013800138000@127.0.0.1:47601 SIP/2.0
+Via: SIP/2.0/UDP 127.0.0.1:45060;rport;branch=z9hG4bK8d1afca547e24ebe42405e1ca018defa
+Max-Forwards: 70
+From: <sip:+86216180001@127.0.0.1>;tag=abe751faf32bc3b5222fd17cd72f43ff
+To: <sip:013800138000@127.0.0.1>;tag=51d57e138067b87a8876014f041ae7ec
+Call-ID: 1d45e598a4cd986ac222c6a0cf20bc47-b2b_1
+CSeq: 1967002011 ACK
+User-Agent: 3rd-party AS POC
+Content-Length: 0
+

@@ -1,0 +1,8 @@
+SIP/2.0 200 OK
+Via: SIP/2.0/UDP 127.0.0.1:45060;rport=45060;branch=z9hG4bK8d1afca547e24ebe42405e1ca018defa
+From: <sip:+86216180001@127.0.0.1>;tag=abe751faf32bc3b5222fd17cd72f43ff
+To: <sip:013800138000@127.0.0.1>
+Call-ID: 1d45e598a4cd986ac222c6a0cf20bc47-b2b_1
+CSeq: 1967002011 CANCEL
+Content-Length: 0
+

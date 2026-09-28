@@ -1,0 +1,9 @@
+SIP/2.0 100 Trying
+Via: SIP/2.0/UDP 127.0.0.1:45363;rport=45363;branch=z9hG4bK06861517599aa68e7f7aad3e3fd471dc
+From: <sip:+86216180001@127.0.0.1>;tag=28dd5ef2583235ef5d23e9e9276b4cbc
+To: <sip:013800138000@127.0.0.1>
+Call-ID: 48f64baa94fdfcfdd79af4128905d375-b2b_1
+CSeq: 424324332 INVITE
+Server: 3rd-party AS POC mock S-SBC
+Content-Length: 0
+

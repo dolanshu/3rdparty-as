@@ -1,0 +1,11 @@
+CANCEL sip:+8613800138000@127.0.0.1:45060 SIP/2.0
+Via: SIP/2.0/UDP 127.0.0.1:48162;rport;branch=z9hG4bKf81431a54d50a7e4cde9a33d51e79ced
+Route: <sip:127.0.0.1:47601;lr>
+Max-Forwards: 70
+From: <sip:+86216180001@127.0.0.1>;tag=aef58c21623a7acc2f1c42fa2e1c1cb2
+To: <sip:+8613800138000@127.0.0.1>
+Call-ID: 1d45e598a4cd986ac222c6a0cf20bc47
+CSeq: 346313159 CANCEL
+User-Agent: 3rd-party AS POC mock S-SBC
+Content-Length: 0
+
