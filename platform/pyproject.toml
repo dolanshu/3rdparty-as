@@ -22,6 +22,9 @@ classifiers = [
 # particular stack. The POC behaviour baseline, which currently runs on sippy,
 # lives in testbed/simulators/ and is consumed only as a testbed asset.
 dependencies = [
+  # The runtime state store needs the redis client (ADR-0002 / ADR-0007); the
+  # contract cases skip when it is not installed.
+  "redis>=5.0",
 ]
 
 [build-system]
