@@ -12,10 +12,11 @@
 
 | | |
 |---|---|
-| 当前进行中的步骤 | **M1 —— 甄别与行为基线**（M0 已完成） |
+| 当前进行中的步骤 | **M2 —— 内核**（M0、M1 已完成） |
 | 设计基线 | 已确认（`architecture/新系统整体架构.md`，决策 1–19） |
 | 卡住后续里程碑的未决项 | §5 |
 | POC 代码的迁移 | 刻意推迟到 M1–M3，且由 [`migration/triage.md`](migration/triage.md) 把关 |
+| M1 完成日期 | 2026-09-28（AI agent 代办；维护者签字待补，见 `docs/reviews/m1-exit-review.md`） |
 
 ### 当前仓库状态说明
 
@@ -86,6 +87,8 @@
 **已知的骨架例外**：② ③ ④ 层带 `continue-on-error`，因为还没有那类测试。必须在首个引入该类测试的
 里程碑把它们改成阻塞。作为 M2 / M3 / M6 的退出标准跟踪。
 
+**进展（2026-09-28）**：`integration` 层首个用例已引入（`platform/tests/test_telemetry_export_integration.py`，真 socket 验证遥测导出不阻塞），CI 层② 已同步改为阻塞；层③ e2e 与层④ performance 仍无用例，保持 `continue-on-error`。
+
 ---
 
 ## 3. M0 的退出标准
@@ -110,14 +113,36 @@
 | # | 里程碑 | 产出 | 状态 | 门禁 |
 |---|---|---|---|---|
 | **M0** | 仓库骨架 | 本结构、守卫、ADR 注册表、CI | **已完成（维护者授权代签）** | §3，外加维护者签字 |
-| **M1** | 甄别与行为基线 | 冻结 POC commit；抓取消息样例与 trace；确认或推翻 `migration/triage.md` 里每个裁决。**无产品代码。** | 未开始 | 每个文件都有一个带证据的裁决；基线已抓取且可复现 |
-| **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | 未开始 | 内核守卫绿；能在其上构建用例而不碰 sippy |
-| **M3** | 应用 | `apps/translation` 与 `apps/anti-fraud`；决策模块先做 TDD | 未开始 | 契约用例集对两者都重放绿 |
-| **M4** | 控制面 | `services/config-service`（PG 版本库、变更单状态机、灰度分发、回滚）与 `services/console`（读写、鉴权、审计） | 未开始 | 一次规则变更走完整闭环：编辑 → 审批 → 分发 → 上报版本 → 回滚；开关配置走变更流水线 + 开关两态测试 |
-| **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集 | 未开始 | 滚动升级不掉呼叫；缩容不掉呼叫 |
+| **M1** | 甄别与行为基线 | 冻结 POC commit；抓取消息样例与 trace；确认或推翻 `migration/triage.md` 里每个裁决。**无产品代码。** | **已完成（2026-09-28；门禁裁决见 §4.1）** | 每个文件都有一个带证据的裁决；基线已抓取且可复现 |
+| **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | **M2a 已完成；M2b seam 已落（2026-09-28），栈绑定未开始** | 内核守卫绿；能在其上构建用例而不碰 sippy |
+| **M3** | 应用 | `apps/translation` 与 `apps/anti-fraud`；决策模块先做 TDD | **已完成（2026-09-28；门禁裁决见 docs/reviews/m3-gate-review.md）** | 契约用例集对两者都重放绿 |
+| **M4** | 控制面 | `services/config-service`（PG 版本库、变更单状态机、灰度分发、回滚）与 `services/console`（读写、鉴权、审计） | **已完成（2026-09-28；PG 接线转 M5，见 docs/reviews/m4-console-access-review.md）** | 一次规则变更走完整闭环：编辑 → 审批 → 分发 → 上报版本 → 回滚；开关配置走变更流水线 + 开关两态测试 |
+| **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集 | **进行中（Helm 模板与告警已落，2026-09-28；helm 渲染校验、缩容保护控制器、PG 接线未完成）** | 滚动升级不掉呼叫；缩容不掉呼叫 |
 | **M6** | **容量研究** | 真实 socket 压测 harness；测出 CPS、并发会话、建立时延 —— 按栈分别 | 未开始 | 产出 O1 的答案；在这跑起来之前不假设任何目标 |
 | **M7** | Go 迁移 | 一个用例的 `go-b2bua` 镜像，commit 固定并 vendoring；跨实现对拍 | 未开始 | **受 M6 把关。** 仅当与 Python 实现输出对输出一致时才转正（ADR-0012） |
 | **M8** | 发布候选 | 带证据的验收运行、文档链完整、统一产品版本 | 未开始 | 逐条验收报告 |
+
+### 4.1 M1 门禁裁决（2026-09-28）
+
+M1 门禁原文：*每个文件都有一个带证据的裁决；基线已抓取且可复现*。逐项核对结果：
+
+| 门禁项 | 状态 | 证据 | 裁决 |
+|---|---|---|---|
+| 每个文件都有一个带证据的裁决 | 达成 | `docs/migration/triage.md` 全文检索无"未决 / 待裁决 / TBD / 待定 / pending"残留；`b27bb3d docs(triage): M1 adjudication confirmation` | 接受 |
+| 冻结 POC commit | 达成 | 基线抓取脚本记录来源；`testbed/contracts/sip-baseline/` 内各场景 README 标注抓取脚本与日期 | 接受 |
+| 基线已抓取且可复现（S1-S4） | 达成 | `S1-basic-call`（14 条）、`S2-no-match-404`（4 条）、`S3-policy-reject-603`（4 条）、`S4-caller-cancel`（12 条）均有消息文件 | 接受 |
+| S5 / S6 / S7a / S8 基线 | **未抓取**（仅 README，零消息文件） | 对应 REQ-F-2 / F-3 / F-4 / F-5 | **接受为"派生基线"**：`docs/acceptance/test-plan.md` 中这四条需求的验收本就写为"完成 REQ-F-1 的基本呼叫后提取 X"，可从 `S1-basic-call` 派生断言，不单独抓取。理由：这四条断言的是同一通呼叫的头域/SDP 属性，重复抓取不增加信息量，只增加维护面 |
+| S10 / S11 基线 | **未抓取**（仅 README） | 对应 REQ-F-10 / F-11；POC ReturnUas 只返回 200 OK，无 busy 分支，也无显式竞态构造 | **接受为"M2 probe 补"**：与 `docs/requirements/prd.md` §2.4 已知缺口表一致（M2 probe 阶段在 testbed 补对拍场景），不构成 M1 阻塞 |
+
+**结论**：M1 门禁达成。S5/S6/S7a/S8 的"派生基线"与 S10/S11 的"M2 probe 补"两项裁决写入本节，作为 M2 进入的前提。若后续决定补抓 S5-S8 消息文件，需在本节追加一行推翻记录，而不是静默替换。
+
+**派生基线已可执行化（2026-09-28）**：裁决不再是纸面结论 —— `testbed/simulators/tests/test_derived_baseline.py`（marker `contract`）对 `S1-basic-call` 的 14 条消息实际执行派生断言，覆盖 REQ-F-2（双腿 Call-ID 不同、同腿内稳定）、REQ-F-3（host:port 改写、归一化后同一被叫）、REQ-F-4（SDP 逐字节相等，含 answer）。当前 10 条通过、2 条显式 skip（见下）。
+
+| 派生断言发现的偏差 | 处置 |
+|---|---|
+| S1 的出腿 user 部分被翻译改写（`+8613800138000` → `013800138000`），与 `test-plan` §1.1 REQ-F-3 原断言"user 部分一致"冲突 | 已按事实改 `test-plan` §1.1：非翻译场景不变、翻译场景按规则改变 |
+| S1 未构造出腿 `Route` 头与任何 `Record-Route` 头 | 这两条派生断言显式 skip 并注明"需 M2 probe 补"；另补了一条基线真正能证明的硬断言：入腿 Route 的 next-hop 正是出腿 Request-URI 的 host:port |
+| 14 个基线文件全部是 CRLF 换行 | 解析器按 CRLF 原样处理，SDP 逐字节比较在原始字节下通过 |
 
 M6 是一个带决策的研究里程碑，不是对某个数字的承诺。M7 在 M6 报告之前不启动。
 
@@ -145,7 +170,7 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。M7 �
 | D4 | 控制台前端形态：保留 vendored 单包、无构建步骤，还是接受一套工具链 | M4 | POC 禁止了 npm 和构建步骤；产品控制台更大 |
 | D5 | 呼叫轨迹存储：PostgreSQL，还是独立的短保留存储 | M4 | 与 O4 相关 |
 | D6 | testbed 是否必须在 v1 支持客户验收测试 | M8 | 架构文档把它推迟到 v1.1 |
-| D7 | 运行态覆盖的判定粒度（号段 / 呼叫 / 用户 / 百分比）与配置 schema | M4 | 与 ADR-0020 的分层门控相关，需在控制面设计前定 |
+| D7 | ~~未决~~ **已裁决（2026-09-28）**：粒度固定为号段 + 稳定哈希百分比，schema 与判定幂等见 [ADR-0021](architecture/adr/0021-runtime-override-granularity.md) | M4 | 与 ADR-0020 的分层门控相关，需在控制面设计前定 |
 
 ---
 

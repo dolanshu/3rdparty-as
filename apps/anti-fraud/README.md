@@ -16,3 +16,5 @@
 ## 状态
 
 骨架。判决函数 test-first 编写。
+
+判决模块已落地（2026-09-28）：`decision.py` 提供速率窗口超限判定（`RATE_LIMIT`），建立在内核 `decide()` 之上，纯函数、TDD；评审见 docs/reviews/m3-decision-modules-review.md。

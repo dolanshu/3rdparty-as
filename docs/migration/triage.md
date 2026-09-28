@@ -65,7 +65,7 @@
 | `call_controller.py` | 527 | C | 内核状态机之上的薄胶水；随内核一起重写。 |
 | `internal_api.py` | 388 | B | 见内核 `internal_api.py`。 |
 | `main.py` | 331 | B | 一个用例的进程壳。 |
-| `routing/rules.py` | 371 | B | 加载与热重载是对的；事实源移到 config-service，带版本与兼容矩阵（ADR-0006、R4）。 |
+| `routing/rules.py` | 371 | B | 加载与热重载是对的；事实源移到 config-service，带版本与兼容矩阵（[ADR-0006](../architecture/adr/0006-config-governance.md)、R4）。 |
 | `routing/engine.py` | 220 | **A** | 纯函数，无 socket、无时钟 —— 正是强制 TDD 的形态。带着它的测试采纳。 |
 | `bootstrap.py` | 164 | B | 见内核 `bootstrap.py`。 |
 | `observability/*` | ~147 | D | 仅为桥接两个仓库而存在的再导出门面。monorepo 让它们失去意义。 |

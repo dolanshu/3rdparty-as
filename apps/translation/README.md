@@ -20,3 +20,5 @@
 ## 状态
 
 骨架。决策模块是这里最先写的东西，且 test-first：它是全仓库价值最高的 TDD 目标。
+
+判决模块已落地（2026-09-28）：`decision.py` 建立在内核 `decide()` 之上，纯函数、TDD；评审见 docs/reviews/m3-decision-modules-review.md。

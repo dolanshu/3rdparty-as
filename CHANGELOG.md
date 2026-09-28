@@ -16,8 +16,28 @@
 - `docs/migration/triage.md` —— POC 与库代码的清点、初步分类，以及把关采纳的甄别规则。
 - `docs/architecture/新系统整体架构.md` —— 已确认的设计基线。
 - feature 能力门控决策：分层开关（部署级总开关 + 运行态细粒度覆盖，ADR-0020），并定义新 feature 的实现流程（`AGENT.md` §3.4）。
+- M1 行为基线：`testbed/contracts/sip-baseline/` 下 S1 基本呼叫（14 条）、S2 无匹配 404（4 条）、S3 策略拒绝 603（4 条）、S4 主叫放弃 CANCEL（12 条）四条消息样例；S5-S8 裁决为派生基线、S10/S11 转 M2 probe，见 `docs/plan.md` §4.1。
+- SIP 栈选型验证：reSIProcate E1 probe 与构建脚本（ADR-0019）。
+- requirement → ADR 双向引用：各 ADR 头部加"回应 REQ"字段。
+- 需求标准 `docs/requirements/prd.md` v0.2：新增 REQ-S-* 安全需求类、REQ-F-12（规则 CRUD）、REQ-F-14（审批流程），并订正 RFC 3261 章节号。
+- M1 验收报告 `docs/acceptance/report.md` 与退出评审记录 `docs/reviews/m1-exit-review.md`。
+- M2a 内核（`platform/`）：`decide()` 判决纯函数与规则匹配（最长前缀、block 优先）、`StateStore` seam 及 `InMemoryStateStore` / `RedisStateStore` 双实现、feature 门控 seam（分层、默认关、fail-closed）、有界队列遥测（导出不阻塞呼叫路径）、进程壳与 draining、内部 API 契约模型。
+- 依赖：运行时状态存储接入 `redis>=5.0`（ADR-0002 / ADR-0007）。
+- 设计与评审：`docs/architecture/hld.md`、`lld.md`；`docs/reviews/m2-design-review.md`、`m2a-kernel-review.md`。
+- M2b 边界 seam（`platform/src/as_platform/sip/`）：对端白名单与 TLS 配置热轮换（不可变重载、不重启不丢呼叫）、SIP 适配 seam（仅 Protocol，不含栈实现）、判决到 SIP 状态码映射（603 / 404）。
+- M3 决策模块：`apps/translation`（号码翻译，含基线事实 `+8613800138000` → `013800138000` 的断言）与 `apps/anti-fraud`（速率窗口超限判定，`RATE_LIMIT`），均建立在内核 `decide()` 之上，纯函数、TDD。
+- M3 契约用例集：`testbed/contracts/decision/`（14 例声明式用例），由 `apps/translation` 与 `apps/anti-fraud` 各自重放（marker `contract`）。
+- 首个 `integration` 层用例：`platform/tests/test_telemetry_export_integration.py`（真 socket 验证遥测导出不阻塞呼叫路径）；CI 层② 同步改为阻塞。
+- M4 配置治理内核（`services/config-service`）：变更单状态机（审批留痕、非法跳转拒绝）、不可变配置版本库、分批灰度分发与自动回滚。
+- 开关走变更流水线：`ConfigBundle` 新增 `ToggleDTO`（含强制的移除条件），与规则同属一个配置版本；开 / 关两态均有测试覆盖。
+- M4 控制台鉴权与审计（`services/console`）：角色 / 权限矩阵、提交者不得审批自己的变更、允许与拒绝均留痕、审计记录不可变。
+- 未决项 D7 裁决（ADR-0021）：运行态覆盖粒度为号段 + 稳定哈希百分比，判定幂等；`gating/overrides.py` 与其测试。
+- M5 部署产物：Helm 模板（每用例一 Deployment / Service、ConfigMap / Secret、HPA、PDB、SA、NOTES）与告警规则集（`deploy/alerts/`，8 条，只含比例 / 相对量 / 状态量阈值）。
+- 容量数字纪律：HPA 阈值与副本上下限留空并由 `required` 守卫，`deploy/` 全目录不含 CPS 或并发绝对值（O1 待 M6 实测）。
 
 ### 说明（Notes）
 
 - 还没有产品代码：骨架刻意不含业务逻辑，以便在代码迁入前先评审结构。
 - CI ② ③ ④ 三层在首个引入该类测试的里程碑之前不阻塞。见 `docs/plan.md` §2.4。
+- M1 为文档与基线里程碑，**无产品代码交付**，故 `VERSION` 维持 `0.1.0`，未 bump（ADR-0018）。
+- M2a 有产品代码交付，但产品尚未发布，故 `VERSION` 维持 `0.1.0`，全部增量归入未发布段；首次发布时再按 ADR-0018 定版本号。

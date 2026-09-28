@@ -32,8 +32,10 @@
 - [ ] 完成 REQ-F-1 的基本呼叫
 - [ ] 提取上游 INVITE 的 Request-URI
 - [ ] 提取下游 INVITE 的 Request-URI
-- [ ] 断言两者 host/port 部分不同（上游是运营商 S-SBC，下游是我们内部选定的对端）
-- [ ] 断言 user@部分一致（号码不变，只是路由地址变了）
+- [ ] 断言 host/port 部分不同（路由地址改变）
+- [ ] 断言 user 部分：**非翻译场景**保持不变；**翻译场景**按翻译规则改变 —— 基线 S1 即翻译场景（`+8613800138000` → `013800138000`），不得以"user 必须逐字节相等"作为翻译业务用例的验收
+
+> 说明：本条断言已由派生基线测试 `testbed/simulators/tests/test_derived_baseline.py` 对 `S1-basic-call` 的 14 条消息实际执行；归一化后两侧指向同一被叫（`13800138000`）。
 
 ### REQ-F-4 验收标准
 - [ ] 完成 REQ-F-1 的基本呼叫
@@ -321,3 +323,90 @@
 - [ ] `make gate` 退出码为 0
 - [ ] CI 流水线中 `make gate` 失败时阻断后续步骤
 - [ ] pre-commit hook 在本地提交前运行 `make gate` 的 lint/format 部分
+
+---
+
+## §5 M2 内核验收（unit / contract 层）
+
+> 本节是 M2 内核（platform）的验收标准，对应 `docs/architecture/lld.md`。
+> 层与 marker：`unit` = 纯逻辑，无 socket；`contract` = 语言无关契约用例，对**每一个**实现重放。
+> 决策逻辑（`decide()`、规则匹配）按 AGENT.md §6 **强制 TDD**：红 - 绿 - 重构。
+
+### 5.1 `decide()` 判决矩阵（marker: unit）
+
+规则集（测试夹具）：
+| 前缀 | action | 说明 |
+|---|---|---|
+| `+86755` | translate（target = `return-uas`） | 翻译业务 |
+| `+8675512` | translate（target = `return-uas`） | 更长前缀，用于验证最长前缀优先 |
+| `+86138` | forward | 直接转发 |
+| `+86168` | block（603） | 反诈阻止 |
+
+| # | 被叫号码 | 期望 action | 期望 reason_code | 断言要点 |
+|---|---|---|---|---|
+| 1 | `+867550123456` | TRANSLATE | `MATCH_TRANSLATE` | 命中 `+86755`，target 为 `return-uas` |
+| 2 | `+8675512345678` | TRANSLATE | `MATCH_TRANSLATE` | 同时匹配 `+86755` 与 `+8675512`，**断言命中更长的前缀** `+8675512`（`matched_rule_id` 可区分） |
+| 3 | `+861681000000` | DECLINE | `MATCH_BLOCK` | 返回 603，且**不创建出腿**（REQ-F-7） |
+| 4 | `+8613800000000` | FORWARD | `MATCH_FORWARD` | 直接转发 |
+| 5 | `+869990000000` | NOT_FOUND | `NO_MATCH` | 返回 404，且不创建出腿（REQ-F-6） |
+| 6 | `867551234567`（无 `+`） | TRANSLATE | `MATCH_TRANSLATE` | 号码归一化后匹配，等价用例 1 |
+| 7 | 号码同时命中 block 与 translate（如 `+86168` block 与 `+8616` translate） | DECLINE | `MATCH_BLOCK` | **block 优先于 translate**（与 §1.2 REQ-F-7 验收一致） |
+
+说明：用例 1 的号码刻意避开 `+8675512`，以保证"命中 `+86755`"与用例 2"命中更长前缀"是两条互不重叠的断言。
+
+通用断言：`decide()` 为纯函数 —— 同输入必同输出；无 socket、无时钟读取、无全局状态（可由"注入的 received_at 不参与判决"与"连续两次调用结果相等"间接断言）。
+
+### 5.2 StateStore 契约（marker: contract）
+
+同一套用例对**两个实现**重放：`InMemoryStateStore` 与 `RedisStateStore`（Redis 用例在无 Redis 环境时 skip，但契约本身必须存在）。
+
+| # | 用例 | 断言 |
+|---|---|---|
+| 1 | `get` 不存在的键 | 返回 `None`，不抛异常 |
+| 2 | `set(k, v, ttl)` 后 `get(k)` | 返回与 `v` 逐字节相等的 bytes |
+| 3 | 同键同值写两次 | 结果一致，无异常（**幂等**） |
+| 4 | `set(ttl=1)`，注入时钟推进超过 TTL | `get` 返回 `None`；实现**不得**在内部读系统时钟 |
+| 5 | `delete(k)` 后 `get(k)`；再 `delete(k)` | 第一次返回 `None`，第二次不抛异常 |
+| 6 | 键格式 | 形如 `as:{case}:{kind}:{id}` |
+| 7 | 写入顺序交换 | 最终值一致（幂等语义，承受 Redis 脑裂窗口重放） |
+
+### 5.3 feature 门控两态（marker: unit）
+
+| # | 用例 | 断言 |
+|---|---|---|
+| 1 | 未注册的开关名 | `is_enabled` 返回 `False`（**fail-closed**） |
+| 2 | 部署级默认态 | 返回 `False`（**默认关**） |
+| 3 | 部署级置为开 | 返回 `True` |
+| 4 | 运行态覆盖开 / 关 | 覆盖值优先于部署级 |
+| 5 | 同一 scope 重复求值 | 结果一致（**判定幂等**） |
+| 6 | 判定入口不依赖真实 Redis | 通过注入 `ToggleSource` 完成，测试无 socket |
+
+两态（开 / 关）都必须被覆盖（ADR-0020、REQ-G-1）。
+
+### 5.4 遥测不阻塞（marker: unit）
+
+| # | 用例 | 断言 |
+|---|---|---|
+| 1 | 呼叫路径调用 `emit()` | 不产生任何网络 IO（以 NoOp / 假 exporter 断言 socket 未被调用） |
+| 2 | 队列写满后继续 `emit()` | 不抛异常、不阻塞；`dropped` 计数自增 |
+| 3 | 默认 sink | 为 `NoOpSink`（未配置 exporter 时不报错） |
+| 4 | 导出线程 | 在独立线程消费队列，呼叫路径不等待导出完成 |
+
+### 5.5 进程壳 draining（marker: unit）
+
+| # | 用例 | 断言 |
+|---|---|---|
+| 1 | `active_calls == 0` 时收到 SIGTERM | 停止接收新请求并退出 |
+| 2 | `active_calls > 0` 时收到 SIGTERM | **不退出**；新请求被拒；待归零后退出 |
+| 3 | 归零超时（可配上限） | 强制退出并记录；不得无限等待 |
+
+### 5.6 与需求/设计的追溯
+
+| 本节 | 对应 REQ | 对应设计 |
+|---|---|---|
+| 5.1 | REQ-F-1、REQ-F-6、REQ-F-7 | `lld.md` §2、§3 |
+| 5.2 | REQ-NF-1、REQ-NF-2 | `lld.md` §4（ADR-0002、ADR-0007） |
+| 5.3 | REQ-G-1 | `lld.md` §5（ADR-0020） |
+| 5.4 | REQ-NF-13 | `lld.md` §6（ADR-0005） |
+| 5.5 | REQ-NF-4 | `lld.md` §7（ADR-0009） |
+
