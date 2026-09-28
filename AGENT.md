@@ -157,9 +157,11 @@ testbed/ ──may use──▶ platform/       研发资产，绝不做运行�
 
 ## 9. 门禁（Gates）
 
-`make gate` = `ruff format --check` → `ruff check` → `mypy` → pytest（unit/contract 层）。
+`make gate` = `ruff format --check` → `ruff check` → `mypy` → pytest（unit/contract 层）。四步固定，AST 扫描**不在 gate 内**。
 
-CI 跑同样的四层：① 快（`unit or contract`）→ ② 集成 → ③ e2e → ④ 性能（nightly / tag 触发）。
+**AST 扫描归属**：AST 扫描（检查不显而易见的代码是否标注 ADR，对应 REQ-G-3）属于 CI 流水线**额外步骤**——在 `make gate` 之外。可用 `make gate-strict` 目标触发（`make gate` 四步 + AST 扫描），或在 CI 流水线作为前置门禁执行。make gate 本身四步不变，快速反馈。
+
+CI 跑同样的四层：① 快（`unit or contract`）→ ② 集成 → ③ e2e → ④ 性能（nightly / tag 触发）。AST 扫描可在 CI 的前置阶段或 ① 层之后并行执行。
 
 本地门禁不绿，什么都不能提交。**本地门禁不是 CI**：绝不要把本地重跑冒充成 CI 结果。
 

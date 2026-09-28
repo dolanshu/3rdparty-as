@@ -129,12 +129,56 @@ PRD 加用户故事/场景节，让非技术读者能看懂"谁在用、在什�
 |---|---|---|---|---|---|
 | 7 | 维护者 review 第二轮 | PRD 无用户故事 | 接受 | 加 §1 节，原 §1-5 顺延为 §2-6 | 已修改 |
 
+## Gap 8（PRD v0.2 修订 — prd-v0.1-review 24 Gap 全部修改落盘）
+
+PRD v0.1 发布后，独立协议复核（prd-v0.1-review）发现 24 个 Gap（A 类 5 项协议硬伤、B 类 7 项覆盖缺口、C 类 12 项一致性清理）。本 Gap 即为该复核的 Adjudication 后续。
+
+**关键：推翻 M1 Gap 3 裁决**。M1 Gap 3 裁决"安全需求由 REQ-NF 隐含覆盖"（即无 REQ-S-* 类别也可），**prd-v0.1-review B5 判定此裁决不成立**——REQ-NF-5 只讲 S-SBC 桥接语义，不含安全语义；AGENT.md §13 明确说"trunk 是不可信的"，安全不能隐含。现推翻该裁决，在 PRD v0.2 新增 §4 安全需求（REQ-S-1 到 REQ-S-4）。
+
+| # | 类别 | 摘要 | 裁决 | 修改方案 | 状态 | 验证 |
+|---|---|---|---|---|---|---|
+| A1 | P0 协议 | REQ-F-8 BYE→487 方向反了 | 接受 | REQ-F-8 改写为两分支（早取消 CANCEL / 对话已建立 BYE），test-plan 拆三个时点场景 | 已修改 | prd-v0.2 REQ-F-8、test-plan §1.3-REQ-F-8 |
+| A2 | P0 协议 | REQ-F-2 Call-ID 断言方向反了（同一腿 Call-ID 必须相同） | 接受 | PRD 业务描述不变（已正确）；test-plan 全改：入腿≠出腿 + 同一腿内一致 | 已修改 | test-plan §1.1-REQ-F-2 |
+| A3 | P0 协议 | 7 处 RFC 章节号错误 | 接受 | 逐条修正；PRD 头部加"协议章节号说明" | 已修改 | prd-v0.2 全文 grep RFC 章节 |
+| A4 | P0 协议 | REQ-F-5 Route 语义错误（无脑复制上游 Route 头） | 接受 | 改写业务描述为"消费寻址本跳 Route + 路由策略显式生成"；test-plan 验收改 | 已修改 | prd-v0.2 REQ-F-5、test-plan §1.1-REQ-F-5 |
+| A5 | P0 协议 | REQ-F-11 CANCEL 竞态只写一分支 | 接受 | 拆两分支（CANCEL 先到 / 最终响应先到），加 RFC 3261 §9.1/§9.2 引用 | 已修改 | prd-v0.2 REQ-F-11、test-plan §1.3-REQ-F-11 |
+| B1 | P1 覆盖 | 缺 Actor 4 业务方用户故事 | 接受 | 加 Actor 4 + US-10（翻译查询）+ US-11（反欺诈查询） | 已修改 | prd-v0.2 §1 |
+| B2 | P1 覆盖 | 控制台/配置管理无 REQ-F | 接受 | 新增 §2.4 控制台与配置管理：REQ-F-12/13/14/15 | 已修改 | prd-v0.2 §2.4 |
+| B3 | P1 覆盖 | 翻译主路径无 REQ | 接受 | 新增 §2.5 业务决策链：REQ-F-16 命中翻译规则后的处理 | 已修改 | prd-v0.2 §2.5 |
+| B4 | P1 覆盖 | REQ-F-6/F-7 匹配语义模糊 | 接受 | REQ-F-6 追加匹配规则；REQ-F-7 追加匹配规则 + 优先级 | 已修改 | prd-v0.2 REQ-F-6/F-7 |
+| B5 | P1 覆盖 | 无 REQ-S-*（安全需求） | 接受（**推翻 M1 Gap 3 裁决**） | 新增 §4 安全需求：REQ-S-1 到 REQ-S-4 | 已修改 | prd-v0.2 §4 |
+| B6 | P1 覆盖 | 无可观测性需求 | 接受 | 新增 REQ-NF-13（OTel 三信号）、REQ-NF-14（告警规则集） | 已修改 | prd-v0.2 §3.2 |
+| B7 | P1 覆盖 | 轨迹保留期 vs plan.md O4 冲突 | 接受 | PRD + test-plan 改"保留期待定——M4 冻结" | 已修改 | prd-v0.2 REQ-NF-7、test-plan §2-REQ-NF-7 |
+| C1 | P2 一致 | US-1 "立即生效" vs US-4 "审批生效" 矛盾 | 接受 | US-1 改为"提交 → 审批 → 生效" | 已修改 | prd-v0.2 US-1 |
+| C2 | P2 一致 | 治理 P2 无定义 | 接受 | 治理 §5 开头加 P2 优先级定义 | 已修改 | prd-v0.2 §5 |
+| C3 | P2 一致 | US-9 混入设计语言（LoadBalancer） | 接受 | 改为需求语言 | 已修改 | prd-v0.2 US-9 |
+| C4 | P2 一致 | US-8 "2 秒内恢复"无来源 | 接受 | 改为"呼叫不中断" + "时延承诺待 M6 冻结" | 已修改 | prd-v0.2 US-8 |
+| C5 | P2 一致 | §0 非目标与 REQ-NF/S 重复 | 接受 | §0 末尾加 formalize 说明，指向对应 REQ | 已修改 | prd-v0.2 §0 |
+| C6 | P2 一致 | NF-4 ISSU 归属 + 编号乱序 | 接受 | REQ-NF-4 从 §3.2 移到 §3.1 核心架构约束组内 | 已修改 | prd-v0.2 §3.1 |
+| C7 | P2 一致 | AST 扫描归属：make gate vs CI | 接受 | PRD REQ-G-3 + AGENT.md §9 同步澄清：AST 在 gate 外，属 CI 额外步骤 / `make gate-strict` | 已修改 | prd-v0.2 REQ-G-3、AGENT.md §9 |
+| C8 | P2 一致 | PRD 验收标准全外链占位无标识 | 接受 | PRD 头部加"验收标准状态"声明 | 已修改 | prd-v0.2 头部 |
+| C9 | P2 一致 | REQ-NF-6/7/8 依据 ADR skeleton | 接受 | 各 REQ 末尾加 ADR 标注 | 已修改 | prd-v0.2 REQ-NF-6/7/8 |
+| C10 | P2 一致 | F-9 路由依据不严谨（Via branch 是事务匹配） | 接受 | 改为对话匹配表述（Call-ID + tag） | 已修改 | prd-v0.2 REQ-F-9 |
+| C11 | P2 一致 | §1 未覆盖表措辞不准（已写业务描述） | 接受 | 改表头为"暂缺用户故事 + POC 基线" | 已修改 | prd-v0.2 §1 |
+| C12 | P2 一致 | test-plan REQ-F-8 CANCEL 时点与基线 S4 不一致 | 接受 | test-plan 拆三时点场景（180 前 / 180 后 200 前 / 200 后） | 已修改 | test-plan §1.3-REQ-F-8 |
+
+### Adjudication 汇总
+
+| 类别 | 条数 | 裁决 | 状态 |
+|---|---|---|---|
+| A 阻断 | 5 | 全部接受 | 已全部修改 |
+| B 覆盖缺口 | 7 | 全部接受 | 已全部修改（含推翻 M1 Gap 3） |
+| C 一致性 | 12 | 全部接受 | 已全部修改 |
+
 ## 评审结论
 
-Requirement 清单通过。4 个 Gap 全部裁决接受，其中 2 个待 M2 跟进，不阻塞当前文档发布。
+Requirement 清单通过。prd-v0.1-review 发现的 24 Gap **全部裁决接受**，对应修改已全部落盘至 PRD v0.2。
+
+**特别说明**：本 Gap 8 中，prd-v0.1-review B5 **推翻**了 requirements-m1-review Gap 3 关于"REQ-S-* 由 REQ-NF 隐含覆盖"的裁决——安全需求必须 formalize 为可追溯可验收的 REQ-S-* 条目。PRD v0.2 新增 §4 安全需求承接此裁决。
 
 评审人确认：
 - 所有 REQ-F 条目来源可追溯
 - 所有 REQ-NF 条目已对应已有 ADR
 - 格式符合 AGENT.md §3 定义
 - 补课说明与 ADR 的向后关系清晰
+- M1 Gap 3 推翻已在本文记录
