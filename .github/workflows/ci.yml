@@ -65,10 +65,9 @@ jobs:
     needs: [fast]
     permissions:
       contents: read
-    # SKELETON EXCEPTION: no integration test exists yet, so pytest would exit 5
-    # (no tests collected). Remove `continue-on-error` in the milestone that adds
-    # the first integration test — M2 for the kernel, M3 for the applications.
-    continue-on-error: true
+    # Blocking since the milestone that added the first integration case
+    # (platform/tests/test_telemetry_export_integration.py): a failure here is a
+    # real regression, not an empty collection. See AGENT.md §9.
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
