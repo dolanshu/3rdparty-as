@@ -1,22 +1,18 @@
-# `services/` — the control plane (layer ③)
+# `services/` — 控制面（layer ③）
 
-| Directory | Responsibility |
+| 目录 | 职责 |
 |---|---|
-| `config-service/` | rule version repository, change orders, staged distribution, rollback |
-| `console/` | the operator surface: rules, call trace, statistics |
+| `config-service/` | 规则版本库、变更单、灰度分发、回滚 |
+| `console/` | 运营商界面：规则、呼叫轨迹、统计 |
 
-## Rules
+## 规则
 
-- **Stateless.** Durable state is in PostgreSQL, never in the process.
-- **The version repository is ours.** Approval may be delegated to the
-  operator's OSS or ticketing system; the rule version repository may not —
-  rule availability must not depend on a foreign system's availability
-  (ADR-0006).
-- The console talks to an AS **only** through the AS's internal API
-  (`/healthz`, `/metrics`, `/traces`), never through a private channel.
+- **无状态。** 持久状态在 PostgreSQL，绝不在进程里。
+- **版本库是我们的。** 审批可以委派给运营商的 OSS 或工单系统；规则版本库不行 —— 规则可用性不能
+  依赖一个外部系统的可用性（ADR-0006）。
+- 控制台**只**通过 AS 的内部 API（`/healthz`、`/metrics`、`/traces`）与 AS 对话，绝不走私有通道。
 
-## Not GitOps
+## 不是 GitOps
 
-Operators must not have to learn Git to change a number range. Versions are
-rows in PostgreSQL behind a change-order state machine, not commits. The
-reasoning is recorded in `docs/新系统整体架构.md` §5.1 and ADR-0006.
+不能要求运营商运维人员为了改一个号段去学 Git。版本是 PostgreSQL 里、变更单状态机之后的行，不是
+commit。理由记录在 `docs/新系统整体架构.md` §5.1 和 ADR-0006。

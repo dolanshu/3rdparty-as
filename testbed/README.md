@@ -1,24 +1,20 @@
-# `testbed/` — the test platform (layer ⑥)
+# `testbed/` — 测试平台（layer ⑥）
 
-Three layers, all of them gating:
+三层，全部把关：
 
-| Layer | Directory | What it proves |
+| 层 | 目录 | 证明什么 |
 |---|---|---|
-| ① contract / unit | `contracts/` + each package's `tests/` | the decision is right, and every implementation agrees |
-| ② simulated integration | `simulators/` | the AS works against a peer that behaves like the operator's |
-| ③ performance | `load/` | where the capacity boundary actually is |
+| ① 契约 / 单元 | `contracts/` + 每个包的 `tests/` | 决策是对的，且每个实现都一致 |
+| ② 仿真集成 | `simulators/` | AS 能对着一个行为像运营商对等端的东西工作 |
+| ③ 性能 | `load/` | 容量边界到底在哪 |
 
-## Why the simulators are a first-class asset
+## 为什么仿真器是一等资产
 
-In the delivery environment the S-CSCF and the S-SBC are the operator's network
-elements. Locally they can only be simulated. If the iFC chain and the S-SBC
-transparent bridge cannot be simulated, integration tests have nowhere to run.
+在交付环境里，S-CSCF 和 S-SBC 是运营商的网元。本地只能仿真。如果 iFC 链和 S-SBC 透明桥接无法仿真，
+集成测试就无处可跑。
 
-## Rules
+## 规则
 
-- **Load must go over real sockets.** A harness that calls callbacks directly
-  measures business logic, not capacity.
-- **v1 does not ship the testbed** as a deliverable. It is a research asset;
-  customer acceptance-test capability is v1.1.
-- SIPp is acceptable here. It is GPL, used **internally only and never
-  distributed with the product**.
+- **压测必须走真实 socket。** 直接驱动回调的 harness 测的是业务逻辑，不是容量。
+- **v1 不把 testbed 作为交付物交付。** 它是研发资产；客户验收测试能力留到 v1.1。
+- 这里可以用 SIPp。它是 GPL，仅**内部使用、绝不随产品分发**。

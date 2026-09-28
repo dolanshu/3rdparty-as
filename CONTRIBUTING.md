@@ -1,71 +1,66 @@
-# Contributing
+# 贡献指南（Contributing）
 
-## Before you start
+## 开始之前
 
-Read, in this order:
+按此顺序阅读：
 
-1. [`AGENT.md`](AGENT.md) — the rules. It binds humans and agents alike.
-2. [`docs/README.md`](docs/README.md) — where the documentation lives.
-3. [`docs/plan.md`](docs/plan.md) — which milestone is running and what is open.
+1. [`AGENT.md`](AGENT.md) —— 规则。对人和 agent 同样有约束力。
+2. [`docs/README.md`](docs/README.md) —— 文档在哪里。
+3. [`docs/plan.md`](docs/plan.md) —— 当前在跑哪个里程碑、哪些还开放。
 
-## Environment
+## 环境
 
 ```bash
-uv sync            # resolve and lock the whole workspace
-make gate          # the pre-commit gate, same order as CI layer ①
+uv sync            # 解析并锁定整个 workspace
+make gate          # 提交前门禁，顺序同 CI 第①层
 ```
 
-- Python **3.10**, pinned by `.python-version`: it is the version sippy has been
-  verified against. See `docs/plan.md` D1 before changing it.
-- `uv` manages everything. Do not use pip inside the workspace.
-- `uv.lock` is committed and verified in CI. If `uv sync` rewrites it, commit the
-  change with the change that caused it.
+- Python **3.10**，由 `.python-version` 锁定：这是 sippy 已验证过的版本。要改之前先看 `docs/plan.md` D1。
+- `uv` 管一切。workspace 内不要用 pip。
+- `uv.lock` 提交进仓库并在 CI 中校验。如果 `uv sync` 重写了它，连带着引起改动的那个 commit 一起提交。
 
-## The gate
+## 门禁（The gate）
 
-| Layer | Command | Runs on |
+| 层 | 命令 | 运行时机 |
 |---|---|---|
-| ① fast | `make test-unit` | every push and PR |
-| ② integration | `make test-integration` | after ① |
-| ③ e2e | `make test-e2e` | after ② |
-| ④ performance | `make test-perf` | nightly and tags only |
+| ① fast | `make test-unit` | 每次 push 和 PR |
+| ② integration | `make test-integration` | 在 ① 之后 |
+| ③ e2e | `make test-e2e` | 在 ② 之后 |
+| ④ performance | `make test-perf` | 仅 nightly 和 tag |
 
-`make gate` = lint + type + ①②③. Nothing is committed unless it is green first.
-The local gate is **not** CI: never present a local re-run as a CI result.
+`make gate` = lint + type + ①②③。本地门禁不绿，什么都不能提交。
+本地门禁**不是** CI：绝不要把本地重跑冒充成 CI 结果。
 
-## Adding a workspace member
+## 新增一个 workspace 成员
 
-1. Create `<dir>/pyproject.toml` with `[project]`, `[build-system]` and
-   `[tool.hatch.build.targets.wheel] packages = ["src/<package>"]`.
-2. Create `src/<package>/__init__.py` with a module responsibility statement.
-3. Add the directory to `[tool.uv.workspace].members` in the root
-   `pyproject.toml`.
-4. Add its `src/` to `[tool.ruff].src`.
-5. Add its `src/` to `[tool.mypy].files` and `mypy_path`.
-6. If it is not the kernel, add its import root to `FORBIDDEN_ROOTS` in
-   `platform/tests/test_library_independence.py`.
+1. 创建 `<dir>/pyproject.toml`，含 `[project]`、`[build-system]` 和
+   `[tool.hatch.build.targets.wheel] packages = ["src/<package>"]`。
+2. 创建 `src/<package>/__init__.py`，写明模块职责。
+3. 把该目录加入根 `pyproject.toml` 的 `[tool.uv.workspace].members`。
+4. 把它的 `src/` 加入 `[tool.ruff].src`。
+5. 把它的 `src/` 加入 `[tool.mypy].files` 和 `mypy_path`。
+6. 如果它不是内核，把它的 import 根加入 `platform/tests/test_library_independence.py` 的
+   `FORBIDDEN_ROOTS`。
 
-Steps 3–6 are asserted by the guards in `tests/`; you cannot forget them quietly.
+第 3–6 步由 `tests/` 里的守卫断言；你没法悄悄漏掉。
 
-**Do not** add a `[tool.pytest]`, `[tool.ruff]` or `[tool.mypy]` table to a member.
-Tooling has one home: the workspace root.
+**不要**给成员加 `[tool.pytest]`、`[tool.ruff]` 或 `[tool.mypy]` 表。工具配置只有一个家：workspace 根。
 
-## Commits
+## 提交（Commits）
 
-- Conventional Commits, English, one logical change per commit:
-  `feat` · `fix` · `docs` · `refactor` · `test` · `chore` · `build`.
-- No hook skipping. If a hook blocks the commit, fix the cause.
-- Never commit a secret, a certificate or a capture of real traffic.
-- Agents do not push, create branches or create tags.
+- Conventional Commits，英文，一次 commit 一个逻辑改动：
+  `feat` · `fix` · `docs` · `refactor` · `test` · `chore` · `build`。
+- 不跳过 hook。如果 hook 挡住了 commit，去修原因。
+- 绝不提交密钥、证书或真实流量抓包。
+- Agent 不 push、不创建分支、不创建 tag。
 
-## Reviews
+## 评审（Reviews）
 
-- A PR that adopts POC code cites its triage row in
-  [`docs/migration/triage.md`](docs/migration/triage.md).
-- A PR with a non-obvious design decision arrives with its ADR.
-- A PR containing AI-generated work is marked as such.
+- 采纳了 POC 代码的 PR，要在 [`docs/migration/triage.md`](docs/migration/triage.md) 中引用对应的甄别行。
+- 带有非显而易见设计决策的 PR，要带着它的 ADR 一起过来。
+- 含 AI 生成工作的 PR 要标注出来。
 
-## Cross-platform note
+## 跨平台注意
 
-`mypy_path` in the root `pyproject.toml` uses the POSIX `:` separator. On Windows
-set `MYPYPATH` in the environment instead; the build is Linux-targeted.
+根 `pyproject.toml` 里的 `mypy_path` 用的是 POSIX 的 `:` 分隔符。在 Windows 上改用环境变量
+`MYPYPATH`；本构建以 Linux 为目标。

@@ -1,58 +1,52 @@
-# ADR register
+# ADR 注册表（ADR register）
 
-Architecture decision records for `3rdparty-as`. The design they record is
-[`../新系统整体架构.md`](../新系统整体架构.md); the table below maps each confirmed
-decision in that document's §0 ledger to the ADR that carries its context,
-consequences and accepted gaps.
+`3rdparty-as` 的架构决策记录（architecture decision records）。它们记录的设计是
+[`../新系统整体架构.md`](../新系统整体架构.md)；下表把该文档 §0 账本中的每一项已确认决策，映射到
+承载其背景、后果与已接受缺口的 ADR。
 
-**Status legend** — `skeleton`: the decision is confirmed but the ADR is not
-written yet; `draft`: written, not reviewed; `accepted`: reviewed and binding.
+**状态图例** —— `skeleton`：决策已确认但 ADR 还没写；`draft`：写了，未评审；
+`accepted`：评审过且有约束力；`superseded-in-part`：部分前提被新 ADR 推翻，框架仍有效。
 
-An ADR is written **with** the change it authorises, not after it, and not in a
-batch at the end. A decision without an ADR is a decision that will be re-litigated.
+ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没有 ADR 的决策，是要被重新争论的决策。
 
-## The register
+## 注册表
 
-| ADR | Decision | §0 | Status |
+| ADR | 决策 | §0 | 状态 |
 |---|---|---|---|
-| [0000](0000-adr-template.md) | the template every ADR below uses | — | accepted |
-| 0001 | Single monorepo + uv workspace; POC and `as_platform` merged in | 3 | skeleton |
-| 0002 | Runtime model: one process per use case, state externalised to Redis | 2 | skeleton |
-| 0003 | Single ISC access semantic — S-SBC is a transparent bridge, not a second business semantic | 10 | skeleton |
-| 0004 | No media; a media seam is reserved with an explicit trigger condition | 11 | skeleton |
-| 0005 | OTel three signals, backend-neutral, export must never block the call path; call trace keeps an independent query channel | 12 | skeleton |
-| 0006 | Configuration governance: PostgreSQL version repository + change-order state machine, not GitOps | 13 | skeleton |
-| 0007 | Data plane split: Redis for run state, PostgreSQL for governance state | 14 | skeleton |
-| 0008 | Redundancy: in-site N+1 with no single point; cross-site 1+1 warm standby, not active-active | 7 | skeleton |
-| 0009 | ISSU is draining, not in-flight state migration | §6.2 | skeleton |
-| 0010 | Scaling: custom-metric HPA plus a scale-down protection controller | 15 | skeleton |
-| 0011 | SIP stack: dual-stack, `sippy` holds production, `go-b2bua` on probation | 8 | skeleton |
-| 0012 | Language-agnostic contracts and cross-implementation comparison as the promotion gate | 9 | skeleton |
-| 0013 | Helm is the only production form; compose is a developer environment | 6 | skeleton |
-| 0014 | Three-layer testbed; real-socket load; not a v1 deliverable | 16 | skeleton |
-| 0015 | Development model: layered TDD, institutionalised ADRs, four CI gates | 17 | skeleton |
-| 0016 | Security inside the boundary: peer allowlist, end-to-end TLS, console authz, full audit. No LI, no charging | 18 | skeleton |
-| 0017 | No CDR: no collection, no delivery channel, no archive — call trace replaces it | 4 | skeleton |
-| 0018 | One product release version, independent component interface versions | §11.3 | skeleton |
+| [0000](0000-adr-template.md) | 下面每个 ADR 使用的模板 | — | accepted |
+| 0001 | 单一 monorepo + uv workspace；POC 与 `as_platform` 并入 | 3 | skeleton |
+| 0002 | 运行时模型：一个用例一个进程，状态外置到 Redis | 2 | skeleton |
+| 0003 | 单一 ISC 接入语义 —— S-SBC 是透明桥接，不是第二种业务语义 | 10 | skeleton |
+| 0004 | 不做媒体；保留一个媒体 seam 并写明触发条件 | 11 | skeleton |
+| 0005 | OTel 三信号，后端中立，导出绝不能阻塞呼叫路径；呼叫轨迹保留独立查询通道 | 12 | skeleton |
+| 0006 | 配置治理：PostgreSQL 版本库 + 变更单状态机，而非 GitOps | 13 | skeleton |
+| 0007 | 数据面拆分：Redis 存运行态，PostgreSQL 存治理态 | 14 | skeleton |
+| 0008 | 冗余：站点内 N+1 零单点；跨站点 1+1 温备，非双活 | 7 | skeleton |
+| 0009 | ISSU 是 draining，不是在途状态迁移 | §6.2 | skeleton |
+| 0010 | 扩缩容：自定义指标 HPA + 缩容保护控制器 | 15 | skeleton |
+| 0011 | ~~SIP 栈：双栈，`sippy` 保生产，`go-b2bua` 试点~~ **栈前提被 ADR-0019 推翻**：sippy 退出生产栈；双栈并行框架仍有效 | 8 | superseded-in-part |
+| 0012 | 语言无关契约 + 跨实现对拍作为转正门槛 | 9 | skeleton |
+| 0013 | Helm 是唯一生产形态；compose 仅作开发环境 | 6 | skeleton |
+| 0014 | 三层 testbed；真实 socket 压测；不是 v1 交付物 | 16 | skeleton |
+| 0015 | 研发模式：分层 TDD、ADR 制度化、四层 CI 门禁 | 17 | skeleton |
+| 0016 | 边界内安全：对端白名单、端到端 TLS、控制台鉴权、全量审计。不做 LI、不做计费 | 18 | skeleton |
+| 0017 | 不做 CDR：不采集、不投递、不归档 —— 由呼叫轨迹替代 | 4 | skeleton |
+| 0018 | 一个产品 release 版本，独立的组件接口版本 | §11.3 | skeleton |
+| [0019](0019-*.md) | 生产 SIP 协议栈选型（推翻 0011 的栈前提；候选 go-b2bua / reSIProcate / libre（SIP/SDP）；rsipstack 因 Rust 不在团队技术栈内被否决） | 8 | **draft** |
+| [0020](0020-feature-capability-gating.md) | Feature 能力门控：分层（部署级总开关 + 运行态细粒度覆盖），复用配置治理变更流水线 | 19 | draft |
 
-## Rules
+## 规则
 
-- **Numbering is append-only.** A superseded ADR keeps its number and is marked
-  superseded by the newer one; numbers are never reused or renumbered.
-- **One decision per ADR.** "Architecture" is not a decision.
-- **An ADR states what it accepts.** The gaps it knowingly accepts are part of the
-  record; an ADR with no consequences section is propaganda.
-- **Code points at its ADR.** A non-obvious line carries `# See ADR-00NN` so a
-  reviewer moves from code to rationale in one step.
-- **Reversing a decision** means writing a new ADR and updating
-  [`../新系统整体架构.md`](../新系统整体架构.md) in the same change.
+- **编号只追加。** 被取代的 ADR 保留编号并标为被新 ADR 取代；编号绝不重用或重排。
+- **一个 ADR 一个决策。** "架构"不是决策。
+- **ADR 必须写明它接受了什么。** 它明知故犯的缺口是记录的一部分；没有 consequences 节的 ADR 是宣传。
+- **代码指向它的 ADR。** 一行不显而易见的代码带 `# See ADR-00NN`，审稿人能从代码一步走到理由。
+- **推翻一个决策** 意味着写一个新的 ADR，并在同一次改动里更新
+  [`../新系统整体架构.md`](../新系统整体架构.md)。
 
-## Relationship to the POC ADRs
+## 与 POC ADR 的关系
 
-The POC carried ADR-0001 … ADR-0016 in `3rtparty_AS_POC/docs/architecture/adr/`.
-They are **not** imported. They record decisions about a proof of concept — a
-different system with different non-goals. Where a POC decision survives into the
-product it is re-argued here against product constraints and the POC original is
-cited as context. Where it does not survive, it is simply absent, and the
-migration triage ([`../../migration/triage.md`](../../migration/triage.md)) records
-why.
+POC 在 `3rtparty_AS_POC/docs/architecture/adr/` 里带了 ADR-0001 … ADR-0016。它们**不**导入。
+它们记录的是一个概念验证 —— 一个有着不同非目标的不同系统 —— 的决策。某条 POC 决策存活进产品时，
+要在这里对着产品约束重新论证，POC 原文作为背景引用。没存活的，就干脆缺席，迁移甄别
+（[`../../migration/triage.md`](../../migration/triage.md)）记录原因。

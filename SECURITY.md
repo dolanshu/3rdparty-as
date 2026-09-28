@@ -1,34 +1,29 @@
-# Security policy
+# 安全政策（Security policy）
 
-## Reporting
+## 报告（Reporting）
 
-Report suspected vulnerabilities privately to the maintainer
-(`dolan.d.shu@gmail.com`). Do not open a public issue for a security problem.
-Include what you observed, how to reproduce it, and the version from `./VERSION`.
+将疑似漏洞私下报告给维护者（<dolan.d.shu@gmail.com>）。不要用公开 issue 报告安全问题。
+请包含你观察到的现象、复现方法，以及 `./VERSION` 中的版本号。
 
-## Scope
+## 范围（Scope）
 
-In scope: the AS processes under `apps/` and `platform/`, the control plane under
-`services/`, the deployment assets under `deploy/`, and the trunk-facing attack
-surface.
+在范围内的：位于 `apps/` 与 `platform/` 下的 AS 进程、`services/` 下的控制面、
+`deploy/` 下的部署资产，以及面向 trunk 的攻击面。
 
-Explicitly out of scope by design:
+按设计明确在范围之外的：
 
-- **Lawful interception** — not implemented and not planned (ADR-0016).
-- **Media handling** — the system is signalling-only (ADR-0004).
-- **Charging and CDR** — not implemented (ADR-0017).
+- **合法监听（Lawful interception）** —— 未实现也不计划实现（ADR-0016）。
+- **媒体处理（Media handling）** —— 本系统只做信令（ADR-0004）。
+- **计费与 CDR** —— 未实现（ADR-0017）。
 
-## What is expected of the system
+## 对系统的期望
 
-- The SIP trunk is treated as **untrusted**: a peer is checked against the
-  allowlist, and TLS terminates end to end with the S-SBC. Anyone able to
-  impersonate the S-SBC can inject calls, so peer authenticity is not optional.
-- Certificate rotation is a configuration hot update — no restart, no dropped
-  in-flight call.
-- Every console operation is authenticated and audited.
-- Payload logging is switchable and off by default in logs.
+- SIP trunk 被视为**不可信**：对端要按白名单校验，TLS 与 S-SBC 端到端终止。
+  任何能伪装成 S-SBC 的人都能灌入呼叫，所以对端真实性不是可选项。
+- 证书轮换是配置热更新 —— 不重启、不掉在途呼叫。
+- 每个控制台操作都要鉴权并审计。
+- 载荷日志可开关，日志里默认关闭。
 
-## What is never committed
+## 绝不提交的东西
 
-Keys, certificates, tokens, real network addresses and captures of real traffic.
-Only `.env.example` placeholders belong in the repository.
+密钥、证书、token、真实网络地址，以及真实流量抓包。仓库里只放 `.env.example` 占位符。

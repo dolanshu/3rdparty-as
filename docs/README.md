@@ -1,35 +1,34 @@
-# Documentation map
+# 文档导航（Documentation map）
 
-Read by audience. Everything is plain text — Mermaid or ASCII diagrams, never a
-rendered image that cannot be diffed.
+按读者角色阅读。全部是纯文本 —— Mermaid 或 ASCII 图，绝不放无法 diff 的渲染图片。
 
-## Decide what to build
+## 决定要做什么
 
-| Document | What it is |
+| 文档 | 是什么 |
 |---|---|
-| [`architecture/新系统整体架构.md`](architecture/新系统整体架构.md) | **the design baseline.** Every confirmed decision, its rationale, the open list and the risk register |
-| [`architecture/adr/`](architecture/adr/) | decision records; start at its README for the register |
-| [`plan.md`](plan.md) | the delivery plan: milestones, sequence, exit criteria |
-| [`migration/triage.md`](migration/triage.md) | how POC code is triaged before anything is adopted |
+| [`architecture/新系统整体架构.md`](architecture/新系统整体架构.md) | **设计基线。** 每一项已确认决策、其理由、未决清单与风险登记 |
+| [`architecture/adr/`](architecture/adr/) | 决策记录；先看它的 README 里的注册表 |
+| [`plan.md`](plan.md) | 交付计划：里程碑、顺序、退出标准 |
+| [`migration/triage.md`](migration/triage.md) | 在采纳任何东西之前，POC 代码如何被甄别 |
 
-## Build it
+## 构建它
 
-| Document | What it is |
+| 文档 | 是什么 |
 |---|---|
-| [`../AGENT.md`](../AGENT.md) | **read before writing code.** Rules of engagement, layering, TDD policy, CI gates, git rules |
-| [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | environment setup, the local gate, commit and review conventions |
-| [`../README.md`](../README.md) | positioning, repository tour, quickstart |
+| [`../AGENT.md`](../AGENT.md) | **写代码之前先读。** 协作守则、分层、TDD 政策、CI 门禁、git 规则 |
+| [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | 环境搭建、本地门禁、commit 与评审约定 |
+| [`../README.md`](../README.md) | 定位、仓库导览、快速开始 |
 
-## Run it
+## 运行它
 
-| Document | What it is |
+| 文档 | 是什么 |
 |---|---|
-| `operations/` | deployment, runbook, troubleshooting — lands with the deployment milestone |
-| `acceptance/` | acceptance criteria with evidence per item — lands with the first release milestone |
+| `operations/` | 部署、runbook、排障 —— 随部署里程碑落地 |
+| `acceptance/` | 逐条带证据的验收标准 —— 随首个发布里程碑落地 |
 
-## Reference
+## 参考
 
-| Document | What it is |
+| 文档 | 是什么 |
 |---|---|
-| `glossary.md` | IMS / SIP terminology — lands with the first code milestone |
-| `specs/` | normative references (RFC 3261, RFC 4566, RFC 8688, TS 24.229) and message samples |
+| `glossary.md` | IMS / SIP 术语表 —— 随首个代码里程碑落地 |
+| `specs/` | 规范性参考（RFC 3261、RFC 4566、RFC 8688、TS 24.229）与消息样例 |

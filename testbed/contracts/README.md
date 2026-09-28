@@ -1,28 +1,22 @@
-# `testbed/contracts/` — the language-agnostic contract
+# `testbed/contracts/` — 语言无关契约
 
-This directory holds **data, not code**: the case set that every implementation
-of an AS use case must satisfy, expressed without reference to Python or Go.
+这个目录放的是**数据，不是代码**：每个 AS 用例实现都必须满足的用例集，不引用 Python 或 Go 来表达。
 
-It is the entry ticket for the Go migration (ADR-0012): an implementation may be
-promoted only when it reproduces this case set output-for-output against the
-Python implementation.
+它是 Go 迁移的入场券（ADR-0012）：一个实现只有在对着 Python 实现、逐输出地复现这个用例集时，才能转正。
 
-## What belongs here
+## 这里放什么
 
-| Contract | Content |
+| 契约 | 内容 |
 |---|---|
-| rule schema | the declarative rule document, versioned |
-| `decide()` case set | inbound request → verdict, one file per scenario |
-| OTel semantics | metric names, units, attribute keys, log field set |
-| internal API | `/healthz`, `/metrics`, `/traces` request and response shapes |
-| configuration distribution | the config-service ↔ AS interface |
-| call trace format | the per-message record a Call-ID lookup returns |
+| 规则 schema | 声明式规则文档，版本化 |
+| `decide()` 用例集 | 入站请求 → 判决，一个场景一个文件 |
+| OTel 语义 | 指标名、单位、属性键、日志字段集 |
+| 内部 API | `/healthz`、`/metrics`、`/traces` 的请求与响应形态 |
+| 配置分发 | config-service ↔ AS 的接口 |
+| 呼叫轨迹格式 | 一次 Call-ID 查询返回的逐消息记录 |
 
-## Rules
+## 规则
 
-- A case is **declarative**: input document + expected output document. No
-  assertions written in a host language.
-- Adding or changing a contract case is an **interface change**: it needs an ADR
-  and it re-runs every implementation's gate.
-- An implementation that cannot express a case has found a real difference
-  between the stacks, not a reason to relax the case.
+- 用例是**声明式**的：输入文档 + 期望输出文档。不用宿主语言写断言。
+- 新增或改动一个契约用例是**接口变更**：需要一条 ADR，并重跑每个实现的门禁。
+- 一个表达不出某用例的实现，是发现了栈之间的真实差异，而不是放宽用例的理由。

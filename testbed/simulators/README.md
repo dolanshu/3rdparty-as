@@ -1,15 +1,13 @@
 # `testbed/simulators/`
 
-Simulated operator network elements. What we do not deliver has to be modelled,
-or integration tests have nowhere to run.
+运营商网元的仿真。我们不交付的东西必须被建模，否则集成测试无处可跑。
 
-| Simulator | Stands in for | Must model |
+| 仿真器 | 替代 | 必须建模 |
 |---|---|---|
-| S-SBC | the operator's boundary | **transparent bridging** and topology hiding, in both directions. The AS's single ISC semantic depends on it (ADR-0003) |
-| P-CSCF / S-CSCF | the IMS core | iFC chaining: S-CSCF#1 → S-SBC → AS → S-SBC → S-CSCF#2 … |
+| S-SBC | 运营商边界 | **透明桥接**与拓扑隐藏，双向。AS 的单一 ISC 语义依赖它（ADR-0003） |
+| P-CSCF / S-CSCF | IMS 核心 | iFC 链：S-CSCF#1 → S-SBC → AS → S-SBC → S-CSCF#2 … |
 
-Built on the same SIP stack as the AS, so both sides of a test speak identical
-protocol behaviour — the same rule the POC applied, and the reason this package
-depends on `as-platform`.
+构建于与 AS 相同的 SIP 栈之上，所以测试双方说相同的协议行为 —— 这是 POC 用的同一条规则，也是这个包
+依赖 `as-platform` 的原因。
 
-Research and CI asset. **Not a v1 deliverable** (ADR-0014).
+研发与 CI 资产。**不是 v1 交付物**（ADR-0014）。

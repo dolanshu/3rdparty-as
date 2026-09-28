@@ -1,25 +1,22 @@
-# `apps/translation/` — number translation AS
+# `apps/translation/` — 号码翻译 AS
 
-Two-legged B2BUA. It terminates the trunk INVITE from the S-SBC (UAS), applies
-the translation and routing decision, and originates a new INVITE back through
-the S-SBC (UAC) with a new Call-ID.
+双腿 B2BUA。它终结来自 S-SBC 的 trunk INVITE（UAS），应用翻译与路由决策，再用一个新的 Call-ID
+经 S-SBC 发起一个新的 INVITE 回去（UAC）。
 
-**In scope here:** the decision. Declarative rules in, a verdict out.
+**此处范围内：** 决策。声明式规则进，一个判决出。
 
-**Not in scope here:** SIP mechanics (they live in `platform/`), session state
-(it lives in Redis), rule storage and approval (they live in
-`services/config-service/`).
+**此处范围外：** SIP 机制（它们在 `platform/`）、会话状态（在 Redis）、规则存储与审批（在
+`services/config-service/`）。
 
-## Shape
+## 形态
 
-| Concern | Where |
+| 关注点 | 在哪 |
 |---|---|
-| `decide()` implementation | this package, over the kernel's seam |
-| translation and routing rules | pure functions, no sockets, no clock, TDD'd |
-| rule documents | delivered by config-service, versioned, with a compatibility matrix |
-| session state | Redis through the `StateStore` seam |
+| `decide()` 实现 | 本包，在内核的 seam 之上 |
+| 翻译与路由规则 | 纯函数，无 socket、无时钟、做 TDD |
+| 规则文档 | 由 config-service 交付，版本化，带兼容矩阵 |
+| 会话状态 | 经 `StateStore` seam 进 Redis |
 
-## Status
+## 状态
 
-Skeleton. The decision module is the first thing written here, and it is written
-test-first: it is the highest-value TDD target in the repository.
+骨架。决策模块是这里最先写的东西，且 test-first：它是全仓库价值最高的 TDD 目标。

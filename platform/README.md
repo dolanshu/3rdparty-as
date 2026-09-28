@@ -1,24 +1,21 @@
-# `platform/` — the kernel (layer ②)
+# `platform/` — 内核（layer ②）
 
-The shared shell that every AS instance is built on. It contains what is common
-to all use cases and nothing that belongs to one of them:
+每个 AS 实例都构建于其上的共享壳。它包含对所有用例共同的东西，不含任何属于某一个用例的东西：
 
-| Concern | Why it lives here |
+| 关注点 | 为什么住在这里 |
 |---|---|
-| Process shell (`main`, `bootstrap`) | one way to start, self-check and shut down an AS process |
-| B2BUA state machine (`call_controller`) | the RFC 3261 leg handling every use case needs |
-| `decide()` seam | the single point where a use case injects its business verdict |
-| `Transport` seam | UDP today, TLS to the S-SBC in production (ADR-0016) |
-| `StateStore` seam | in-memory today, Redis in production (ADR-0002) |
-| Observability primitives | one OTel-based signal model for every process |
+| 进程壳（`main`、`bootstrap`） | 启动、自检、关闭一个 AS 进程的统一方式 |
+| B2BUA 状态机（`call_controller`） | 每个用例都需要的 RFC 3261 腿处理 |
+| `decide()` seam | 用例注入其业务判决的唯一点 |
+| `Transport` seam | 今天 UDP，生产里到 S-SBC 的 TLS（ADR-0016） |
+| `StateStore` seam | 今天内存，生产里 Redis（ADR-0002） |
+| 可观测性原语 | 每个进程统一的、基于 OTel 的信号模型 |
 
-## Hard rule
+## 硬性规则
 
-**This package must never import `apps/*`, `services/*` or `testbed/*`.**
-The dependency direction is one-way and is asserted by
-`tests/test_library_independence.py`, not by the directory layout.
+**这个包绝不能 import `apps/*`、`services/*` 或 `testbed/*`。**
+依赖方向是单向的，由 `tests/test_library_independence.py` 断言，而非由目录布局保证。
 
-## Status
+## 状态
 
-Skeleton only. The code arrives through the triage-driven migration in
-`docs/migration/triage.md`; nothing is copied in wholesale.
+仅有骨架。代码通过 `docs/migration/triage.md` 里的甄别驱动迁移进来；绝不整块照搬。

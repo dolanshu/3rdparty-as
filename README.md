@@ -82,7 +82,7 @@ make help          # 全部 target
 - 目录结构与 uv workspace（7 个成员）
 - 三个结构守卫：依赖方向、布局、版本一致性
 - 四层 CI 门禁
-- ADR 台账：18 项已确认决策 → ADR 编号（[`docs/architecture/adr/`](docs/architecture/adr/)）
+- ADR 台账：19 项已确认决策 → ADR 编号（[`docs/architecture/adr/`](docs/architecture/adr/)）
 - 代码甄别清单：[`docs/migration/triage.md`](docs/migration/triage.md)
 
 代码在结构通过评审后按里程碑迁入，计划见 [`docs/plan.md`](docs/plan.md)。
@@ -99,7 +99,7 @@ make help          # 全部 target
 |---|---|
 | [`AGENT.md`](AGENT.md) | 规则、分层、测试策略、门禁、git 规则 |
 | [`docs/README.md`](docs/README.md) | 按读者的文档导航 |
-| [`docs/architecture/新系统整体架构.md`](docs/architecture/新系统整体架构.md) | 设计基线：18 项决策、未决清单、风险登记 |
+| [`docs/architecture/新系统整体架构.md`](docs/architecture/新系统整体架构.md) | 设计基线：19 项决策、未决清单、风险登记 |
 | [`docs/plan.md`](docs/plan.md) | 里程碑计划与未决清单 |
 | [`docs/migration/triage.md`](docs/migration/triage.md) | POC 代码甄别方法与清单 |
 | [`docs/architecture/adr/`](docs/architecture/adr/) | 架构决策记录 |

@@ -38,4 +38,4 @@ test-e2e: ## ③ end-to-end call flows
 test-perf: ## ④ capacity baseline (never part of the commit gate)
 	uv run pytest -m performance -q
 
-gate: lint type test ## the pre-commit gate: lint, type, then all three layers
+gate: lint type test-unit ## the pre-commit gate: lint, type, then layer ① (unit + contract)

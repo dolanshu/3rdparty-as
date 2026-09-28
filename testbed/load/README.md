@@ -1,20 +1,15 @@
 # `testbed/load/`
 
-Capacity harness: generates SIP load and measures where the boundary is.
+容量 harness：生成 SIP 负载，测出边界在哪。
 
-## The one rule that matters
+## 要紧的那条规则
 
-**Load goes over real sockets.** The POC's harness drove callbacks directly, which
-bypassed the socket and the event loop — it measured business logic, not the
-system. Numbers from such a harness cannot answer "has CPS hit the wall", and
-therefore cannot decide whether Go is needed (ADR-0014).
+**压测走真实 socket。** POC 的 harness 直接驱动回调，绕过了 socket 与事件循环 —— 它测的是业务逻辑，
+不是系统。这种 harness 出来的数字无法回答" CPS 撞墙了没有"，因此也无法决定是否需要 Go（ADR-0014）。
 
-## What it must produce
+## 它必须产出什么
 
-Per stack: CPS, concurrent sessions, call setup latency — and the resource that
-saturated first. This is the input to O1 and to ADR-0011; it is not a marketing
-number and is not published before M6
-([`../../docs/plan.md`](../../docs/plan.md)).
+按栈：CPS、并发会话、呼叫建立时延 —— 以及最先饱和的资源。这是 O1 与 ADR-0011 的输入；它不是营销
+数字，在 M6 之前不发布（[`../../docs/plan.md`](../../docs/plan.md)）。
 
-SIPp (GPL) is acceptable here: internal test use only, never distributed with the
-product.
+SIPp（GPL）这里可用：仅内部测试使用，绝不随产品分发。

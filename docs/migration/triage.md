@@ -1,138 +1,126 @@
-# Migration triage — how POC code enters this repository
+# 迁移甄别（Migration triage）— POC 代码如何进入本仓库
 
-**Nothing is copied in wholesale.** The POC (`3rtparty_AS_POC`, ~24 kLOC
-including tests and tools) and the extracted library (`as_platform`, ~4.2 kLOC)
-were built to prove a concept, under non-goals that the product explicitly does
-not share: no HA, no persistence, no capacity target, no managed configuration.
-Adopting a file because it exists is exactly how the product inherits those
-non-goals with the code.
+**绝不整块照搬。** POC（`3rtparty_AS_POC`，约 24 kLOC，含测试与工具）和抽出来的库
+（`as_platform`，约 4.2 kLOC）是为验证概念而建的，处于一套本产品明确不共享的非目标之下：
+无 HA、无持久化、无容量目标、无受管配置。因为"文件存在就采纳"，正是产品连同代码一起继承那些
+非目标的方式。
 
-Every file that crosses over is triaged first. The output of triage is a
-verdict per file, with evidence.
+每个越界的文件都要先甄别。甄别的产出是逐文件的裁决，且要有证据。
 
-## 1. Sequence — snapshot before you touch anything
+## 1. 顺序 —— 在碰任何东西之前先快照
 
-1. **Freeze the POC.** Record the commit of `3rtparty_AS_POC` and `as_platform`
-   that this triage was made against. The POC does not change while the product
-   is being built; if it must, the triage is re-run for the affected files.
-2. **Capture the behaviour baseline.** Before any file is rewritten, capture what
-   the POC actually does: real message samples, end-to-end call traces, and the
-   observed sippy behaviour the code depends on. A rewrite is only allowed to
-   claim "equivalent" against this baseline, never against memory.
-3. **Inventory and classify** every file, using §3.
-4. **Only then write code** into `platform/`, `apps/`, `services/`, `testbed/`.
+1. **冻结 POC。** 记下本次甄别所基于的 `3rtparty_AS_POC` 与 `as_platform` 的 commit。
+   在构建产品期间 POC 不变；如果必须变，受影响的文件要重跑甄别。
+   - 冻结点（维护者批准，2026-09-27）：`3rtparty_AS_POC` @ `4ddf3df332f950ea41d261274dfa1178a0930de4`（`as_platform` 的提交包含在该仓库历史中）。M1 期间 POC 不变；如果必须变，受影响文件重跑甄别。
+2. **抓取行为基线。** 在重写任何文件之前，抓取 POC 实际做了什么：真实消息样例、端到端呼叫
+   trace、代码所依赖的观察到的 sippy 行为。重写只允许对着这个基线声称"等价"，绝不对着记忆。
+3. **清点并分类** 每个文件，用 §3。
+4. **只有到那时** 才把代码写进 `platform/`、`apps/`、`services/`、`testbed/`。
 
-Steps 1 and 2 are not optional. Without a baseline, "the rewrite behaves the
-same" is an assertion no one can check.
+第 1、2 步不是可选项。没有基线，"重写后行为相同"就是一个谁都无法核查的断言。
 
-## 2. The four verdicts
+## 2. 四种裁决
 
-| Verdict | Meaning | Burden of proof |
+| 裁决 | 含义 | 举证责任 |
 |---|---|---|
-| **A — adopt** | The file matches the target architecture and its behaviour is already verified by tests | Existing tests must pass here unchanged, or be re-written to prove the same behaviour |
-| **B — rewrite, concept kept** | The idea survives; the implementation violates a product constraint (statefulness, blocking, no versioning, no audit) | Name the constraint and the ADR that imposes it |
-| **C — baseline reference only** | The code is not adopted. It is read to recover behaviour that must be reproduced | The recovered behaviour must become a contract case or a test |
-| **D — discard** | Nothing to carry over | One line stating why |
+| **A — 采纳（adopt）** | 文件符合目标架构，且其行为已被测试验证 | 现有测试必须原样在这里通过，或重写以证明同一行为 |
+| **B — 重写、保留概念** | 想法存活；实现违反了产品约束（有状态、阻塞、无版本化、无审计） | 指明约束以及施加它的 ADR |
+| **C — 仅作基线参考** | 代码不采纳。读它是为了恢复必须被复现的行为 | 恢复出的行为必须变成契约用例或测试 |
+| **D — 丢弃（discard）** | 没有可带过来的东西 | 一句话说明原因 |
 
-A file with no verdict does not move. A verdict with no evidence is not a verdict.
+没有裁决的文件不迁移。没有证据的裁决不算裁决。
 
-## 3. Inventory and opening classification
+## 3. 清点与初步分类
 
-Sizes are as measured at triage time. **The classification column is an opening
-proposal, derived from the POC's `AGENT.md`, its ADRs and
-[`../architecture/新系统整体架构.md`](../architecture/新系统整体架构.md) — it is not
-a file-by-file review.** Each row is confirmed or overturned during M1, which is
-why M1 does not write product code.
+规模为甄别时实测。**分类列是初步提议**，源自 POC 的 `AGENT.md`、它的 ADR 以及
+[`../architecture/新系统整体架构.md`](../architecture/新系统整体架构.md) —— 它不是逐文件的评审。
+每一行在 M1 中确认或推翻，这正是 M1 不写产品代码的原因。
 
-### `as_platform/` → `platform/` (~4.2 kLOC)
+### `as_platform/` → `platform/`（约 4.2 kLOC）
 
-| File | LOC | Verdict | Why |
+| 文件 | LOC | 裁决 | 原因 |
 |---|---|---|---|
-| `call_controller.py` | 1030 | C | The B2BUA state machine is the deepest coupling to sippy and to in-process state. §6.2 states outright that sippy's transaction state cannot be serialised or migrated, so the product's draining model has to be built around it, not on top of it. Recover behaviour, then rewrite. |
-| `internal_api.py` | 497 | B | The surface becomes the language-agnostic contract (`/healthz`, `/metrics`, `/traces`) in ADR-0012. Shape survives, payloads do not. |
-| `observability/tracing.py` | 347 | B | Call trace becomes a product capability queried by Call-ID, with retention (ADR-0005); the in-memory ring does not survive. |
-| `state_store.py` | 334 | B | The `StateStore` seam is the right idea and stays. `InMemoryStateStore` does not: §7 requires Redis with Sentinel, and ADR-0002 forbids per-process session state. |
-| `main.py` | 357 | B | Process shell survives; it gains draining, version reporting and non-blocking export (ADR-0009, ADR-0005). |
-| `transport.py` | 239 | B | UDP plus a `TlsTransport` that only reached the listening side. ADR-0016 requires end-to-end TLS with rotation that does not restart the process. |
-| `observability/logging.py` | 193 | B | Structured fields survive; the emitter becomes OTel logs. |
-| `observability/metrics.py` | 179 | B | `MetricsRegistry` is an in-process view, useless behind N replicas. Gains `active_calls` and `cps`, which HPA also needs (ADR-0010). |
-| `capacity_harness.py` | 195 | C | Drives callbacks, not sockets. ADR-0014: a harness that bypasses the socket and the event loop measures business logic, not capacity. |
-| `errors.py` | 163 | A | The memberless `ErrorCode` mechanism over per-family subclasses is already the model the product wants. |
-| `sip_adapter.py` | 244 | B | Keeps sippy confined to one module, which is exactly right. Re-argued against the dual-stack decision (ADR-0011). |
-| `bootstrap.py` | 111 | B | Startup self-check survives and is extended (state store reachability, rule version). |
-| `version.py` | 102 | D | Per-component version files are the drift ADR-0018 removes. |
-| `route_header.py` | 84 | A | Small, RFC-derived, testable. Verify against observed behaviour. |
-| `hop.py` | 53 | A | `NextHop` value object, no product constraint touches it. |
+| `call_controller.py` | 1030 | C | B2BUA 状态机是对 sippy 与进程内状态最深的耦合。§6.2 直言 sippy 的事务状态无法序列化或迁移，所以产品的 draining 模型必须绕着它建，而不是建在它之上。先恢复行为，再重写。 |
+| `internal_api.py` | 497 | B | 表面变成 ADR-0012 中的语言无关契约（`/healthz`、`/metrics`、`/traces`）。形状存活，载荷不存活。 |
+| `observability/tracing.py` | 347 | B | 呼叫轨迹变成可按 Call-ID 查询的产品能力，带保留期（ADR-0005）；进程内 ring 不存活。 |
+| `state_store.py` | 334 | B | `StateStore` seam 是对的，留着。`InMemoryStateStore` 不留：§7 要求 Redis 加 Sentinel，且 ADR-0002 禁止每进程会话状态。 |
+| `main.py` | 357 | B | 进程壳存活；它获得 draining、版本上报、非阻塞导出（ADR-0009、ADR-0005）。 |
+| `transport.py` | 239 | B | UDP 加一个只到监听侧的 `TlsTransport`。ADR-0016 要求端到端 TLS 加轮换，且不能重启进程。 |
+| `observability/logging.py` | 193 | B | 结构化字段存活；emitter 换成 OTel logs。 |
+| `observability/metrics.py` | 179 | B | `MetricsRegistry` 是进程内视图，在 N 个副本之后无意义。获得 `active_calls` 与 `cps`，HPA 也要（ADR-0010）。 |
+| `capacity_harness.py` | 195 | C | 驱动回调而非 socket。ADR-0014：绕过 socket 与事件循环的 harness 测的是业务逻辑，不是容量。 |
+| `errors.py` | 163 | A | 基于每族子类的、无成员的 `ErrorCode` 机制，正是产品想要的形态。 |
+| `sip_adapter.py` | 244 | B | 把 sippy 限制在一个模块内，完全正确。对着双栈决策重新论证（ADR-0011）。 |
+| `bootstrap.py` | 111 | B | 启动自检存活并扩展（状态存储可达性、规则版本）。 |
+| `version.py` | 102 | D | 每组件版本文件正是 ADR-0018 要消灭的漂移。 |
+| `route_header.py` | 84 | A | 小、源自 RFC、可测试。对着观察到的行为验证。 |
+| `hop.py` | 53 | A | `NextHop` 值对象，没有产品约束碰到它。 |
 | `observability/__init__.py` | 21 | A | — |
-| `__init__.py` | 59 | B | Re-exports only; rebuilt for the new package surface. |
+| `__init__.py` | 59 | B | 只做再导出；为新的包表面重建。 |
 
-### `src/as_app/` → `apps/translation/` (~2.3 kLOC)
+### `src/as_app/` → `apps/translation/`（约 2.3 kLOC）
 
-| File | LOC | Verdict | Why |
+| 文件 | LOC | 裁决 | 原因 |
 |---|---|---|---|
-| `call_controller.py` | 527 | C | Thin glue over the kernel state machine; rewritten with it. |
-| `internal_api.py` | 388 | B | See kernel `internal_api.py`. |
-| `main.py` | 331 | B | Process shell for one use case. |
-| `routing/rules.py` | 371 | B | Loading and hot reload are right; the source of truth moves to config-service with versions and a compatibility matrix (ADR-0006, R4). |
-| `routing/engine.py` | 220 | **A** | Pure functions, no sockets, no clock — exactly the shape TDD is mandated for. Adopt with its tests. |
-| `bootstrap.py` | 164 | B | See kernel `bootstrap.py`. |
-| `observability/*` | ~147 | D | Re-export facades that existed only to bridge two repositories. The monorepo makes them meaningless. |
-| `errors.py` | 63 | A | The `AS-RULE-*` / `AS-ROUTE-*` family. |
-| `route_header.py` | 61 | D | Duplicates the kernel's; one copy only. |
-| `sip_adapter.py` | 47 | D | Re-export facade, same reason as `observability/*`. |
+| `call_controller.py` | 527 | C | 内核状态机之上的薄胶水；随内核一起重写。 |
+| `internal_api.py` | 388 | B | 见内核 `internal_api.py`。 |
+| `main.py` | 331 | B | 一个用例的进程壳。 |
+| `routing/rules.py` | 371 | B | 加载与热重载是对的；事实源移到 config-service，带版本与兼容矩阵（ADR-0006、R4）。 |
+| `routing/engine.py` | 220 | **A** | 纯函数，无 socket、无时钟 —— 正是强制 TDD 的形态。带着它的测试采纳。 |
+| `bootstrap.py` | 164 | B | 见内核 `bootstrap.py`。 |
+| `observability/*` | ~147 | D | 仅为桥接两个仓库而存在的再导出门面。monorepo 让它们失去意义。 |
+| `errors.py` | 63 | A | `AS-RULE-*` / `AS-ROUTE-*` 族。 |
+| `route_header.py` | 61 | D | 重复内核的；只留一份。 |
+| `sip_adapter.py` | 47 | D | 再导出门面，同 `observability/*` 的原因。 |
 | `__init__.py` | 84 | B | — |
 
-### `src/anti_fraud_as/` → `apps/anti-fraud/` (~2.6 kLOC)
+### `src/anti_fraud_as/` → `apps/anti-fraud/`（约 2.6 kLOC）
 
-| File | LOC | Verdict | Why |
+| 文件 | LOC | 裁决 | 原因 |
 |---|---|---|---|
-| `call_controller.py` | 601 | C | The verdict seam is the right concept; the leg handling is rewritten with the kernel. |
-| `internal_api.py` | 394 | B | See above. |
+| `call_controller.py` | 601 | C | 判决 seam 概念是对的；腿处理随内核重写。 |
+| `internal_api.py` | 394 | B | 见上。 |
 | `main.py` | 357 | B | — |
-| `screening_data.py` | 405 | B | The declarative model survives; the schema must be versioned with a compatibility matrix (R4). |
-| `caller_state.py` | 352 | B | Rate windows and reputation decay move out of process memory into Redis (ADR-0002, R5). |
-| `screening.py` | 180 | **A** | The pure verdict function. Adopt with its tests; it is the highest-value TDD target in the tree. |
+| `screening_data.py` | 405 | B | 声明式模型存活；schema 必须版本化并带兼容矩阵（R4）。 |
+| `caller_state.py` | 352 | B | 速率窗口与信誉衰减移出进程内存、进 Redis（ADR-0002、R5）。 |
+| `screening.py` | 180 | **A** | 纯判决函数。带着它的测试采纳；它是全树中价值最高的 TDD 目标。 |
 | `bootstrap.py` | 157 | B | — |
-| `errors.py` | 60 | A | The `AS-FRAUD-*` family. |
-| `route_header.py` | 61 | D | Duplicate. |
+| `errors.py` | 60 | A | `AS-FRAUD-*` 族。 |
+| `route_header.py` | 61 | D | 重复。 |
 | `__init__.py` | 33 | B | — |
 
-### `src/console/` → `services/console/` (~1 kLOC)
+### `src/console/` → `services/console/`（约 1 kLOC）
 
-| File | LOC | Verdict | Why |
+| 文件 | LOC | 裁决 | 原因 |
 |---|---|---|---|
-| `main.py` | 990 | C | Read-only, no authentication, inline HTML/CSS/JS with a vendored Chart.js. The product console is read-write behind SSO with full audit (ADR-0016). Recover the operator-facing behaviours as acceptance items; the page is rebuilt. |
+| `main.py` | 990 | C | 只读、无鉴权、内联 HTML / CSS / JS 加一个 vendored Chart.js。产品控制台是 SSO 之后读写、全审计的（ADR-0016）。把面向运营商的行为恢复为验收项；页面重建。 |
 
-### `src/s_sbc_mock/`, `src/ims_mock/` → `testbed/simulators/` (~2.2 kLOC)
+### `src/s_sbc_mock/`、`src/ims_mock/` → `testbed/simulators/`（约 2.2 kLOC）
 
-| File | LOC | Verdict | Why |
+| 文件 | LOC | 裁决 | 原因 |
 |---|---|---|---|
-| `s_sbc_mock/uac.py` | 488 | B | Promoted to a simulated S-SBC; must model transparent bridging, which the AS relies on (ADR-0003). |
-| `s_sbc_mock/main.py` + `uas.py` | 612 | B | Same, return side. |
-| `ims_mock/chained_stack.py` | 427 | B | The iFC chain simulator. A first-class asset: without it integration tests have nowhere to run (ADR-0014). |
-| remaining `ims_mock/*` | ~523 | B | Orchestrator, P-CSCF relay, terminating UAS — promoted with the chain. |
+| `s_sbc_mock/uac.py` | 488 | B | 转正为仿真 S-SBC；必须建模透明桥接，AS 依赖这一点（ADR-0003）。 |
+| `s_sbc_mock/main.py` + `uas.py` | 612 | B | 同上，返回侧。 |
+| `ims_mock/chained_stack.py` | 427 | B | iFC 链仿真器。一等资产：没有它集成测试无处可跑（ADR-0014）。 |
+| 其余 `ims_mock/*` | ~523 | B | 编排器、P-CSCF relay、终结 UAS —— 随链一起转正。 |
 
-### `tools/` (~4.8 kLOC) and `tests/` (~11.1 kLOC)
+### `tools/`（约 4.8 kLOC）与 `tests/`（约 11.1 kLOC）
 
-| Group | Verdict | Why |
+| 组 | 裁决 | 原因 |
 |---|---|---|
-| `tools/capacity_probe.py`, `tools/call_load_generator.py` | C | The measurement method has to change (real sockets). Keep to recover what was learned; do not carry the harness forward as-is. |
-| `tools/capture_call.py`, `tools/sippy_probe.py` | A | Probe and capture utilities: observation tools, not product shape. |
-| `tools/demo_*.py`, `tools/anti_fraud_probe.py`, `tools/chained_*` | D | Demo scripts for a POC narration. |
-| `tools/path_dependency_probe.py` | D | Existed only to diagnose the two-repository `path` dependency, which the monorepo removes. |
-| `tests/**` | C | 11 kLOC of tests are the cheapest record of what the POC actually did — treat them as the behaviour baseline, then re-derive the ones that still apply. Never copied in bulk. |
+| `tools/capacity_probe.py`、`tools/call_load_generator.py` | C | 测量方法必须改（真实 socket）。保留以恢复学到的东西；不要把 harness 原样带过来。 |
+| `tools/capture_call.py`、`tools/sippy_probe.py` | A | 探测与抓包工具：观察工具，不是产品形态。 |
+| `tools/demo_*.py`、`tools/anti_fraud_probe.py`、`tools/chained_*` | D | 为 POC 讲述而写的演示脚本。 |
+| `tools/path_dependency_probe.py` | D | 仅为诊断双仓库 `path` 依赖而存在，monorepo 已消除它。 |
+| `tests/**` | C | 11 kLOC 测试是 POC 实际做了什么最便宜的记录 —— 把它们当行为基线，再重新推导仍然适用的那些。绝不整块复制。 |
 
-## 4. Rules that bind the triage
+## 4. 约束甄别的规则
 
-1. **Verdict before code.** A pull request that adds product code must be able to
-   point at the triage row it implements.
-2. **Adopted code arrives with its tests.** Verdict A without tests is verdict C.
-3. **sippy behaviour is observed, never assumed.** Where the POC encodes a sippy
-   behaviour, the product proves it again with a probe under `testbed/`.
-4. **No file is adopted "for now".** A temporary adoption with a TODO is a
-   permanent adoption with a stale TODO.
-5. **Every discard is recorded.** A file that simply never appears in the new
-   repository is indistinguishable from one someone forgot.
-6. **The POC is not a dependency.** This repository must build, test and run with
-   no reference to `../3rtparty_AS_POC` or `../as_platform`. The two-repository
-   `path` dependency was one of the three defects the monorepo exists to remove.
+1. **先裁决后代码。** 新增产品代码的 PR 必须能指向它实现的甄别行。
+2. **被采纳的代码带着它的测试来。** 没有测试的 A 裁决等于 C。
+3. **sippy 的行为是观察出来的，绝不假设。** 凡 POC 编码了一个 sippy 行为的地方，产品都要在
+   `testbed/` 下用 probe 再证明一次。
+4. **没有文件是"暂时"采纳的。** 带 TODO 的临时采纳，就是带过期 TODO 的永久采纳。
+5. **每个丢弃都要记录。** 一个文件干脆没在新仓库出现，和一个被人忘了的文件无法区分。
+6. **POC 不是依赖。** 本仓库必须能在不引用 `../3rtparty_AS_POC` 或 `../as_platform` 的情况下
+   构建、测试、运行。双仓库的 `path` 依赖正是 monorepo 要消除的三个缺陷之一。

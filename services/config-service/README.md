@@ -1,34 +1,30 @@
-# `services/config-service/` — rule governance
+# `services/config-service/` — 规则治理
 
-Owns three things and nothing else:
+只拥有三样东西，没有别的：
 
-| Responsibility | Note |
+| 职责 | 说明 |
 |---|---|
-| **Rule version repository** | immutable versions in PostgreSQL; diff and rollback |
-| **Change-order state machine** | draft → validation → approval → staged distribution → effective |
-| **Distribution** | staged rollout to AS instances, with automatic rollback on unhealthy reports |
+| **规则版本库** | PostgreSQL 里不可变版本；diff 与回滚 |
+| **变更单状态机** | draft → validation → approval → staged distribution → effective |
+| **分发** | 向 AS 实例灰度滚动，遇到不健康上报自动回滚 |
 
-## Why it is not GitOps
+## 为什么不是 GitOps
 
-Operators must not have to learn Git to change a number range. A self-hosted Git
-server would also put the availability of rule changes behind the availability of
-another distributed system — for a network element that must be able to change a
-number range at 03:00. Reasoning in
-[`../../docs/architecture/新系统整体架构.md`](../../docs/architecture/新系统整体架构.md) §5.1,
-recorded as ADR-0006.
+不能要求运营商运维人员为了改一个号段去学 Git。自托管的 Git 服务器还会把规则变更的可用性，押在另一个
+分布式系统的可用性之后 —— 对于一个必须在凌晨 03:00 改号网的网元来说不行。理由在
+[`../../docs/architecture/新系统整体架构.md`](../../docs/architecture/新系统整体架构.md) §5.1，
+记为 ADR-0006。
 
-## Boundary
+## 边界
 
-The version repository is **ours**. Approval may be delegated to the operator's
-OSS or ticketing system through the `ApprovalGate` abstraction — rule
-availability must never depend on a foreign system's availability.
+版本库是**我们的**。审批可以通过 `ApprovalGate` 抽象委派给运营商的 OSS 或工单系统 —— 但规则可用性
+绝不能完全依赖一个外部系统的可用性。
 
-## Contract with an AS instance
+## 与 AS 实例的契约
 
-An AS instance reports **the rule version it currently has loaded**. That report
-is what makes a rolling upgrade safe: during ISSU two versions coexist, so the
-rule schema must be bidirectionally compatible (risk R4, ADR-0009).
+一个 AS 实例上报**它当前加载的规则版本**。那个上报正是滚动升级安全的原因：ISSU 期间两个版本共存，
+所以规则 schema 必须双向兼容（风险 R4、ADR-0009）。
 
-## Status
+## 状态
 
-Skeleton.
+骨架。

@@ -15,11 +15,13 @@ classifiers = [
   "Topic :: Communications :: Telephony",
 ]
 
-# One SIP stack version in one interpreter: the pin is workspace-wide and must
-# not be widened without an ADR (ADR-0001). Every application depends on this
-# package, so a second sippy version cannot enter the tree unnoticed.
+# The SIP stack is deliberately NOT pinned here. M0 does not select the
+# production SIP stack; that decision is recorded in ADR-0019 once the
+# evaluation is complete. Until then platform/ defines language-agnostic seams
+# (Transport, StateStore, call controller shell) that do not depend on any
+# particular stack. The POC behaviour baseline, which currently runs on sippy,
+# lives in testbed/simulators/ and is consumed only as a testbed asset.
 dependencies = [
-  "sippy==2.4.2",
 ]
 
 [build-system]

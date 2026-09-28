@@ -1,21 +1,18 @@
-# `apps/anti-fraud/` — anti-fraud AS
+# `apps/anti-fraud/` — 反诈 AS
 
-Single-leg. It screens the caller and either relays the call or answers
-`608 Rejected` (RFC 8688) itself. It never originates a second leg.
+单腿。它甄别主叫，要么放通呼叫，要么自己应答 `608 Rejected`（RFC 8688）。它绝不发起第二条腿。
 
-**In scope here:** the screening verdict, expressed as a pure function.
+**此处范围内：** 甄别判决，表达为一个纯函数。
 
-**Not in scope here:** rate windows and reputation as process state. They move to
-Redis with the rest of the run state (ADR-0002), because a replica that can be
-killed at any time cannot hold a caller's rate window in its memory.
+**此处范围外：** 作为进程状态的速率窗口与信誉。它们随其余运行态一起移到 Redis（ADR-0002），因为一个
+随时可能被杀的副本不能在内存里持有某主叫的速率窗口。
 
-## Constraint that shapes this use case
+## 塑造本用例的约束
 
-The verdict must remain **acceptable under a Redis split-brain window**: during a
-Sentinel failover the rate window may double-count. The design accepts a bounded
-inaccuracy rather than a hard failure — see risk R5 in
-[`../../docs/architecture/新系统整体架构.md`](../../docs/architecture/新系统整体架构.md).
+判决必须能在 Redis 脑裂窗口下**保持可接受**：Sentinel 故障切换期间速率窗口可能重复计数。设计接受
+一个有界的不精确，而非一次硬失败 —— 见 [`../../docs/architecture/新系统整体架构.md`](../../docs/architecture/新系统整体架构.md)
+中的风险 R5。
 
-## Status
+## 状态
 
-Skeleton. The verdict function is written test-first.
+骨架。判决函数 test-first 编写。

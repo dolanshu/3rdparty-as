@@ -1,11 +1,10 @@
-# `deploy/compose/` — developer environment only
+# `deploy/compose/` — 仅开发环境
 
-Placeholder. Brings up on one machine:
+占位符。在单机上拉起：
 
-- the two AS use cases, on their own ports
-- config-service and console
-- Redis and PostgreSQL, single instance, **no** redundancy
+- 两个 AS 用例，各自用自己的端口
+- config-service 与 console
+- Redis 与 PostgreSQL，单实例，**无**冗余
 
-Purpose: make the system runnable without a Kubernetes cluster. It is explicitly
-not a deployment target, it is not HA, and no capacity figure may be measured
-on it (ADR-0013, ADR-0014).
+目的：让系统无需 Kubernetes 集群即可运行。它明确不是部署目标、不是 HA，且任何容量数字都不能在它上面
+测（ADR-0013、ADR-0014）。

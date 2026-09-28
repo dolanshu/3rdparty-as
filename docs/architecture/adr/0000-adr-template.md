@@ -1,43 +1,41 @@
-# ADR-0000 — <title>
+# ADR-0000 — <标题>
 
 - **Status**: proposed · accepted · superseded by ADR-00NN
 - **Date**: YYYY-MM-DD
-- **Decides**: §0 ledger item NN — <the one-sentence decision>
+- **Decides**: §0 账本条目 NN —— <一句话决策>
 
-## Context
+## Context（背景）
 
-What forces are acting. Constraints from the delivery environment, from the
-operator's network, from the stack, from the team. Facts only — no argument yet,
-and no conclusion smuggled in here.
+有哪些力量在起作用。来自交付环境的约束、来自运营商网络的约束、来自技术栈的约束、来自团队的约束。
+只列事实 —— 此刻不要论证，也不要把结论偷塞进来。
 
-Cite observed behaviour, not remembered behaviour. If a fact comes from running
-the code, say so and say how to reproduce it.
+引用观察到的行为，而非记忆中的行为。如果某个事实来自跑代码，要说明，并说明如何复现。
 
-## Decision
+## Decision（决策）
 
-<The decision, in the active voice, and the scope it applies to.>
+<用主动语态写的决策，以及它适用的范围。>
 
-## Consequences
+## Consequences（后果）
 
-### Positive
+### Positive（正面）
 
 -
 
-### Negative / accepted
+### Negative / accepted（负面 / 已接受）
 
-- <Each gap this decision knowingly accepts. An empty list means the analysis is unfinished.>
+- <本决策明知故犯接受的每个缺口。空列表意味着分析还没做完。>
 
-## Alternatives considered
+## Alternatives considered（考虑过的备选）
 
 | Option | Why not |
 |---|---|
 |  |  |
 
-## Evidence
+## Evidence（证据）
 
-- <command / test / measurement that supports the decision>
+- <支持该决策的命令 / 测试 / 测量>
 
-## Related
+## Related（相关）
 
 - [`../新系统整体架构.md`](../新系统整体架构.md) §
-- POC ADR-00NN (context only — not binding here)
+- POC ADR-00NN（仅作背景 —— 此处无约束力）

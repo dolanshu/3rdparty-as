@@ -1,26 +1,22 @@
-# `apps/` — the signalling plane (layer ①)
+# `apps/` — 信令面（layer ①）
 
-One directory per use case, one process per use case. A process boundary is the
-fault boundary, the independent scaling boundary and the independent rollout
-boundary at the same time.
+一个用例一个目录，一个用例一个进程。进程边界同时是故障边界、独立扩缩容边界和独立灰度边界。
 
-| Directory | Use case | Legs |
+| 目录 | 用例 | 腿 |
 |---|---|---|
-| `translation/` | number translation and routing | two-legged B2BUA |
-| `anti-fraud/` | caller screening | single-leg, `608 Rejected` (RFC 8688) |
+| `translation/` | 号码翻译与路由 | 双腿 B2BUA |
+| `anti-fraud/` | 主叫甄别 | 单腿，`608 Rejected`（RFC 8688） |
 
-## Rules
+## 规则
 
-- **Stateless.** All session, rate and reputation state lives in Redis through
-  the `StateStore` seam. A pod may be killed at any time and lose nothing but
-  the calls it is draining (ADR-0002).
-- **Business decisions are pure functions.** No sockets, no clock, no global
-  state inside the decision module. That is what makes TDD cheap here.
-- **SIP mechanics are not reimplemented.** They come from `platform/`.
-- An app must never import another app.
+- **无状态。** 所有会话、速率、信誉状态都通过 `StateStore` seam 活在 Redis 里。一个 pod 随时可能被杀，
+  除了正在 draining 的呼叫之外什么都不会丢（ADR-0002）。
+- **业务决策是纯函数。** 决策模块里不能有 socket、不能有时钟、不能有全局状态。这正是 TDD 在那儿
+  便宜的原因。
+- **SIP 机制不在这里重新实现。** 它们来自 `platform/`。
+- 一个 app 绝不能 import 另一个 app。
 
-## Open decision
+## 未决决策
 
-Where a second (Go) implementation of the same use case lives
-(`apps/<case>/{py,go}` vs a separate tree) is settled by ADR-0012 before the Go
-spike starts, not now.
+同一用例的第二个（Go）实现放哪（`apps/<case>/{py,go}` 还是一棵独立的树）由 ADR-0012 在 Go spike
+启动之前定，不是现在。
