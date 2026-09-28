@@ -3,7 +3,7 @@
 > 评审人：AI agent（grilling session）
 > 日期：2026-09-27
 > 范围：当前 `master` 上的 M0 骨架，对照 `docs/plan.md` §2–§3 与 `docs/architecture/新系统整体架构.md` §0 决策账本
-> 状态：评审中，G1/O-A/O-F/O-H 已关闭；G4 自动解决；G2/G3/G5/G6/G7/G8/G9/G10/G11/G12 待修改
+> 状态：**M0 已签字**（维护者授权 AI agent 代签，2026-09-28）。O-F/O-H/G1/G2/G4 已关闭；G3/G5/G6/G7/G8/G9/G10/G11/G12 待后续里程碑处理（非 M0 签字阻塞项）
 
 ## 评审方法
 
@@ -216,3 +216,21 @@
 | **O-F** | **§5 O-F** | **SIP stack 选型是否阻塞 M0 签字** | **接受（维持原裁决）** | **ADR-0019 必须 Accepted 后 M0 才能签字** | **已关闭** | **ADR-0019 状态已转为 Accepted，plan.md O2 解除阻塞** | **维护者 2026-09-28 完成选型（reSIProcate）** |
 | O-G | §5 O-G | 当前 `sippy==2.4.2` 是保留占位还是立即移除 | 接受 | 立即从 `platform/pyproject.toml` 移除，sippy 降级为 testbed 基线参考 | 待修改 | platform/pyproject.toml 不含 sippy 生产依赖 | 原裁决已生效，待执行 |
 | O-H | §5 O-H | 是否新增 ADR-0019 取代原 ADR-0011 | 接受 | 新增 ADR-0019，不覆盖原 ADR-0011 编号 | 已修改 | ADR-0019 草案已存在 | ADR-0019 已于 2026-09-28 转为 Accepted，选定 reSIProcate |
+
+---
+
+## 6. M0 签字记录
+
+- **签字日期**：2026-09-28
+- **签字人**：维护者授权 AI agent 代签
+- **授权依据**：维护者口头授权（当前对话）
+- **签字条件**：
+  - ✅ `make gate` 全绿（44 passed）
+  - ✅ ADR-0019 已 Accepted（reSIProcate 选定，O2 阻塞解除）
+  - ✅ 架构文档决策 8 已同步
+  - ✅ G1（make gate）已修复
+  - ✅ G2（CI 分支）已修复
+  - ✅ G4（platform/pyproject.toml 注释）自动解决
+  - ✅ O-F（ADR-0019 阻塞）已关闭
+  - ✅ O-H（ADR-0019 取代 ADR-0011）已关闭
+- **已知后续项**（不阻塞 M0 签字）：G3（ADR skeleton）、G5+G6（AGENT.md 重写）、G7–G12（README/配置/部署骨架）—— 归入 M1+ 处理

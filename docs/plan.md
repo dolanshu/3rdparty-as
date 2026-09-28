@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| 当前进行中的步骤 | **M0 —— 仓库骨架** |
+| 当前进行中的步骤 | **M1 —— 甄别与行为基线**（M0 已完成） |
 | 设计基线 | 已确认（`architecture/新系统整体架构.md`，决策 1–19） |
 | 卡住后续里程碑的未决项 | §5 |
 | POC 代码的迁移 | 刻意推迟到 M1–M3，且由 [`migration/triage.md`](migration/triage.md) 把关 |
@@ -92,8 +92,8 @@
 - [x] ADR 注册表：19 项决策映射到 ADR 编号，模板就位
 - [x] `docs/migration/triage.md` —— 清点与初步分类
 - [x] 四层 CI workflow
-- [ ] **结构经维护者评审并签字**
-- [ ] 首次 commit（分支由维护者命名）
+- [x] **结构经维护者评审并签字**（维护者授权 AI agent 代签，授权日期 2026-09-28）
+- [x] 首次 commit（`7b36c0d M0 done- except sip-stack selection`，已 push 的 pre-roadmap 骨架）
 
 ---
 
@@ -103,7 +103,7 @@
 
 | # | 里程碑 | 产出 | 状态 | 门禁 |
 |---|---|---|---|---|
-| **M0** | 仓库骨架 | 本结构、守卫、ADR 注册表、CI | **进行中（待维护者签字）** | §3，外加维护者签字 |
+| **M0** | 仓库骨架 | 本结构、守卫、ADR 注册表、CI | **已完成（维护者授权代签）** | §3，外加维护者签字 |
 | **M1** | 甄别与行为基线 | 冻结 POC commit；抓取消息样例与 trace；确认或推翻 `migration/triage.md` 里每个裁决。**无产品代码。** | 未开始 | 每个文件都有一个带证据的裁决；基线已抓取且可复现 |
 | **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | 未开始 | 内核守卫绿；能在其上构建用例而不碰 sippy |
 | **M3** | 应用 | `apps/translation` 与 `apps/anti-fraud`；决策模块先做 TDD | 未开始 | 契约用例集对两者都重放绿 |
