@@ -1,0 +1,170 @@
+# Alert rules for the 3rdparty-as (REQ-NF-14).
+#
+# Loaded by Prometheus via `rule_files:` (see README.md in this directory), or
+# converted into a PrometheusRule CR by kube-prometheus-stack. The file is plain
+# Prometheus rule format — no Helm templating — so it can be validated with a
+# YAML parser and linted with `promtool check rules`.
+#
+# SCOPE: ratios, relative changes and state conditions only.
+# There is deliberately NO capacity alert here (no CPS ceiling, no concurrent
+# session ceiling): O1 — the capacity target — is measured in M6, and
+# AGENT.md §2 / §6 forbid publishing a capacity figure before that. Do not read
+# any number in this file as the answer to O1. Capacity alerts are added after
+# M6, from the measurement, in a separate group.
+#
+# Every rule is annotated with why its threshold is not a capacity figure.
+#
+# Metric names follow the naming contract in README.md; they are exported by the
+# OTel metrics of ADR-0005 / REQ-NF-13. `$AS_NAMESPACE` is a placeholder
+# substituted at load time (README.md §"Loading").
+groups:
+  - name: as.call-path
+    rules:
+      - alert: ASHighErrorRatio
+        expr: |
+          (
+            sum(rate(as_sip_responses_total{status_class="5xx"}[5m]))
+              +
+            sum(rate(as_sip_responses_total{status_class="4xx",status_code!="487"}[5m]))
+          )
+            / clamp_min(sum(rate(as_sip_responses_total[5m])), 1)
+          > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          component: signalling
+        annotations:
+          summary: "AS failure ratio above 1% for 10 minutes"
+          description: >-
+            More than 1% of SIP responses are 5xx, or 4xx other than 487
+            (487 = caller cancelled, which is normal behaviour and excluded).
+            This threshold is a RATIO, not a capacity figure: it says nothing
+            about how many calls per second the system can carry. That question
+            is O1, answered by the M6 measurement — nothing here replaces it.
+            Check the decision modules, the Redis state store and the S-SBC
+            link before assuming a capacity problem.
+
+      - alert: ASTelemetryDropped
+        expr: |
+          sum(rate(as_telemetry_dropped_total[10m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: "Telemetry events are being dropped"
+          description: >-
+            The bounded export queue is full and events are discarded
+            (`dropped_count`, ADR-0005). Losing telemetry is by design
+            acceptable — back pressure on the call path is not — but a
+            continuously rising drop count usually means the OTLP backend is
+            unreachable or too slow. Alerts derived from these metrics are
+            unreliable while this fires. The threshold is a non-zero RATE
+            (a state condition), not a capacity figure; O1 / M6 is untouched by
+            it.
+
+      - alert: ASRestartLoop
+        expr: |
+          sum by (pod) (
+            increase(kube_pod_container_status_restarts_total{namespace=~"$AS_NAMESPACE"}[1m])
+          ) > 3
+        for: 0m
+        labels:
+          severity: critical
+          component: runtime
+        annotations:
+          summary: "AS container restarted more than 3 times in 1 minute"
+          description: >-
+            A container is crash-looping. This is a restart COUNT over a fixed
+            window — a liveness signal, not a capacity figure. It does not
+            imply the system was overloaded; check the previous logs and the
+            last config version before drawing that conclusion. O1 / M6
+            measures capacity; this rule only says the process is unhealthy.
+
+      - alert: ASCallStateStoreUnavailable
+        expr: |
+          min by (use_case) (as_state_store_available) == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: state
+        annotations:
+          summary: "Redis state store unreachable for a use case"
+          description: >-
+            The Redis state store is unreachable. All session, dialog and
+            anti-fraud rate-window state lives there (ADR-0002 / ADR-0007), so
+            calls in flight cannot be maintained and new decisions lose their
+            counters. Binary availability STATE, not a capacity figure —
+            Redis being down says nothing about the CPS or concurrency target
+            (O1 / M6). Check Sentinel and the failover window (unresolved O5
+            and D3).
+
+      - alert: ASActiveCallsSurge
+        expr: |
+          sum(as_active_calls) > 1.3 * avg_over_time(sum(as_active_calls)[30m:1m])
+        for: 10m
+        labels:
+          severity: warning
+          component: signalling
+        annotations:
+          summary: "Active calls 30% above the trailing 30-minute average"
+          description: >-
+            A RELATIVE surge (REQ-NF-14): current active calls exceed 1.3x the
+            trailing 30-minute average. Relative by construction — there is no
+            absolute call or session number in this rule, because that number is
+            O1 and is measured in M6. Treat this as "traffic shape changed",
+            investigate before it becomes a problem; do not use it to infer a
+            capacity limit.
+
+  - name: as.control-plane
+    rules:
+      - alert: ASConfigRollbackTriggered
+        expr: |
+          increase(as_config_rollbacks_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: config
+        annotations:
+          summary: "Automatic configuration rollback was triggered"
+          description: >-
+            A distributed config version was rolled back (ADR-0006). Critical
+            because an automatic rollback means somebody's change was judged
+            harmful, and because the instances may now be converging on the
+            previous version: a human must confirm the outcome and decide
+            whether to re-submit, fix, or hold. Event COUNT, not a capacity
+            figure — O1 / M6 is unrelated to this rule.
+
+      - alert: ASTlsCertificateExpiring
+        expr: |
+          min by (use_case) (as_tls_certificate_expiry_seconds) < 30 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "TLS certificate expires within 30 days"
+          description: >-
+            The S-SBC-facing certificate expires in under 30 days. Rotation is
+            a hot reload of the mounted Secret and must never restart the Pod
+            or drop in-flight calls (ADR-0016). A time-to-expiry threshold —
+            a calendar fact, in no way a capacity figure (O1 / M6). Renew from
+            the customer PKI and update the Secret referenced by
+            `tls.secretName`.
+
+      - alert: ASConfigDrift
+        expr: |
+          min by (use_case, pod) (as_config_version_in_sync) == 0
+        for: 15m
+        labels:
+          severity: warning
+          component: config
+        annotations:
+          summary: "Instance reports a config version different from the latest"
+          description: >-
+            At least one instance still reports a config version other than the
+            latest one held by the control plane, for more than 15 minutes
+            (ADR-0006 canary distribution). A boolean CONSISTENCY state, not a
+            capacity figure: it says the fleet disagrees, not how much traffic
+            it can carry (O1 / M6). Check the canary rollout, the version
+            report path and any instance that stopped polling.

@@ -1,0 +1,68 @@
+{{/*
+Deployment-level defaults shared by every use case.
+
+NON-SENSITIVE values only. Anything secret lives in a Secret:
+  - CONFIG_DB_USER / CONFIG_DB_PASSWORD / REDIS_PASSWORD -> secret.yaml
+    (or the customer-managed Secret named by postgres.secretName)
+  - TLS certificates -> the customer PKI Secret named by tls.secretName;
+    the chart only mounts it (ADR-0016: rotation is a hot reload, no restart).
+
+Env var names follow the process contract in .env.example so that a container
+behaves the same in compose (dev) and in Helm (production, ADR-0013).
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "as.fullname" . }}-config
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+data:
+  # --- process ---
+  LOG_LEVEL: {{ .Values.logLevel | quote }}
+  # Version reported by the instance; injected by config-service canary
+  # distribution (ADR-0006). Empty means "nothing reported yet".
+  CONFIG_VERSION: {{ .Values.configVersion | quote }}
+
+  # --- SIP signalling plane ---
+  SIP_LISTEN_ADDR: {{ .Values.sip.listenAddr | quote }}
+  SIP_LISTEN_PORT: {{ .Values.sip.port | quote }}
+  # S-SBC allowlist. Empty is fail-closed on purpose: anything able to
+  # impersonate the S-SBC can inject calls (ADR-0016).
+  SIP_PEER_ALLOWLIST: {{ .Values.sip.peerAllowlist | quote }}
+  SIP_TLS_ENABLED: {{ .Values.tls.enabled | quote }}
+  SIP_TLS_REQUIRE_CLIENT_CERT: {{ .Values.tls.requireClientCertificate | quote }}
+  # Paths inside the mounted TLS Secret. The process re-reads these files on
+  # rotation; the Pod is never restarted for a certificate change (ADR-0016).
+  SIP_TLS_CERT_PATH: "/etc/as/tls/tls.crt"
+  SIP_TLS_KEY_PATH: "/etc/as/tls/tls.key"
+  SIP_TLS_CA_PATH: "/etc/as/tls/ca.crt"
+
+  # --- runtime state store (Redis / Sentinel, ADR-0002) ---
+  {{- if and .Values.redis.url (not (contains "@" .Values.redis.url)) }}
+  # Rendered only when the URL carries no credentials. A URL with an embedded
+  # password belongs in the Secret, not here.
+  REDIS_URL: {{ .Values.redis.url | quote }}
+  {{- end }}
+  REDIS_SENTINEL_HOSTS: {{ .Values.redis.sentinel.addresses | join "," | quote }}
+  REDIS_SENTINEL_MASTER_NAME: {{ .Values.redis.sentinel.masters | first | default "" | quote }}
+
+  # --- governance store (PostgreSQL, ADR-0006) ---
+  # The URL itself is assembled in deployment.yaml from these parts plus the
+  # credentials from the Secret, so no password ever lands in a ConfigMap.
+  CONFIG_DB_HOST: {{ .Values.postgres.host | quote }}
+  CONFIG_DB_PORT: {{ .Values.postgres.port | quote }}
+  CONFIG_DB_NAME: {{ .Values.postgres.database | quote }}
+
+  # --- observability (ADR-0005) ---
+  # Empty keeps the exporter unconfigured (NoOp sink): telemetry loss is
+  # acceptable, back pressure on the call path is not.
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.telemetry.otlpEndpoint | default "" | quote }}
+  # Payload logging is opt-in and off by default (ADR-0005, AGENT.md §13).
+  AS_PAYLOAD_LOGS_ENABLED: {{ .Values.telemetry.payloadLogsEnabled | quote }}
+
+  # --- downscale guard (ADR-0010) ---
+  # A Pod with calls in flight is never evicted. This is a state condition, not
+  # a capacity threshold: see the O1 / M6 note in README.md.
+  AS_DOWNSCALE_GUARD_ENABLED: {{ .Values.downscaleGuard.enabled | quote }}
+  AS_DOWNSCALE_GUARD_PROTECT_ABOVE: {{ .Values.downscaleGuard.protectWhenActiveCallsAbove | quote }}

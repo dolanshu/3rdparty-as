@@ -1,0 +1,66 @@
+{{/*
+HorizontalPodAutoscaler, one per enabled use case.
+
+GUARD, deliberately: this renders nothing unless `autoscaling.enabled` is true
+AND at least one target threshold is non-null. There is no fallback value:
+a threshold written here before M6 would be a guessed capacity number, and
+AGENT.md §2 / §6 and docs/plan.md §5.1 (O1) forbid publishing one.
+
+Once rendering is enabled, minReplicas and maxReplicas are `required`: the
+install fails with an explicit message instead of silently picking 1 and 10.
+Fill them from the M6 measurement, not from intuition. See ADR-0010.
+*/}}
+{{- $hasAutoscaleTarget := or .Values.autoscaling.targetCPUUtilizationPercentage .Values.autoscaling.targetMemoryUtilizationPercentage (and .Values.autoscaling.customMetric.name .Values.autoscaling.customMetric.targetValue) }}
+{{- if and .Values.autoscaling.enabled $hasAutoscaleTarget }}
+{{- $a := .Values.autoscaling }}
+{{- range $uc := .Values.useCases }}
+{{- if $uc.enabled }}
+{{- $ctx := dict "Release" $.Release "Chart" $.Chart "Values" $.Values "useCase" $uc.name }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "as.fullname" $ }}-{{ $uc.name }}
+  namespace: {{ include "as.namespace" $ }}
+  labels:
+    {{- include "as.useCaseLabels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "as.fullname" $ }}-{{ $uc.name }}
+  # No defaults: these are the O1 answers and must come from M6.
+  minReplicas: {{ required "autoscaling.minReplicas is required when autoscaling.enabled=true. It is a capacity figure: measure it in M6 (O1), do not guess." $a.minReplicas }}
+  maxReplicas: {{ required "autoscaling.maxReplicas is required when autoscaling.enabled=true. It is a capacity figure: measure it in M6 (O1), do not guess." $a.maxReplicas }}
+  metrics:
+    {{- if $a.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $a.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if $a.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ $a.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- if and $a.customMetric.name $a.customMetric.targetValue }}
+    # The metric that actually tracks load on a SIP process (e.g.
+    # as_active_calls). Per-Pod average, so it is a per-instance load figure
+    # rather than a system-wide capacity claim.
+    - type: Pods
+      pods:
+        metric:
+          name: {{ $a.customMetric.name }}
+        target:
+          type: AverageValue
+          averageValue: {{ $a.customMetric.targetValue | quote }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

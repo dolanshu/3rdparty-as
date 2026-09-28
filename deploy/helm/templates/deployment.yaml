@@ -1,0 +1,154 @@
+{{/*
+One Deployment per use case: one use case = one process = one Deployment
+(ADR-0002). The list to iterate is .Values.useCases; a use case with
+enabled: false renders nothing at all.
+
+Capacity: this template never encodes a capacity assumption. When
+`useCases[].replicaCount` is null it renders `replicas: 1` — a rendering
+fallback so the manifest is valid, explicitly NOT a conclusion about how much
+traffic one Pod carries. Those numbers come from M6 (O1, docs/plan.md §5.1).
+*/}}
+{{- range $uc := .Values.useCases }}
+{{- if $uc.enabled }}
+{{- $ctx := dict "Release" $.Release "Chart" $.Chart "Values" $.Values "useCase" $uc.name }}
+{{- $hasAutoscaleTarget := or $.Values.autoscaling.targetCPUUtilizationPercentage $.Values.autoscaling.targetMemoryUtilizationPercentage (and $.Values.autoscaling.customMetric.name $.Values.autoscaling.customMetric.targetValue) }}
+{{- $renderHpa := and $.Values.autoscaling.enabled $hasAutoscaleTarget }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "as.fullname" $ }}-{{ $uc.name }}
+  namespace: {{ include "as.namespace" $ }}
+  labels:
+    {{- include "as.useCaseLabels" $ctx | nindent 4 }}
+spec:
+  {{- if not $renderHpa }}
+  # PLACEHOLDER: 1 is a rendering fallback for a null replicaCount, not a
+  # capacity conclusion. The HPA owns this field once autoscaling is enabled and
+  # has real thresholds (M6 / O1).
+  replicas: {{ $uc.replicaCount | default 1 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "as.useCaseSelectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "as.useCaseLabels" $ctx | nindent 8 }}
+      annotations:
+        # Rolls the Pods when the ConfigMap changes without a new image.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "as.fullname" $ }}
+      # ISSU is draining, not state migration (ADR-0009): the process stops
+      # accepting new calls and waits for active_calls to reach zero. This
+      # window bounds that wait before SIGKILL; it is a timeout, not a capacity
+      # figure.
+      terminationGracePeriodSeconds: {{ $.Values.draining.terminationGracePeriodSeconds }}
+      containers:
+        - name: {{ $uc.name }}
+          image: {{ include "as.image" $ | quote }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: sip-udp
+              containerPort: {{ $.Values.sip.port }}
+              protocol: UDP
+            - name: sip-tls
+              containerPort: {{ $.Values.sip.tlsPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "as.fullname" $ }}-config
+          env:
+            # Explicit `env` entries win over `envFrom`, and Kubernetes expands
+            # $(VAR) only for variables defined earlier in this list — so the
+            # credentials are declared before CONFIG_DB_URL is composed.
+            - name: CONFIG_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "as.postgresSecretName" $ }}
+                  key: CONFIG_DB_USER
+                  optional: true
+            - name: CONFIG_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "as.postgresSecretName" $ }}
+                  key: CONFIG_DB_PASSWORD
+                  optional: true
+            # Assembled here so that no password is ever stored in a ConfigMap.
+            - name: CONFIG_DB_URL
+              value: {{ printf "postgresql://$(CONFIG_DB_USER):$(CONFIG_DB_PASSWORD)@%s:%v/%s" $.Values.postgres.host $.Values.postgres.port $.Values.postgres.database | quote }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "as.postgresSecretName" $ }}
+                  key: REDIS_PASSWORD
+                  optional: true
+            # Per-use-case service name for the OTLP exporter (ADR-0005).
+            - name: OTEL_SERVICE_NAME
+              value: {{ printf "%s-%s" (include "as.fullname" $) $uc.name | quote }}
+          {{- with $uc.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $.Values.probes.liveness.enabled }}
+          # Conservative detection parameters only. They say nothing about how
+          # much traffic a Pod can carry (O1 / M6).
+          livenessProbe:
+            tcpSocket:
+              port: {{ $.Values.probes.liveness.portName }}
+            initialDelaySeconds: {{ $.Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $.Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $.Values.probes.liveness.failureThreshold }}
+          {{- end }}
+          {{- if $.Values.probes.readiness.enabled }}
+          # TODO(M5+): a tcpSocket probe only proves the TCP listener accepts
+          # connections. Once the process shell exposes its draining state,
+          # readiness must also fail while draining so the Service stops
+          # routing new calls to it (ADR-0009).
+          readinessProbe:
+            tcpSocket:
+              port: {{ $.Values.probes.readiness.portName }}
+            initialDelaySeconds: {{ $.Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $.Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $.Values.probes.readiness.failureThreshold }}
+            successThreshold: {{ $.Values.probes.readiness.successThreshold }}
+          {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  # Gives the Endpoint removal time to propagate before the
+                  # process stops accepting new calls (ADR-0009). The draining
+                  # wait itself is done by the process shell.
+                  - "sleep {{ $.Values.draining.preStopSleepSeconds }}"
+          {{- if and $.Values.tls.enabled $.Values.tls.secretName }}
+          volumeMounts:
+            # Mounted (not baked into the image): rotating the Secret updates
+            # these files in place and the process reloads them hot. A restart
+            # for a certificate change would drop in-flight calls (ADR-0016).
+            - name: tls-certs
+              mountPath: /etc/as/tls
+              readOnly: true
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      {{- if and $.Values.tls.enabled $.Values.tls.secretName }}
+      volumes:
+        - name: tls-certs
+          secret:
+            secretName: {{ $.Values.tls.secretName }}
+            defaultMode: 0400
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+{{- end }}
+{{- end }}

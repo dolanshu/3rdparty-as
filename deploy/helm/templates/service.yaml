@@ -1,0 +1,43 @@
+{{/*
+One Service per use case, fronting the Deployment of the same name.
+
+sessionAffinity: ClientIP is ONE HALF of a double safeguard (ADR-0002).
+It is not sufficient by itself: the S-SBC may reuse a source port, and then a
+dialog request can land on a different replica than the one that handled the
+initial INVITE. The other half is the application-level Redis session table,
+which is what actually makes the replica choice irrelevant to correctness.
+Removing either half is a regression, not a simplification.
+*/}}
+{{- range $uc := .Values.useCases }}
+{{- if $uc.enabled }}
+{{- $ctx := dict "Release" $.Release "Chart" $.Chart "Values" $.Values "useCase" $uc.name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "as.fullname" $ }}-{{ $uc.name }}
+  namespace: {{ include "as.namespace" $ }}
+  labels:
+    {{- include "as.useCaseLabels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  # See the header: affinity is a belt; the Redis session table is the braces.
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      # Bounds how long a given client IP keeps its affinity. A stickiness
+      # timeout, unrelated to any capacity figure (O1 / M6).
+      timeoutSeconds: 3600
+  selector:
+    {{- include "as.useCaseSelectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: sip-udp
+      port: {{ $.Values.sip.port }}
+      targetPort: sip-udp
+      protocol: UDP
+    - name: sip-tls
+      port: {{ $.Values.sip.tlsPort }}
+      targetPort: sip-tls
+      protocol: TCP
+{{- end }}
+{{- end }}

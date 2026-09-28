@@ -44,3 +44,185 @@
 # --- 进程通用 ---
 # logLevel:                  # DEBUG / INFO / WARNING / ERROR
 # configVersion:             # 由 config-service 灰度注入
+#
+# =============================================================================
+# M5 values contract — consumed by deploy/helm/templates/*
+#
+# The commented skeleton above is kept verbatim for traceability (it is the
+# shape planned before M5). Everything below is the part the templates actually
+# read. Comments in this file are English: deployment artifacts follow
+# AGENT.md §5 (artifact language is English); only the historical block above
+# is left in Chinese.
+#
+# Single-tenant, on-prem: one namespace holds one complete system
+# (its own Redis / PostgreSQL / AS Pod group). See REQ-NF-9.
+# Helm is the only production form; deploy/compose/ is dev-only. See ADR-0013.
+#
+# CAPACITY RULE — AGENT.md §2 / §6 and docs/plan.md §5.1 (O1):
+# no CPS or concurrency figure is published before M6 measures it. Every key
+# below that would encode a capacity assumption is left null, and the template
+# that consumes it does not render the resource at all rather than fall back to
+# a guessed number. See deploy/helm/README.md for the full list.
+# =============================================================================
+
+# Namespace of the whole system. One customer = one namespace (REQ-NF-9).
+# Defaults to the release namespace when empty.
+namespace: ""
+
+# Overrides the chart name inside generated object names. Left empty on purpose:
+# the chart never hard-codes a customer name.
+nameOverride: ""
+
+image:
+  # Placeholder only. There is no public registry for this product; set the
+  # customer-internal registry at install time.
+  repository: "registry.example.com/3rdparty-as"
+  # Empty -> Chart.appVersion is used (see _helpers.tpl "as.image").
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# One use case = one process = one Deployment. See ADR-0002.
+# The templates range over this list; a use case with enabled: false renders
+# nothing (no Deployment, Service, HPA or PDB).
+useCases:
+  - name: translation
+    enabled: true
+    # null -> the Deployment renders `replicas: 1` as a PLACEHOLDER so that
+    # `helm template` and a dry install produce a valid manifest. That 1 is a
+    # rendering fallback, NOT a capacity conclusion: the real replica floor is
+    # measured in M6 (O1) and then set here.
+    replicaCount: null
+    # Resource requests/limits are rendered only when non-empty. Left empty:
+    # sizing is downstream of the same M6 measurement as O1.
+    # Example shape (do not commit numbers before M6):
+    #   resources:
+    #     requests: {cpu: "500m", memory: "512Mi"}
+    #     limits:   {cpu: "1", memory: "1Gi"}
+    resources: {}
+  - name: anti-fraud
+    enabled: true
+    replicaCount: null
+    resources: {}
+
+# SIP listener settings. Ports are protocol constants (5060/5061), not capacity
+# figures.
+sip:
+  listenAddr: "0.0.0.0"
+  port: 5060          # SIP over UDP
+  tlsPort: 5061       # SIP over TLS (ADR-0016)
+  # Comma-separated IPs/CIDRs of the operator's S-SBC. Anything that can
+  # impersonate the S-SBC can inject calls (ADR-0016), so this is a security
+  # control, not a routing hint. Empty must be treated as fail-closed by the
+  # process; set it per customer.
+  peerAllowlist: ""
+
+# Runtime state store (Redis + Sentinel) — external, never deployed by this
+# chart (ADR-0002 / ADR-0007).
+redis:
+  # Direct URL. Prefer Sentinel below in production; this is the dev/simple path.
+  url: ""
+  sentinel:
+    enabled: false
+    # Unresolved: O5 (disaster-recovery level N+1 vs N+M) and D3 (Redis client
+    # and Sentinel wiring, split-brain window). Empty on purpose — do not invent
+    # a topology before those are decided.
+    masters: []
+    addresses: []
+
+# Governance store (PostgreSQL) — external, never deployed by this chart
+# (ADR-0006 / ADR-0007).
+postgres:
+  host: ""
+  port: 5432
+  database: ""
+  # Name of the Secret holding CONFIG_DB_USER / CONFIG_DB_PASSWORD. Leave empty
+  # to use the chart-managed Secret (`<fullname>-credentials`, placeholders
+  # only — see secret.yaml); point at a customer-managed Secret to skip it.
+  secretName: ""
+
+# Transport security. End-to-end TLS to the S-SBC with a client certificate is
+# mandatory (ADR-0016); certificate rotation is a hot reload, never a restart.
+tls:
+  enabled: true
+  # Secret holding tls.crt / tls.key / ca.crt. Always externally managed
+  # (customer PKI); the chart only references it. Empty renders no TLS mount —
+  # fix it before install rather than shipping a broken trust anchor.
+  secretName: ""
+  requireClientCertificate: true
+
+# In-service upgrade semantics: ISSU is draining, not state migration
+# (ADR-0009). These two are timeouts, not capacity figures, so conservative
+# defaults are allowed:
+#   - preStopSleepSeconds: lets the Endpoint removal propagate before the
+#     process stops accepting new calls.
+#   - terminationGracePeriodSeconds: bounds how long the process shell may wait
+#     for active_calls to reach zero before it is SIGKILLed.
+draining:
+  preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 300
+
+# Horizontal Pod Autoscaling. Every threshold here is a CAPACITY value and is
+# therefore left null until M6 (O1) measures it. hpa.yaml renders only when
+# enabled is true AND at least one target is non-null; min/max are then
+# required and the install fails loudly instead of guessing. See ADR-0010.
+autoscaling:
+  enabled: false
+  targetCPUUtilizationPercentage: null   # O1 / M6
+  targetMemoryUtilizationPercentage: null # O1 / M6
+  customMetric:
+    # e.g. as_active_calls — the per-Pod average that should trigger a scale-out.
+    name: null        # O1 / M6
+    targetValue: null # O1 / M6
+  minReplicas: null   # O1 / M6
+  maxReplicas: null   # O1 / M6
+
+# Downscale guard: never delete a Pod that still carries calls. The threshold is
+# a state condition ("more than zero calls in flight"), not a capacity figure —
+# any non-zero value would leave a call to be dropped. See ADR-0010 and
+# docs/architecture/新系统整体架构.md §4.1.
+downscaleGuard:
+  enabled: true
+  protectWhenActiveCallsAbove: 0
+
+# Liveness / readiness probes. Conservative detection parameters only; they say
+# nothing about how much traffic a Pod can carry (O1 / M6).
+probes:
+  liveness:
+    enabled: true
+    # Port name of the container port to TCP-connect. TLS listener by default:
+    # a tcpSocket probe cannot validate a UDP listener.
+    portName: sip-tls
+    initialDelaySeconds: 20
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 5
+  readiness:
+    enabled: true
+    portName: sip-tls
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+    successThreshold: 1
+
+# PodDisruptionBudget, one per use case. minAvailable accepts an integer or a
+# percentage string. Left null: the template renders NO PDB rather than
+# inventing an availability figure. Set it per customer SLA (related to O5).
+podDisruptionBudget:
+  minAvailable: null
+
+# Observability (ADR-0005): export must never block the call path; the backend
+# is chosen by deployment, not by code.
+telemetry:
+  # e.g. http://otel-collector.observability.svc:4317. null -> exporting stays
+  # unconfigured (NoOp sink), which is the safe default on the call path.
+  otlpEndpoint: null
+  # Payload logging (SIP bodies, SDP) is opt-in and off by default
+  # (ADR-0005, AGENT.md §13).
+  payloadLogsEnabled: false
+
+# Process-wide knobs (kept from the skeleton above, now live).
+logLevel: INFO
+# Version reported by the instance. Injected by config-service canary
+# distribution (ADR-0006); an empty value means "not yet reported".
+configVersion: ""

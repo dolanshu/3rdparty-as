@@ -1,0 +1,79 @@
+3rdparty-as {{ .Chart.AppVersion }} installed as release {{ .Release.Name }}
+in namespace {{ include "as.namespace" . }}.
+
+Use cases rendered:
+{{- range $uc := .Values.useCases }}
+{{- if $uc.enabled }}
+  - {{ $uc.name }}   Deployment/Service: {{ include "as.fullname" $ }}-{{ $uc.name }}
+{{- else }}
+  - {{ $uc.name }}   disabled (nothing rendered)
+{{- end }}
+{{- end }}
+
+1. Before the first call arrives — placeholders that MUST be replaced
+---------------------------------------------------------------------
+{{- if not .Values.postgres.secretName }}
+  * Secret {{ include "as.fullname" . }}-credentials ships EMPTY strings.
+    Fill CONFIG_DB_USER / CONFIG_DB_PASSWORD (and REDIS_PASSWORD if the
+    Sentinel deployment requires auth) or point postgres.secretName at a
+    customer-managed Secret. Nothing here ever carries a real credential
+    (AGENT.md §13).
+{{- end }}
+{{- if and .Values.tls.enabled (not .Values.tls.secretName) }}
+  * tls.enabled is true but tls.secretName is empty: NO certificate is mounted
+    and SIP_TLS_*_PATH points at files that do not exist. Provide the customer
+    PKI Secret (tls.crt / tls.key / ca.crt) before going live (ADR-0016).
+{{- end }}
+{{- if not .Values.sip.peerAllowlist }}
+  * sip.peerAllowlist is empty. Treat it as fail-closed: without the S-SBC
+    allowlist, anyone able to reach the Service can inject calls (ADR-0016).
+{{- end }}
+{{- if not .Values.telemetry.otlpEndpoint }}
+  * telemetry.otlpEndpoint is empty: telemetry is exported nowhere (NoOp sink).
+    Safe for the call path (ADR-0005) but you have no metrics, and therefore no
+    alerting.
+{{- end }}
+
+2. Confirming the version each instance reports
+-----------------------------------------------
+The reported version is the CONFIG_VERSION env var, injected by config-service
+canary distribution (ADR-0006). Compare it across replicas and against the
+latest version the control plane holds — a mismatch that persists is what
+ASConfigDrift alerts on (deploy/alerts/as-alerts.yaml).
+
+  kubectl -n {{ include "as.namespace" . }} get pods -l app.kubernetes.io/part-of=3rdparty-as \
+    -o custom-columns=POD:.metadata.name,USE_CASE:.metadata.labels.app\.kubernetes\.io/use-case,READY:.status.containerStatuses[0].ready
+
+{{- range $uc := .Values.useCases }}
+{{- if $uc.enabled }}
+  kubectl -n {{ include "as.namespace" $ }} exec deploy/{{ include "as.fullname" $ }}-{{ $uc.name }} -- printenv CONFIG_VERSION
+{{- end }}
+{{- end }}
+
+3. Triggering a rollback
+------------------------
+Two different things are called "rollback"; do not confuse them.
+
+  a) Configuration rollback (ADR-0006): roll back the change order from the
+     console / config-service — the previous config version is redistributed to
+     the instances. This is what ASConfigRollbackTriggered alerts on, and it
+     always needs a human to confirm afterwards.
+
+  b) Image / manifest rollback: revert the Helm release and let the Deployment
+     roll the Pods back. Draining applies on the way out (ADR-0009):
+
+       helm -n {{ include "as.namespace" . }} history {{ .Release.Name }}
+       helm -n {{ include "as.namespace" . }} rollback {{ .Release.Name }} <revision>
+       kubectl -n {{ include "as.namespace" . }} rollout status deploy --selector app.kubernetes.io/part-of=3rdparty-as
+
+4. Capacity
+-----------
+{{- if .Values.autoscaling.enabled }}
+  autoscaling.enabled is true. Re-check that minReplicas / maxReplicas and the
+  thresholds came from the M6 measurement — this chart ships none of them, and
+  a guessed threshold is worse than no HPA at all.
+{{- else }}
+  No HPA is rendered: autoscaling.enabled is false. replicaCount values in this
+  release are placeholders (1 where unset), NOT capacity conclusions. Real
+  figures are measured in M6 (O1); see deploy/helm/README.md.
+{{- end }}

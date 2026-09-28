@@ -1,0 +1,32 @@
+{{/*
+PodDisruptionBudget, one per enabled use case: voluntary disruptions (node
+drain, cluster upgrade) must not take the whole use case down at once
+(ADR-0009, REQ-NF-9).
+
+GUARD: `podDisruptionBudget.minAvailable` has no default. When it is null this
+file renders NOTHING — an availability floor invented here would be read as a
+decision nobody made. Set it per customer SLA (integer or percentage string);
+it is related to the unresolved O5 (N+1 vs N+M).
+*/}}
+{{- if .Values.podDisruptionBudget.minAvailable }}
+{{- range $uc := .Values.useCases }}
+{{- if $uc.enabled }}
+{{- $ctx := dict "Release" $.Release "Chart" $.Chart "Values" $.Values "useCase" $uc.name }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "as.fullname" $ }}-{{ $uc.name }}
+  namespace: {{ include "as.namespace" $ }}
+  labels:
+    {{- include "as.useCaseLabels" $ctx | nindent 4 }}
+spec:
+  # Integer (2) or percentage string ("50%") as accepted by the policy/v1 API.
+  # An availability floor, not a capacity figure.
+  minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "as.useCaseSelectorLabels" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- end }}
