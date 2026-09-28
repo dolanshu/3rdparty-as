@@ -1,0 +1,295 @@
+[
+  {
+    "case_id": "blocked-range-is-declined",
+    "description": "A called number inside a blocked range is refused, with no target.",
+    "applies_to": ["both"],
+    "call_id": "contract-blocked-range@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+861681000000",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-168", "prefix": "+86168", "action": "block" }
+    ],
+    "expected": {
+      "action": "decline",
+      "target": null,
+      "reason_code": "MATCH_BLOCK",
+      "matched_rule_id": "rule-168"
+    }
+  },
+  {
+    "case_id": "no-rule-matches-is-not-found",
+    "description": "A called number outside every configured range matches nothing.",
+    "applies_to": ["both"],
+    "call_id": "contract-no-match@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+869990000000",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-755", "prefix": "+86755", "action": "forward" },
+      { "rule_id": "rule-168", "prefix": "+86168", "action": "block" }
+    ],
+    "expected": {
+      "action": "not_found",
+      "target": null,
+      "reason_code": "NO_MATCH",
+      "matched_rule_id": null
+    }
+  },
+  {
+    "case_id": "longest-prefix-wins",
+    "description": "Within one action the longer of two matching prefixes decides.",
+    "applies_to": ["both"],
+    "call_id": "contract-longest-prefix@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8675512345678",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-755", "prefix": "+86755", "action": "forward" },
+      { "rule_id": "rule-75512", "prefix": "+8675512", "action": "forward" }
+    ],
+    "expected": {
+      "action": "forward",
+      "target": "+8675512345678",
+      "reason_code": "MATCH_FORWARD",
+      "matched_rule_id": "rule-75512"
+    }
+  },
+  {
+    "case_id": "block-outranks-translate",
+    "description": "A block rule wins over a translate rule even when the translate prefix is longer.",
+    "applies_to": ["both"],
+    "call_id": "contract-block-outranks-translate@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8675512345678",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-75512-translate", "prefix": "+8675512", "action": "translate" },
+      { "rule_id": "rule-755-block", "prefix": "+86755", "action": "block" }
+    ],
+    "expected": {
+      "action": "decline",
+      "target": null,
+      "reason_code": "MATCH_BLOCK",
+      "matched_rule_id": "rule-755-block"
+    }
+  },
+  {
+    "case_id": "separators-carry-no-routing-meaning",
+    "description": "A number is normalized before matching, so separators change nothing.",
+    "applies_to": ["both"],
+    "call_id": "contract-separators@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+86-755-1234-5678",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-755", "prefix": "+86755", "action": "forward" }
+    ],
+    "expected": {
+      "action": "forward",
+      "target": "+8675512345678",
+      "reason_code": "MATCH_FORWARD",
+      "matched_rule_id": "rule-755"
+    }
+  },
+  {
+    "case_id": "translate-baseline-number",
+    "description": "The S1 baseline fact: +8613800138000 is rewritten to 013800138000.",
+    "applies_to": ["translation"],
+    "call_id": "contract-translate-baseline@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8613800138000",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-mob-cm-40", "prefix": "+86138", "action": "translate" }
+    ],
+    "translations": [
+      {
+        "rule_id": "R-MOB-CM-40",
+        "prefix": "+86138",
+        "strip_prefix": "+86",
+        "add_prefix": "0"
+      }
+    ],
+    "expected": {
+      "action": "translate",
+      "target": "013800138000",
+      "reason_code": "MATCH_TRANSLATE",
+      "matched_rule_id": "rule-mob-cm-40"
+    }
+  },
+  {
+    "case_id": "translate-without-a-translation-rule-falls-back",
+    "description": "A translate hit with no translation rule keeps the normalized called number.",
+    "applies_to": ["translation"],
+    "call_id": "contract-translate-fallback@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8613800138000",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-mob-cm-40", "prefix": "+86138", "action": "translate" }
+    ],
+    "translations": [],
+    "expected": {
+      "action": "translate",
+      "target": "+8613800138000",
+      "reason_code": "MATCH_TRANSLATE",
+      "matched_rule_id": "rule-mob-cm-40"
+    }
+  },
+  {
+    "case_id": "translation-prefers-the-longest-prefix",
+    "description": "The narrower of two overlapping translation ranges rewrites the number.",
+    "applies_to": ["translation"],
+    "call_id": "contract-translate-longest-prefix@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8675512345678",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-75512", "prefix": "+8675512", "action": "translate" }
+    ],
+    "translations": [
+      { "rule_id": "t-755", "prefix": "+86755", "strip_prefix": "+86", "add_prefix": "0" },
+      { "rule_id": "t-75512", "prefix": "+8675512", "strip_prefix": "+86", "add_prefix": "00" }
+    ],
+    "expected": {
+      "action": "translate",
+      "target": "0075512345678",
+      "reason_code": "MATCH_TRANSLATE",
+      "matched_rule_id": "rule-75512"
+    }
+  },
+  {
+    "case_id": "forward-under-the-limit-passes-through",
+    "description": "A forward hit whose window is not spent passes through as the kernel decided.",
+    "applies_to": ["anti-fraud"],
+    "call_id": "contract-rate-under@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8613800138000",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-138", "prefix": "+86138", "action": "forward" }
+    ],
+    "limits": [
+      { "rule_id": "rate-138", "prefix": "+86138", "window_seconds": 60, "max_calls": 2 }
+    ],
+    "counters": { "rate-138": 1 },
+    "expected": {
+      "action": "forward",
+      "target": "+8613800138000",
+      "reason_code": "MATCH_FORWARD",
+      "matched_rule_id": "rule-138"
+    }
+  },
+  {
+    "case_id": "forward-over-the-limit-is-declined",
+    "description": "A forward hit that spent its window is refused as RATE_LIMIT, with no target.",
+    "applies_to": ["anti-fraud"],
+    "call_id": "contract-rate-over@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8613800138000",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-138", "prefix": "+86138", "action": "forward" }
+    ],
+    "limits": [
+      { "rule_id": "rate-138", "prefix": "+86138", "window_seconds": 60, "max_calls": 2 }
+    ],
+    "counters": { "rate-138": 2 },
+    "expected": {
+      "action": "decline",
+      "target": null,
+      "reason_code": "RATE_LIMIT",
+      "matched_rule_id": "rate-138"
+    }
+  },
+  {
+    "case_id": "translate-under-the-limit-is-not-rewritten",
+    "description": "Screening does not rewrite: a translate hit under the limit keeps the kernel target.",
+    "applies_to": ["anti-fraud"],
+    "call_id": "contract-rate-translate@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8675512345678",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-75512", "prefix": "+8675512", "action": "translate" }
+    ],
+    "limits": [
+      { "rule_id": "rate-755", "prefix": "+86755", "window_seconds": 60, "max_calls": 2 }
+    ],
+    "counters": { "rate-755": 1 },
+    "expected": {
+      "action": "translate",
+      "target": null,
+      "reason_code": "MATCH_TRANSLATE",
+      "matched_rule_id": "rule-75512"
+    }
+  },
+  {
+    "case_id": "blocked-range-outranks-the-rate-screen",
+    "description": "A spent window cannot overturn the kernel's refusal of a blocked range.",
+    "applies_to": ["anti-fraud"],
+    "call_id": "contract-rate-block@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+861681000000",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-168", "prefix": "+86168", "action": "block" }
+    ],
+    "limits": [
+      { "rule_id": "rate-168", "prefix": "+86168", "window_seconds": 60, "max_calls": 1 }
+    ],
+    "counters": { "rate-168": 99 },
+    "expected": {
+      "action": "decline",
+      "target": null,
+      "reason_code": "MATCH_BLOCK",
+      "matched_rule_id": "rule-168"
+    }
+  },
+  {
+    "case_id": "rate-window-prefers-the-longest-prefix",
+    "description": "The narrower of two overlapping windows governs, and a spent one refuses the call.",
+    "applies_to": ["anti-fraud"],
+    "call_id": "contract-rate-longest-prefix@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8675512345678",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-75512", "prefix": "+8675512", "action": "forward" }
+    ],
+    "limits": [
+      { "rule_id": "rate-755", "prefix": "+86755", "window_seconds": 60, "max_calls": 5 },
+      { "rule_id": "rate-75512", "prefix": "+8675512", "window_seconds": 60, "max_calls": 1 }
+    ],
+    "counters": { "rate-755": 0, "rate-75512": 1 },
+    "expected": {
+      "action": "decline",
+      "target": null,
+      "reason_code": "RATE_LIMIT",
+      "matched_rule_id": "rate-75512"
+    }
+  },
+  {
+    "case_id": "an-ungoverned-number-is-not-screened",
+    "description": "A number no window covers is not screened, whatever the other counters say.",
+    "applies_to": ["anti-fraud"],
+    "call_id": "contract-rate-ungoverned@testbed",
+    "calling_number": "+86216180001",
+    "called_number": "+8613800138000",
+    "received_at": 1700000000.0,
+    "rules": [
+      { "rule_id": "rule-138", "prefix": "+86138", "action": "forward" }
+    ],
+    "limits": [
+      { "rule_id": "rate-755", "prefix": "+86755", "window_seconds": 60, "max_calls": 1 }
+    ],
+    "counters": { "rate-755": 99 },
+    "expected": {
+      "action": "forward",
+      "target": "+8613800138000",
+      "reason_code": "MATCH_FORWARD",
+      "matched_rule_id": "rule-138"
+    }
+  }
+]
