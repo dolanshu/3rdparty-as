@@ -3,6 +3,7 @@
 - **Status**: accepted
 - **Date**: 2026-09-28
 - **Decides**: §11.3 —— 一个产品 release 版本，独立的组件接口版本；杜绝 VERSION 漂移
+- **回应 REQ**: REQ-NF-11
 
 ---
 

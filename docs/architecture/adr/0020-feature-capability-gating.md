@@ -3,6 +3,7 @@
 - **Status**: draft
 - **Date**: 2026-09-28
 - **Decides**: §0 账本条目 19 —— 分层 feature 门控（部署级总开关 + 运行态细粒度覆盖）
+- **回应 REQ**: REQ-G-1
 
 ## Context（背景）
 

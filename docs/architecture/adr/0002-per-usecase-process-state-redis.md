@@ -3,6 +3,7 @@
 - **Status**: accepted
 - **Date**: 2026-09-28
 - **Decides**: §0 决策 2 —— 运行时模型：每用例一进程 + 状态外置 Redis，AS 无状态多副本
+- **回应 REQ**: REQ-NF-1, REQ-NF-2, REQ-NF-3, REQ-NF-4, REQ-NF-9
 
 ---
 

@@ -3,6 +3,7 @@
 - **Status**: accepted
 - **Date**: 2026-09-28
 - **Decides**: §0 决策 10 —— IMS 位置：网外部署、iFC 触发、S-SBC 透明桥接 → 单一 ISC 语义
+- **回应 REQ**: REQ-F-1, REQ-F-2, REQ-F-3, REQ-F-5, REQ-NF-5
 
 ---
 

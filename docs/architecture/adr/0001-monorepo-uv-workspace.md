@@ -3,6 +3,7 @@
 - **Status**: accepted
 - **Date**: 2026-09-28
 - **Decides**: §0 决策 3 —— 仓库组织：单 monorepo + uv workspace
+- **回应 REQ**: REQ-NF-12, REQ-G-2
 
 ---
 

@@ -3,6 +3,7 @@
 - **Status**: proposed · accepted · superseded by ADR-00NN
 - **Date**: YYYY-MM-DD
 - **Decides**: §0 账本条目 NN —— <一句话决策>
+- **回应 REQ**: REQ-G-2（本模板本身是治理工具）
 
 ## Context（背景）
 

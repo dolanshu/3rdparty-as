@@ -6,6 +6,7 @@
 - **接受日期**：2026-09-28
 - **取代**：由 [ADR-0011](0011-sip-stack-dual-path.md) 确立的"生产栈 = sippy"前提（ADR-0011 的双栈并行框架仍有效）
 - **关联**：架构决策 8、O1、O2、O3、D1、D2；ADR-0011；[`容量量级估算.md`](../容量量级估算.md)；[`docs/SIP_stack_selection.md`](../SIP_stack_selection.md)
+- **回应 REQ**: 隐含回应所有 REQ-F-*（SIP 栈是所有信令功能的基础设施）
 
 ---
 
