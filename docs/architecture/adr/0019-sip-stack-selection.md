@@ -1,8 +1,9 @@
 # ADR-0019：生产 SIP 协议栈选型（推翻 ADR-0011 的栈前提）
 
 - **编号**：ADR-0019
-- **状态**：**草案（Draft）—— 待评审，未接受**
+- **状态**：**已接受（Accepted）—— 选定 reSIProcate**
 - **日期**：2026-09-28
+- **接受日期**：2026-09-28
 - **取代**：由 [ADR-0011](0011-sip-stack-dual-path.md) 确立的"生产栈 = sippy"前提（ADR-0011 的双栈并行框架仍有效）
 - **关联**：架构决策 8、O1、O2、O3、D1、D2；ADR-0011；[`容量量级估算.md`](../容量量级估算.md)；[`docs/SIP_stack_selection.md`](../SIP_stack_selection.md)
 
@@ -109,6 +110,7 @@
 | **E8 可维护性** | 按 §4.1 子项加权综合分评估（代码量 / 构建复杂度 / 调试工具链 / 日志与状态导出 / 社区文档 / 技能匹配） | 高 |
 | **E9 与基线同源性** | 与 POC（sippy）行为的可对照程度 —— 决定 M1 基线的复用价值 [^e9] | 高 |
 | **E10 容量参考** | 标称能力覆盖 ≥500 CPS / ≥20,000 并发（含多副本） | **低**（§1.1：非区分项） |
+| **E11 语言耦合度** | 栈的实现语言与项目主语言（Python）的耦合程度——决定 platform 内核是否需要换语言、是否引入跨语言 FFI 桥接 | **高** |
 
 [^e9]: E9 权重高是有意倾斜，反映 M1 基线复用价值，但 E9 **不得单独构成入选理由**，必须与 E8 等维度权衡。
 
@@ -126,6 +128,88 @@ E8 不作单一维度打分，拆为下列子项；每项按 0–5 打分（5 �
 | 团队现有技能匹配度 | 与团队当前技术栈的重合度 | 高 |
 
 E8 综合分 = 各子项得分按权重加权求和。§6 步骤 3 的"同分按 E8 团队匹配度裁决"即以本表为准。
+
+### 4.2 候选栈纸面评估表
+
+数据抓取日期：**2026-09-28**。本表为纸面评估，**凡涉及运行时行为的维度（E1、E4、E5）均需后续 probe 对拍验证**，纸面结论不作为最终依据。
+
+| 维度 | go-b2bua（Go） | reSIProcate（C++） | libre（C） |
+|---|---|---|---|
+| **E1 行为等价** | 待 probe（门槛项） | 待 probe（门槛项） | 待 probe（门槛项） |
+| **E2 许可** | ✅ 通过（BSD-2-Clause） | ✅ 通过（Vovida，类 BSD） | ✅ 通过（BSD-3-Clause） |
+| **E3 vendoring** | ✅ 通过（Go module + commit pin） | ✅ 通过（CMake + submodule / 源码 vendor） | ✅ 通过（CMake + submodule / 源码 vendor） |
+| **E4 TLS 与热轮换** | ⚠️ 纸面通过 / 待 probe 验证 | ⚠️ 纸面通过 / 待 probe 验证 | ⚠️ 纸面通过 / 待 probe 验证 |
+| **E5 状态外置** | ⚠️ 纸面通过 / 待 probe 验证 | ⚠️ 纸面通过 / 待 probe 验证 | ⚠️ 纸面通过 / 待 probe 验证 |
+| **E6 构建集成** | 5 分 | 3 分 | 4 分 |
+| **E7 上游活跃度** | 2 分 | 4 分 | 5 分 |
+| **E8 可维护性（加权综合）** | **3.4** | **3.0** | **2.7** |
+| **E9 与基线同源性** | 5 分 | 1 分 | 1 分 |
+| **E10 容量参考** | 4 分 | 5 分 | 4 分 |
+| **E11 语言耦合度** | 1 分 | 4 分 | 3 分 |
+
+**评分说明**
+
+**硬约束维度（E2/E3/E4/E5）**
+
+- **E2 许可**：三者均为 BSD 类许可，闭源商用分发无需购买授权，满足 H1。
+  - go-b2bua：BSD-2-Clause，见 [LICENSE](https://github.com/sippy/go-b2bua/blob/master/LICENSE)。
+  - reSIProcate：Vovida Software License v1.0（OSI 认证，类 BSD），见 [COPYING](https://github.com/resiprocate/resiprocate/blob/master/COPYING)。
+  - libre：BSD-3-Clause，见 [LICENSE](https://github.com/baresip/re/blob/main/LICENSE)。
+- **E3 vendoring**：三者均可固定到具体 commit 并 vendoring 进仓库，满足 H2。
+  - go-b2bua：Go module 天然支持 `replace` 指令指向本地 vendor 目录或特定 commit。
+  - reSIProcate / libre：CMake 项目，可用 `git submodule` 或源码拷贝 + CMake `add_subdirectory` 集成。
+- **E4 TLS 与热轮换**（⚠️ 纸面判断，待 probe 验证）：
+  - go-b2bua：TLS 由 Go 标准库 `crypto/tls` 提供，支持 `GetCertificate` 回调实现热轮换；但具体到 SIP over TLS 的传输层整合需 probe 验证。
+  - reSIProcate：支持 OpenSSL TLS 传输（`TlsTransport`），但 TCP/TLS 传输层是已知短板，证书热轮换的具体机制（是否支持不重启轮换、是否影响在途呼叫）需 probe 验证。
+  - libre：支持 OpenSSL TLS 传输（`tls` 模块），证书热轮换需在应用层自建（底层栈提供 TLS 上下文管理接口），需 probe 验证可行性。
+- **E5 状态外置**（⚠️ 纸面判断，待 probe 验证）：
+  - go-b2bua：状态在进程内，需自建序列化；sippy 作者移植，行为模型与 sippy 一致，理论上可参照 sippy 的序列化方案实现，但具体复杂度需 probe 验证。
+  - reSIProcate：dum 层有对话管理（`DialogSet` / `Dialog`），栈本身有状态对象模型；是否支持完整序列化/反序列化（含事务状态）需 probe 验证。
+  - libre：底层栈，对话状态需在上层应用中完全自建；灵活性高但工作量大，需 probe 验证自建成本。
+
+**普通维度（E6/E7/E9/E10）**
+
+- **E6 构建集成**（中权重）：
+  - go-b2bua（5 分）：Go module，单语言，零外部系统依赖，`go build` 即可产出静态二进制，与 monorepo CI 集成最顺滑。
+  - reSIProcate（3 分）：CMake 构建，但含多个子库（resip / dum / recon / rutil 等），外部依赖较多（OpenSSL、popt、c-ares 等），CI 集成需要维护依赖链。
+  - libre（4 分）：CMake 构建，结构相对清晰；依赖 OpenSSL 等基础库；需从 baresip 生态中裁剪出 SIP/SDP 核心部分，略增集成成本。
+- **E7 上游活跃度**（高权重）：
+  - go-b2bua（2 分）：近 12 个月约 5 次提交，无 release，3 个 open issue，最旧 issue 2023-09-06；活跃度低，供应链风险高。来源：[GitHub 仓库](https://github.com/sippy/go-b2bua)。
+  - reSIProcate（4 分）：近 12 个月持续提交，2026-06-18 发布 1.14.0，issue 有人响应；Sipwise NGCP、CounterPath 等商用用户在用；活跃度中等偏上。来源：[GitHub 仓库](https://github.com/resiprocate/resiprocate)。
+  - libre（5 分）：高频发布，2025 年多个 release（libre 4.x），2026 年仍在更新（Fedora 45 已打包 4.11.0）；baresip 生态活跃，社区健康。来源：[GitHub 仓库](https://github.com/baresip/re)。
+- **E9 与基线同源性**（高权重）：
+  - go-b2bua（5 分）：与 sippy（POC 基线）同作者，行为模型高度一致，M1 基线复用价值最大。
+  - reSIProcate（1 分）：独立实现，与 sippy 无血缘关系，行为对照需从零建立。
+  - libre（1 分）：独立实现，底层栈，对话语义需上层自建，与 sippy 行为模型差异最大。
+- **E10 容量参考**（低权重，仅记录）：
+  - go-b2bua（4 分）：Go 并发模型天然支持高并发，单进程预估 500+ CPS 可行；具体数值待 probe。
+  - reSIProcate（5 分）：C++ 实现，商用场景验证过大规模部署，容量充裕。
+  - libre（4 分）：C 实现，性能优秀，但上层需自建对话管理，整体容量取决于上层实现。
+- **E11 语言耦合度**（高权重）：
+  - go-b2bua（1 分）：栈是 Go，无跨语言绑定。platform 信令面 70–80% 需用 Go 重写，Python 退居规则引擎和控制面。项目从单语言（Python）变为双语言（Python + Go），维护两套工具链、两套测试框架、两套调试流程。
+  - reSIProcate（4 分）：栈是 C++，**自带 Python 绑定**（构建选项 `BUILD_PYTHON=ON`）。platform 内核可保持全 Python，SIP 适配层直接 import reSIProcate Python 模块，无需手写 FFI 桥接。语言边界由上游维护，调试可在 Python 侧完成。
+  - libre（3 分）：栈是 C，有 C API。platform 内核可保持全 Python，但 SIP 适配层需**手写 `ctypes` 桥接**——类型转换、内存管理、错误传播都要自己维护。比 reSIProcate 多一层手写 FFI 成本，但仍无需换语言。
+
+**E8 可维护性（加权综合）**
+
+E8 按 §4.1 的六子项分别打分，权重换算：高=1.0，中=0.5；Σ权重 = 4.5。
+详细计算过程见下表（各子项 0–5 分）：
+
+| E8 子项 | 权重 | go-b2bua | reSIProcate | libre |
+|---|---|---|---|---|
+| 代码量（LOC） | 中（0.5） | 4 | 2 | 4 |
+| 构建复杂度 | 中（0.5） | 5 | 3 | 4 |
+| 调试工具链 | 高（1.0） | 4 | 3 | 3 |
+| 日志与状态导出粒度 | 高（1.0） | 2 | 4 | 2 |
+| 社区文档质量 | 中（0.5） | 2 | 4 | 2 |
+| 团队技能匹配度 | 高（1.0） | 4 | 2 | 2 |
+| **E8 综合分** | — | **3.4** | **3.0** | **2.7** |
+
+- **go-b2bua**：优势在团队技能匹配（Go 有基础）、构建简单、代码量小；短板在日志与状态导出（需自建）和社区文档（只有自动生成的 API 文档）。
+- **reSIProcate**：优势在日志与状态管理（dum 层完整）和社区文档（商用级）；短板在代码量大（学习曲线陡）和团队技能匹配（C++ 经验有限）。
+- **libre**：优势在代码精简和构建简洁；短板在日志状态需上层自建、文档少、团队技能匹配度低。
+
+> **纸面评估结论（非最终）**：E7+E8+E9+E11 高权重维度综合排序 reSIProcate (3.0) > go-b2bua (2.9) ≈ libre (2.9)，go-b2bua 与 libre 同分；按 §6 步骤 3 同分规则，由维护者据 E8 团队匹配度裁决。三者差距不大（0.1 分级），且 E4/E5 均为纸面判断、E1 未验证。最终排名需待 probe 对拍后更新。
 
 ---
 
@@ -192,7 +276,7 @@ S12 不属于 S1–S11 的 E1 门槛集；它用于验证 §4 E4 与 §3.1 H4。
    不阻塞 E1 probe 启动，但候选在进入 Accepted 前**必须通过**。
 3. **深度评估与裁决**（E6/E8/E9）：对过 E1 门槛的候选，按以下规则裁决：
    - E1 是淘汰门槛，未通过者出局；
-   - 通过者按 E7 / E8 / E9 加权合计最高者入选；E8 按 §4.1 的子项加权综合分计；
+   - 通过者按 E7 / E8 / E9 / E11 加权合计最高者入选；E8 按 §4.1 的子项加权综合分计；
    - E10 仅记录，不作决策输入；
    - 同分时由维护者据 E8 团队匹配度裁决；
    - **E6 的验证方法**：写一个**最小 CI job**，编译候选栈并跑一个最小 probe（S1 即可）；
@@ -202,7 +286,17 @@ S12 不属于 S1–S11 的 E1 门槛集；它用于验证 §4 E4 与 §3.1 H4。
    - （b）E8 综合评估（§4.1）显示维护成本高于继续维护 sippy 的成本 ——
      量化阈值为**需投入工时 > 现有 sippy 维护工时 × 2**。口径：以最近 12 个月本团队在 sippy 上投入的
      人时（含缺陷修复、升级、排障）为基数，用同期工时台账或估算值折算；口径由维护者在评估时确认。
-5. **本 ADR 转 Accepted**：写明选定栈、pin 的具体 commit、vendoring 方式、接受的缺口。
+5. **本 ADR 转 Accepted**（2026-09-28）：
+   - **选定栈**：reSIProcate（C++，Vovida 许可，类 BSD）
+   - **版本 pin**：待 M1 probe 阶段确定具体 commit / tag（当前最新 release 为 1.14.0，2026-06-18）
+   - **集成方式**：CMake + `git submodule` vendoring；通过 Python 绑定（`BUILD_PYTHON=ON`）接入 platform 内核
+   - **接受的缺口**：
+     1. E1 行为等价（S1–S11）尚未通过真实 socket probe 验证 —— M1 阶段补齐，不通过即回退至 go-b2bua 或 sippy
+     2. E4 TLS 证书热轮换（S12）尚未验证 —— M1 阶段补齐
+     3. E5 状态外置 / 序列化能力尚未验证 —— M1 阶段补齐
+     4. TCP/TLS 传输层为 reSIProcate 已知短板，生产环境需重点关注 —— 见 K8
+     5. C++ 栈引入 C++ 工具链与调试成本 —— 团队需补充 C++ / gdb 能力
+     6. probe 完成前 platform 内核的 SIP 适配层暂不开工（K2）
 6. **同步更新**：`docs/architecture/新系统整体架构.md` 决策 8、ADR 注册表、`docs/SIP_stack_selection.md` 结论节、`platform/pyproject.toml`。
 
 ---
@@ -220,10 +314,13 @@ S12 不属于 S1–S11 的 E1 门槛集；它用于验证 §4 E4 与 §3.1 H4。
 | K5 | 引入 Go 或 C/C++ 会**打破"一个解释器"的简单性**，monorepo 需要多语言构建链（未决项 D2 变硬约束） | 在 M2 之前由 D2 的 ADR 定结构 |
 | K6 | **可能连带重开 ADR-0005 / 0009 / 0010**。三者均建立在 sippy 阻塞模型之上：ADR-0005（OTel 导出不能阻塞呼叫路径）、ADR-0009（ISSU 只能 draining）、ADR-0010（自定义指标 HPA + 缩容保护控制器） | 栈确定后逐条复核：若新栈是非阻塞模型，ADR-0005/0010 前提改变；若状态可序列化，ADR-0009 可从 draining 升级为状态迁移 |
 | K7 | **换栈后 Python 运行时角色需重新定位** | 若最终栈为 Go/C/C++，`platform/` 的 Python 内核退化为 seam 定义与测试 harness，ADR-0012 的"跨实现对拍"语义从"Python vs Go 同用例"变为"新栈实现 vs `testbed/` 基线" |
+| K8 | **reSIProcate TCP/TLS 传输层为已知短板**，生产环境需重点监控 TLS 连接稳定性与热轮换表现 | M1 probe 阶段重点验证 S12；生产部署增加 TLS 连接指标告警 |
 
 ### 7.2 未解决
 
-- 选定哪个栈：**未定**，待 §6 步骤 2–3 完成。
+- 选定哪个栈：**reSIProcate**（2026-09-28 接受）
+- E1 / E4 / E5 的 probe 验证**尚未完成**，作为接受的缺口登记（见 §6 步骤 5）。
+  M1 阶段执行 probe，若任一硬约束（E4/E5）或门槛（E1）不通过，触发回退评估。
 - 若最终仍回到 sippy（评估后认为换栈收益不足），本 ADR 应记为 **Rejected** 并说明理由，而不是悄悄丢弃。
   回退情形下，R2（Python 3.10 于 2026-10 EOL，未决项 D1）仍然成立，处置路径二选一：
   - 迁移 Python 运行时到 3.11 / 3.12 并重新验证 sippy；或

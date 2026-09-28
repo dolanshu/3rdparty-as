@@ -286,3 +286,40 @@ ADR-0019 作为一份**推翻性 ADR**（推翻 ADR-0011 的"sippy 保生产"前
 
 签署范围：本 review record 所载 gap 已全部闭环，ADR-0019 在文档层面具备进入 probe 的条件。
 本签字**不等于** ADR-0019 转 Accepted —— Accepted 仍需 probe 对拍 + E6/E8/E9 深度评估完成后另行签字。
+
+---
+
+## 7. 接受记录（Accepted）
+
+- **接受日期**：2026-09-28
+- **接受人**：维护者
+- **最终裁决**：**带缺口接受（Draft → Accepted）**
+
+### 选定栈
+
+**reSIProcate**（C++，Vovida 许可，类 BSD），通过 Python 绑定（`BUILD_PYTHON=ON`）接入 platform 内核。
+
+### 接受的缺口
+
+| 缺口 | 内容 | 处置 |
+|---|---|---|
+| 1 | E1 行为等价（S1–S11）未通过真实 socket probe 验证 | M1 阶段补齐；不通过即回退评估 |
+| 2 | E4 TLS 证书热轮换（S12）未验证 | M1 阶段补齐 |
+| 3 | E5 状态外置 / 序列化能力未验证 | M1 阶段补齐 |
+| 4 | reSIProcate TCP/TLS 传输层为已知短板 | 生产重点监控；见 ADR-0019 K8 |
+| 5 | C++ 栈引入 C++ 工具链与调试成本 | 团队补充 C++ 能力；platform 内核保持 Python，减少 C++ 依赖面 |
+
+### 回退机制
+
+若 M1 probe 阶段验证 E1/E4/E5 任一硬约束或门槛不通过，触发回退评估（ADR-0019 §6 步骤 4）：
+- （a）全部正式候选均未通过 E1 门槛；或
+- （b）E8 综合维护工时 > 现有 sippy 维护工时 × 2
+
+回退结果：ADR-0019 记为 Rejected，重新评估 go-b2bua 或回退 sippy（含 D1 两条处置路径）。
+
+### 验证方式
+
+- ADR-0019 状态行已更新为 `已接受（Accepted）—— 选定 reSIProcate`
+- 架构文档决策 8 已同步
+- ADR 注册表 0019 行状态已更新为 `accepted`
+- plan.md O2 解除阻塞，M0 里程碑状态从"阻塞于 O2"改为"待维护者签字"

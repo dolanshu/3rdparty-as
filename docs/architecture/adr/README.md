@@ -32,7 +32,7 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | 0016 | 边界内安全：对端白名单、端到端 TLS、控制台鉴权、全量审计。不做 LI、不做计费 | 18 | skeleton |
 | 0017 | 不做 CDR：不采集、不投递、不归档 —— 由呼叫轨迹替代 | 4 | skeleton |
 | 0018 | 一个产品 release 版本，独立的组件接口版本 | §11.3 | skeleton |
-| [0019](0019-*.md) | 生产 SIP 协议栈选型（推翻 0011 的栈前提；候选 go-b2bua / reSIProcate / libre（SIP/SDP）；rsipstack 因 Rust 不在团队技术栈内被否决） | 8 | **draft** |
+| [0019](0019-sip-stack-selection.md) | 生产 SIP 协议栈选型（推翻 0011 的栈前提；选定 reSIProcate；go-b2bua / libre 为备选；rsipstack 因 Rust 不在团队技术栈内被否决） | 8 | **accepted** |
 | [0020](0020-feature-capability-gating.md) | Feature 能力门控：分层（部署级总开关 + 运行态细粒度覆盖），复用配置治理变更流水线 | 19 | draft |
 
 ## 规则
