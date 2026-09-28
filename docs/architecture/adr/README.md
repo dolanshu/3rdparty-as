@@ -14,9 +14,9 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | ADR | 决策 | §0 | 状态 |
 |---|---|---|---|
 | [0000](0000-adr-template.md) | 下面每个 ADR 使用的模板 | — | accepted |
-| 0001 | 单一 monorepo + uv workspace；POC 与 `as_platform` 并入 | 3 | skeleton |
-| 0002 | 运行时模型：一个用例一个进程，状态外置到 Redis | 2 | skeleton |
-| 0003 | 单一 ISC 接入语义 —— S-SBC 是透明桥接，不是第二种业务语义 | 10 | skeleton |
+| [0001](0001-monorepo-uv-workspace.md) | 单一 monorepo + uv workspace；POC 与 `as_platform` 并入 | 3 | draft |
+| [0002](0002-per-usecase-process-state-redis.md) | 运行时模型：一个用例一个进程，状态外置到 Redis | 2 | draft |
+| [0003](0003-s-sbc-transparent-bridge.md) | 单一 ISC 接入语义 —— S-SBC 是透明桥接，不是第二种业务语义 | 10 | draft |
 | 0004 | 不做媒体；保留一个媒体 seam 并写明触发条件 | 11 | skeleton |
 | 0005 | OTel 三信号，后端中立，导出绝不能阻塞呼叫路径；呼叫轨迹保留独立查询通道 | 12 | skeleton |
 | 0006 | 配置治理：PostgreSQL 版本库 + 变更单状态机，而非 GitOps | 13 | skeleton |
@@ -31,7 +31,7 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | 0015 | 研发模式：分层 TDD、ADR 制度化、四层 CI 门禁 | 17 | skeleton |
 | 0016 | 边界内安全：对端白名单、端到端 TLS、控制台鉴权、全量审计。不做 LI、不做计费 | 18 | skeleton |
 | 0017 | 不做 CDR：不采集、不投递、不归档 —— 由呼叫轨迹替代 | 4 | skeleton |
-| 0018 | 一个产品 release 版本，独立的组件接口版本 | §11.3 | skeleton |
+| [0018](0018-release-versioning.md) | 一个产品 release 版本，独立的组件接口版本 | §11.3 | draft |
 | [0019](0019-sip-stack-selection.md) | 生产 SIP 协议栈选型（推翻 0011 的栈前提；选定 reSIProcate；go-b2bua / libre 为备选；rsipstack 因 Rust 不在团队技术栈内被否决） | 8 | **accepted** |
 | [0020](0020-feature-capability-gating.md) | Feature 能力门控：分层（部署级总开关 + 运行态细粒度覆盖），复用配置治理变更流水线 | 19 | draft |
 

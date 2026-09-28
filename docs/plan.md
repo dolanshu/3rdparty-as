@@ -17,6 +17,12 @@
 | 卡住后续里程碑的未决项 | §5 |
 | POC 代码的迁移 | 刻意推迟到 M1–M3，且由 [`migration/triage.md`](migration/triage.md) 把关 |
 
+### 当前仓库状态说明
+
+- `master` 分支当前领先 `origin/master` 3 个 commit，其中 1 个为已 push 的 pre-roadmap 骨架（commit `7b36c0d`，消息 `M0 done- except sip-stack selection`）。该 commit 是在 SIP 栈选型完成前生成的临时骨架，**不作为正式基线**。
+- M0 正式基线由维护者在 SIP 栈选型完成（ADR-0019 Accepted）后授权代签；正式基线应在维护者逐次批准提交后形成，且不得跳过 git hook。
+- G11 已关闭：本说明明确区分 pre-roadmap 骨架与正式基线，后续里程碑以 M0 正式基线为起点。
+
 ---
 
 ## 1. 本步骤已做出的决策

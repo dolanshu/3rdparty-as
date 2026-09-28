@@ -25,6 +25,16 @@
 一个 AS 实例上报**它当前加载的规则版本**。那个上报正是滚动升级安全的原因：ISSU 期间两个版本共存，
 所以规则 schema 必须双向兼容（风险 R4、ADR-0009）。
 
+## 未来依赖
+
+| 依赖 | 用途 |
+|---|---|
+| platform（通过 seam 接口） | 工作区成员，仅引用 `StateStore` 等 seam 抽象，不反向 import |
+| PostgreSQL | 规则版本库（不可变行 + 版本指针）与变更单状态机（draft → approval → staged → effective） |
+| Redis | 分布式锁（变更单审批期间防并发冲突）、变更灰度分发的分布式协调 |
+| OTel SDK | 观测性：指标、日志、trace 统一接入 |
+| FastAPI 或等效轻量框架 | 对外暴露内部 API（规则版本查询、变更单 CRUD、灰度状态上报） |
+
 ## 状态
 
 骨架。
