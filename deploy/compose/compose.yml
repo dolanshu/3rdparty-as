@@ -1,0 +1,10 @@
+# 开发环境骨架。生产部署走 Helm（deploy/helm/）。
+# 随 M2 开始开发时逐步填充各服务定义。
+# 当前仅列出计划中的服务名，不绑定具体镜像：
+#   - platform（内核容器，暂无线可构建）
+#   - apps-translation、apps-anti-fraud（用例容器）
+#   - services-config-service、services-console（控制面容器）
+#   - redis + postgres（外部依赖骨架）
+#   - simulators（testbed 仿真网元容器）
+services:
+  # 占位：随 M2 启动

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: 3rdparty-as
+description: 第三方 IMS Application Server —— Helm chart 骨架，随部署里程碑落地
+type: application
+version: 0.0.0-skeleton
+appVersion: "0.0.0"
+# Dependencies: Redis Sentinel, PostgreSQL（均为外部；见 plan.md §4 M5）
