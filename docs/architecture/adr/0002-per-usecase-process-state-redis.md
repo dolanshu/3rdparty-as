@@ -1,6 +1,6 @@
 # ADR-0002：每用例一进程 + 状态外置 Redis
 
-- **Status**: draft
+- **Status**: accepted
 - **Date**: 2026-09-28
 - **Decides**: §0 决策 2 —— 运行时模型：每用例一进程 + 状态外置 Redis，AS 无状态多副本
 

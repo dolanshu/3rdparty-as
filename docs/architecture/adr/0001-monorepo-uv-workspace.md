@@ -1,6 +1,6 @@
 # ADR-0001：单一 monorepo + uv workspace
 
-- **Status**: draft
+- **Status**: accepted
 - **Date**: 2026-09-28
 - **Decides**: §0 决策 3 —— 仓库组织：单 monorepo + uv workspace
 

@@ -1,6 +1,6 @@
 # ADR-0018：统一产品 release 版本 + 组件接口独立版本
 
-- **Status**: draft
+- **Status**: accepted
 - **Date**: 2026-09-28
 - **Decides**: §11.3 —— 一个产品 release 版本，独立的组件接口版本；杜绝 VERSION 漂移
 

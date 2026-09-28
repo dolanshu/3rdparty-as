@@ -1,6 +1,6 @@
 # ADR-0003：单一 ISC 接入语义 —— S-SBC 是透明桥接
 
-- **Status**: draft
+- **Status**: accepted
 - **Date**: 2026-09-28
 - **Decides**: §0 决策 10 —— IMS 位置：网外部署、iFC 触发、S-SBC 透明桥接 → 单一 ISC 语义
 
