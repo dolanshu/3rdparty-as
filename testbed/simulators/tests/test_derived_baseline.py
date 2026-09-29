@@ -22,7 +22,7 @@ from typing import Final
 
 import pytest
 
-from as_simulators.sip_message import (
+from as_platform.sip.message import (
     SipMessage,
     call_id,
     header,
