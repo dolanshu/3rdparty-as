@@ -21,14 +21,14 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | [0005](0005-observability-otel.md) | OTel 三信号，后端中立，导出绝不能阻塞呼叫路径；呼叫轨迹保留独立查询通道 | 12 | accepted ✓ |
 | [0006](0006-config-governance.md) | 配置治理：PostgreSQL 版本库 + 变更单状态机，而非 GitOps | 13 | accepted ✓ |
 | [0007](0007-data-plane-split.md) | 数据面拆分：Redis 存运行态，PostgreSQL 存治理态 | 14 | accepted ✓ |
-| 0008 | 冗余：站点内 N+1 零单点；跨站点 1+1 温备，非双活 | 7 | skeleton |
+| [0008](0008-redundancy.md) | 冗余：站点内 N+1 零单点；跨站点 1+1 温备，非双活 | 7 | accepted ✓ |
 | [0009](0009-issu-draining.md) | ISSU 是 draining，不是在途状态迁移 | §6.2 | accepted ✓ |
 | [0010](0010-autoscaling-hpa-downscale-guard.md) | 扩缩容：自定义指标 HPA + 缩容保护控制器 | 15 | accepted ✓ |
 | 0011 | ~~SIP 栈：双栈，`sippy` 保生产，`go-b2bua` 试点~~ **栈前提被 ADR-0019 推翻**：sippy 退出生产栈；双栈并行框架仍有效 | 8 | superseded-in-part |
-| 0012 | 语言无关契约 + 跨实现对拍作为转正门槛 | 9 | skeleton |
-| 0013 | Helm 是唯一生产形态；compose 仅作开发环境 | 6 | skeleton |
-| 0014 | 三层 testbed；真实 socket 压测；不是 v1 交付物 | 16 | skeleton |
-| 0015 | 研发模式：分层 TDD、ADR 制度化、四层 CI 门禁 | 17 | skeleton |
+| [0012](0012-cross-implementation-parity.md) | 语言无关契约 + 跨实现对拍作为转正门槛 | 9 | accepted ✓ |
+| [0013](0013-helm-only-production.md) | Helm 是唯一生产形态；compose 仅作开发环境 | 6 | accepted ✓ |
+| [0014](0014-three-layer-testbed.md) | 三层 testbed；真实 socket 压测；不是 v1 交付物 | 16 | accepted ✓ |
+| [0015](0015-engineering-discipline.md) | 研发模式：分层 TDD、ADR 制度化、四层 CI 门禁 | 17 | accepted ✓ |
 | [0016](0016-in-boundary-security.md) | 边界内安全：对端白名单、端到端 TLS、控制台鉴权、全量审计。不做 LI、不做计费 | 18 | accepted ✓ |
 | [0017](0017-no-cdr.md) | 不做 CDR：不采集、不投递、不归档 —— 由呼叫轨迹替代 | 4 | accepted ✓ |
 | [0018](0018-release-versioning.md) | 一个产品 release 版本，独立的组件接口版本 | §11.3 | accepted ✓ |
