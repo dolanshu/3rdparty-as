@@ -201,6 +201,8 @@
 | 传输 | 字节真的上线路（`_SocketPeer` 用真实 socket，按 RFC 3261 §20.14 的 `Content-Length` 分帧）；缺的是被测栈那一侧的适配器（Protocol 已定义，未实现） |
 | 门禁 | ruff format / ruff check / mypy 干净；`pytest -m "unit or contract"` 391 passed（2 skipped）；`pytest -m integration` 12 passed |
 
+**harness 自检**：`testbed/probe/tests/test_e1_probe_selfcheck.py`（marker `integration`，3 条）用假绑定 + 本地回放服务器在真实 socket 上验证三条路径 —— 匹配 → 退出 0；篡改期望 → 退出 1 并指出差异；绑定缺失 → 退出 2。实跑 3 passed。自检证明的是 harness 接好了、比对是活的，**不代表 reSIProcate 复现了基线**。
+
 **当前未验证**：E1（S1–S11）与 E4（TLS 热轮换）**一个都没有跑过** —— 本环境没有 reSIProcate 的 Python 绑定
 （`BUILD_PYTHON=ON` 未构建）。harness 落盘不等于证据，ADR-0019 §6 步骤 5 的缺口清单未变。
 

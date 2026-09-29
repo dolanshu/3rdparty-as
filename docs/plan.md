@@ -171,6 +171,7 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。M7 �
 | D5 | 呼叫轨迹存储：PostgreSQL，还是独立的短保留存储 | M4 | 与 O4 相关 |
 | D6 | testbed 是否必须在 v1 支持客户验收测试 | M8 | 架构文档把它推迟到 v1.1 |
 | D7 | ~~未决~~ **已裁决（2026-09-28）**：粒度固定为号段 + 稳定哈希百分比，schema 与判定幂等见 [ADR-0021](architecture/adr/0021-runtime-override-granularity.md) | M4 | 与 ADR-0020 的分层门控相关，需在控制面设计前定 |
+| D8 | ADR-0014（三层 testbed）在 PRD 中找不到对应的需求编号：PRD 现行 REQ-NF-13 是"OTel 三信号导出"（已由 ADR-0005 承载），没有覆盖"testbed 三层"与"真实 socket 容量压测"。0014 暂以 REQ-NF-13 指向并在 Evidence 注明 | M8 / PRD 维护 | 需维护者裁决：补一条 testbed/容量压测的 REQ，或调整 0014 的指向 |
 
 ---
 

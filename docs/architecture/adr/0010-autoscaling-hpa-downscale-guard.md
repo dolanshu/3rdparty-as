@@ -65,7 +65,7 @@ HPA 本身回答不了这个问题。它看的是**聚合**指标（每 Pod 平�
 
 - [ADR-0002](0002-per-usecase-process-state-redis.md) 运行时模型：无状态 + 状态外置 + 亲和性双保险
 - [ADR-0007](0007-data-plane-split.md) 运行态在 Redis：实例可摘除的状态前提
-- ADR-0009（skeleton，未落地）ISSU 是 draining，不是在途状态迁移 —— 本 ADR 的摘除动作依赖它的语义
+- [ADR-0009](0009-issu-draining.md) ISSU 是 draining，不是在途状态迁移 —— 本 ADR 的摘除动作依赖它的语义
 - [`../新系统整体架构.md`](../新系统整体架构.md) §6.3 动态扩缩容
 - [`../../../deploy/helm/README.md`](../../../deploy/helm/README.md) 阈值与副本上下限的落地位置
 - 未决项 O1（容量目标，M6）：在此之前本 ADR 不出版任何阈值
