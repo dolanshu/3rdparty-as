@@ -33,6 +33,23 @@ class TelemetryEvent:
     timestamp: float = 0.0
 
 
+# See ADR-0005.
+class TelemetrySink(Protocol):
+    """The call path's only dependency for emitting telemetry.
+
+    Both :class:`BoundedQueueSink` and :class:`NoOpSink` satisfy this protocol.
+    Export must never block the call path.
+    """
+
+    def emit(self, event: TelemetryEvent) -> None:
+        """Hand one event to the sink without blocking the call path.
+
+        Args:
+            event: The event to record.
+        """
+        ...
+
+
 class Exporter(Protocol):
     """The backend-facing half: it receives batches off the call path."""
 
