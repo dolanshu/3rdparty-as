@@ -33,8 +33,6 @@ tmp/
 .vscode/
 *.swp
 .DS_Store
-.codebuddy/teams/
-.trae/
 .workbuddy/
 
 # Office temporary lock files
