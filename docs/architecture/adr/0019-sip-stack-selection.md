@@ -334,3 +334,32 @@ S12 不属于 S1–S11 的 E1 门槛集；它用于验证 §4 E4 与 §3.1 H4。
 评审记录单独落盘于 [`docs/reviews/adr-0019-review.md`](../../reviews/adr-0019-review.md) 与
 [`docs/reviews/adr-0019-review-round2.md`](../../reviews/adr-0019-review-round2.md)。
 依 `AGENT.md` §3.2，本 ADR 在被 Accept 之前必须有该文件。
+
+---
+
+## 9. Probe harness（2026-09-30）
+
+E1 / E4 的 probe harness 已落盘于 `testbed/probe/`：
+
+| 文件 | 作用 |
+|---|---|
+| `testbed/probe/e1_baseline_probe.py` | E1：在真实 socket 上重放 `testbed/contracts/sip-baseline/` 的 S1–S11 基线，逐条比对被测栈发出的消息 |
+| `testbed/probe/tls_hot_rotation_probe.py` | E4 / S12：断言证书热轮换不重启进程、不丢在途呼叫 |
+| `testbed/probe/sequence_compare.py` | 纯函数比对器：方法 / 响应码、`Call-ID`、Request-URI 的 `host:port`、body 逐字节；不比头域顺序 / `Via` branch / SDP `o=` 时间戳 |
+| `testbed/probe/tests/test_sequence_compare.py` | 比对逻辑的 unit 测试（marker `unit`） |
+| `testbed/probe/README.md` | 运行方式、退出码、绑定缺失时的预期行为、K2 约束 |
+
+**当前未执行。** 本环境没有 reSIProcate 的 Python 绑定 —— 构建选项 `BUILD_PYTHON=ON` 未构建，
+`import resip` 失败（本次实跑确认）。两个探针**惰性 import** 绑定模块，缺失时以**退出码 2 响亮失败**
+并打印构建指引（如何用 `BUILD_PYTHON=ON` 构建、如何让它可被 import、如何重跑），**不会静默 skip** ——
+skip 不是证据，K2 不得在没有任何证据的情况下被解除。
+
+因此：
+
+- **E1（S1–S11）与 E4（TLS 热轮换）在本 ADR 中保持开放的接受缺口**，状态不因 harness 落盘而改变；
+  只有在具备绑定的环境跑通并把结果回填 `docs/acceptance/report.md` 后，才可更新 §6 步骤 5 的缺口清单。
+- 被测栈的接口由极简 Protocol 表达（`StackUnderProbe.send(payload) -> bytes | None`、
+  `TlsStackUnderProbe` 的四个方法）；**适配 reSIProcate 绑定的适配器本次未实现**，
+  真实接入时由绑定侧提供（可选入口 `create_stack_under_probe(host, port)`）。
+- **E5（状态外置 / 序列化）的探针尚未编写**，列为后续项 —— E5 目前连可执行的判定都没有。
+- K2 仍然生效：probe 通过前，`platform/` 的 SIP 适配层不开工。

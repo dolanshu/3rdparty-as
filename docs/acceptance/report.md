@@ -188,3 +188,22 @@
 | Chart 渲染 | 用真实镜像引用渲染出 `image: "as-platform:dev"`，`terminationGracePeriodSeconds: 300` 与 `preStop` 均在 |
 
 **未完成**：真实 Kubernetes 集群上的滚动升级与缩容验证 —— 本机无集群，且 `kind` / `kubectl` 下载因网络超时失败（kubectl 约 56MB 仅下载约 3MB）。该项列为 M5 剩余项，需在具备集群的环境执行。
+
+---
+
+## M2b 探针 harness（2026-09-30）
+
+| 项 | 结果 |
+|---|---|
+| 交付 | `testbed/probe/`：`e1_baseline_probe.py`（E1 基线对拍，真实 socket）、`tls_hot_rotation_probe.py`（E4 / S12 证书热轮换）、`sequence_compare.py`（纯函数序列比对器）、`tests/test_sequence_compare.py`（10 条 unit）、`README.md` |
+| 比对口径 | 方法 / 响应码、`Call-ID`、Request-URI 的 `host:port`、body 逐字节；不比头域顺序 / `Via` branch / SDP `o=` 时间戳（ADR-0019 §5） |
+| 绑定缺失时的行为 | **响亮失败，不是 skip**：两个探针实跑均以**退出码 2** 退出，stderr 打印 `No module named 'resip'` 与 `BUILD_PYTHON=ON` 构建指引 |
+| 传输 | 字节真的上线路（`_SocketPeer` 用真实 socket，按 RFC 3261 §20.14 的 `Content-Length` 分帧）；缺的是被测栈那一侧的适配器（Protocol 已定义，未实现） |
+| 门禁 | ruff format / ruff check / mypy 干净；`pytest -m "unit or contract"` 391 passed（2 skipped）；`pytest -m integration` 12 passed |
+
+**当前未验证**：E1（S1–S11）与 E4（TLS 热轮换）**一个都没有跑过** —— 本环境没有 reSIProcate 的 Python 绑定
+（`BUILD_PYTHON=ON` 未构建）。harness 落盘不等于证据，ADR-0019 §6 步骤 5 的缺口清单未变。
+
+**K2 约束仍然生效**：probe 通过前，`platform/` 的 SIP 适配层不开工。
+
+**后续项**：E5（状态外置 / 序列化）的探针尚未编写；S5–S11 的基线消息文件仍缺失，对应场景在探针中报 `NO_BASELINE`。

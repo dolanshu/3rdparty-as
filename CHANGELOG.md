@@ -37,6 +37,7 @@
 - PostgreSQL 版 `VersionStore`（`services/config-service`）：不可变追加（无 UPDATE / DELETE）、表名白名单、`psycopg` 惰性 import；真实 PostgreSQL 16 容器 integration 用例 9 条（`pytest -m integration` 共 12 passed）。
 - 内核指标 seam（`platform/src/as_platform/telemetry/metrics.py`）：`MetricsRegistry` / `CallMetrics`，每实例 `as_active_calls` 及 `as_sip_responses_total` / `as_rule_hits_total` / `as_telemetry_dropped_total`，与 `deploy/alerts/` 的指标契约同名；不含任何阈值或默认值。
 - M5 容器镜像：`deploy/docker/Dockerfile`（多阶段 uv 构建，非 root，`python -m as_platform` 入口）与进程入口点 `platform/src/as_platform/__main__.py`；镜像内 SIGTERM 排空实测退出码 0。
+- `testbed/probe/`：SIP 栈选型探针（E1 基线对拍、E4 TLS 热轮换）与序列比对器；绑定缺失时以退出码 2 响亮失败。
 
 ### 说明（Notes）
 
