@@ -136,6 +136,37 @@ $ echo $?
 
 ---
 
+## 自检：harness 自己能跑吗
+
+在等一台能构建绑定的主机之前，可以先验证另一件事：**探针 harness 本身能不能跑，也能不能失败**。
+这两件事比"探针说被测栈不通过"更危险 —— 一个跑不起来的探针读作"还没跑"，什么都不会关闭；
+一个什么都没比就通过的探针会在零证据下解除 K2。
+
+- `tests/fake_stack.py` —— 自检脚手架：一个假的绑定（注入 `sys.modules["resip"]`，且故意**不**暴露
+  `create_stack_under_probe`，让 E1 探针回落到自带的 socket peer）+ 一个本地回放服务器
+  （绑 `127.0.0.1` 端口 `0`，端口由 OS 分配，不会与其他用例或真实栈撞端口）。
+- `tests/test_e1_probe_selfcheck.py` —— marker `integration`，据此断言三件事：
+
+```bash
+uv run pytest -m integration -q testbed/probe/tests/test_e1_probe_selfcheck.py
+```
+
+| 用例 | 断言 |
+|---|---|
+| 匹配 | 回放服务器按基线 `out-*` 应答时，探针在真实 socket 上收发完毕后**退出 0** 并报 `PASS` |
+| 篡改 | 把一条期望消息改掉后**退出 1**，并指出具体差异 |
+| 绑定缺失 | 绑定不可 import 时**退出 2**（在任何其他事情发生之前响亮失败） |
+
+"绑定缺失"那条用例是**故意传一个不存在的 `--bindings-module` 值**触发的，不是靠卸载真绑定 ——
+所以在真绑定已装好的主机上它依然稳定为 2，不会因为"恰好能 `import resip`"而失效。
+
+> 口径务必一致：这三个用例证明的是 **harness 接好了、比对是活的**（真实 socket 上收发并逐条比对），
+> **不代表 reSIProcate 复现了基线** —— 回放服务器是照脚本应答，不是一个 SIP 栈（无事务、无对话、
+> 无重传、无定时器，也不知道什么响应才算正确）。只有真绑定、真主机上的那一次运行能关闭 E1，
+> 其结果回填 `docs/acceptance/report.md`。
+
+---
+
 ## 与被测栈的接口（Protocol）
 
 两个探针都用极简 Protocol 描述被测栈，**本仓库不实现该适配**（没有绑定，也没有对应的 reSIProcate 代码）：
