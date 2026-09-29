@@ -15,7 +15,11 @@ classifiers = [
   "Topic :: Communications :: Telephony",
 ]
 
-dependencies = []
+# psycopg: the PostgreSQL driver behind the ADR-0006 version repository
+# (as_config_service.postgres_store). The ``binary`` extra ships the compiled
+# wheel so a build host needs no libpq-dev; the driver is imported lazily, so
+# the package itself is importable without it. See ADR-0006, ADR-0007.
+dependencies = ["psycopg[binary]>=3.1"]
 
 [build-system]
 requires = ["hatchling>=1.25"]
