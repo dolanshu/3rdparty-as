@@ -63,6 +63,15 @@ uv run python testbed/probe/e1_baseline_probe.py
 
 端口与输出目录**都是可配置的**，没有硬编码：换环境只需改命令行。
 
+`--port` **必须显式配置**，不得依赖代码里的默认值 —— `AGENT.md` §6 要求"测试端口必须可配置，避免并行运行时端口冲突"；
+上面的默认值只是 argparse 的兜底，并行跑多用例会撞端口。完整形式：
+
+```bash
+uv run python testbed/probe/e1_baseline_probe.py \
+    --scenario S1 --bindings-module resip \
+    --out-dir testbed/probe/out --host 127.0.0.1 --port 45060
+```
+
 ```bash
 # 只跑一个场景，指定 AS 地址与证据目录
 uv run python testbed/probe/e1_baseline_probe.py \
@@ -80,6 +89,7 @@ uv run python testbed/probe/tls_hot_rotation_probe.py
 
 常用参数：`--bindings-module`（默认 `resip`）、`--host`（默认 `127.0.0.1`）、`--port`（默认 `5061`）、
 `--cert` / `--key`（默认 `testbed/probe/out/tls/cert.pem` 与 `key.pem`）。
+与 E1 一样，`--port` **必须显式配置**（`AGENT.md` §6：测试端口必须可配置）。
 
 它按 S12 的四条断言逐条报告：呼叫在 TLS 上建立并保持 in-dialog → 呼叫在途时轮换证书 →
 在途呼叫仍能完成（`BYE` 收到 2xx）→ 进程未重启（栈对象标识前后一致）。
