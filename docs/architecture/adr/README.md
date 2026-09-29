@@ -23,7 +23,7 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | [0007](0007-data-plane-split.md) | 数据面拆分：Redis 存运行态，PostgreSQL 存治理态 | 14 | accepted ✓ |
 | 0008 | 冗余：站点内 N+1 零单点；跨站点 1+1 温备，非双活 | 7 | skeleton |
 | 0009 | ISSU 是 draining，不是在途状态迁移 | §6.2 | skeleton |
-| 0010 | 扩缩容：自定义指标 HPA + 缩容保护控制器 | 15 | skeleton |
+| [0010](0010-autoscaling-hpa-downscale-guard.md) | 扩缩容：自定义指标 HPA + 缩容保护控制器 | 15 | accepted ✓ |
 | 0011 | ~~SIP 栈：双栈，`sippy` 保生产，`go-b2bua` 试点~~ **栈前提被 ADR-0019 推翻**：sippy 退出生产栈；双栈并行框架仍有效 | 8 | superseded-in-part |
 | 0012 | 语言无关契约 + 跨实现对拍作为转正门槛 | 9 | skeleton |
 | 0013 | Helm 是唯一生产形态；compose 仅作开发环境 | 6 | skeleton |
