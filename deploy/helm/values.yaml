@@ -161,10 +161,13 @@ draining:
   preStopSleepSeconds: 5
   terminationGracePeriodSeconds: 300
 
-# Horizontal Pod Autoscaling. Every threshold here is a CAPACITY value and is
-# therefore left null until M6 (O1) measures it. hpa.yaml renders only when
-# enabled is true AND at least one target is non-null; min/max are then
-# required and the install fails loudly instead of guessing. See ADR-0010.
+# Horizontal Pod Autoscaling. Every value below is a CAPACITY figure and is
+# therefore left null until M6 (O1) measures it: fill them from that
+# measurement, never from intuition. With enabled: true, hpa.yaml makes the
+# render fail immediately (non-zero helm exit) when minReplicas / maxReplicas
+# are missing, and fails again when min/max are set but no target threshold is
+# non-null (an HPA carrying an empty metrics list would be rejected by the API
+# server). enabled: false — the default — renders no HPA at all. See ADR-0010.
 autoscaling:
   enabled: false
   targetCPUUtilizationPercentage: null   # O1 / M6

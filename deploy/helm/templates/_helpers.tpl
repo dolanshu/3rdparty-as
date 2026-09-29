@@ -49,7 +49,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/* Full label set, shared by every object of the release. */}}
 {{- define "as.labels" -}}
 helm.sh/chart: {{ include "as.chart" . }}
-{{- include "as.selectorLabels" . }}
+{{ include "as.selectorLabels" . }}
 app.kubernetes.io/version: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: 3rdparty-as
@@ -65,7 +65,7 @@ app.kubernetes.io/use-case: {{ .useCase }}
 {{/* Full label set of one use case. Requires a dict with "useCase". */}}
 {{- define "as.useCaseLabels" -}}
 helm.sh/chart: {{ include "as.chart" . }}
-{{- include "as.useCaseSelectorLabels" . }}
+{{ include "as.useCaseSelectorLabels" . }}
 app.kubernetes.io/version: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: 3rdparty-as

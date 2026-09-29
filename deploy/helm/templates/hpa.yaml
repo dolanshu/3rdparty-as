@@ -1,18 +1,28 @@
 {{/*
 HorizontalPodAutoscaler, one per enabled use case.
 
-GUARD, deliberately: this renders nothing unless `autoscaling.enabled` is true
-AND at least one target threshold is non-null. There is no fallback value:
-a threshold written here before M6 would be a guessed capacity number, and
-AGENT.md §2 / §6 and docs/plan.md §5.1 (O1) forbid publishing one.
+GUARD, deliberately: `autoscaling.enabled` is the only switch into this file,
+and entering it with null capacity numbers is a hard error, not a silent
+skip — an HPA silently omitted because a threshold was left null looks exactly
+like an HPA that was never intended, so the omission would never be noticed.
+There is no fallback value: a threshold written here before M6 would be a
+guessed capacity number, and AGENT.md §2 / §6 and docs/plan.md §5.1 (O1)
+forbid publishing one.
 
-Once rendering is enabled, minReplicas and maxReplicas are `required`: the
-install fails with an explicit message instead of silently picking 1 and 10.
+Two fail-fast checks, evaluated in this order as soon as enabled is true:
+  1. minReplicas / maxReplicas are `required` (the O1 answers, M6-only).
+  2. at least one target threshold must be non-null, otherwise the rendered
+     HPA would carry an empty `metrics` list and be rejected by the API server.
 Fill them from the M6 measurement, not from intuition. See ADR-0010.
 */}}
 {{- $hasAutoscaleTarget := or .Values.autoscaling.targetCPUUtilizationPercentage .Values.autoscaling.targetMemoryUtilizationPercentage (and .Values.autoscaling.customMetric.name .Values.autoscaling.customMetric.targetValue) }}
-{{- if and .Values.autoscaling.enabled $hasAutoscaleTarget }}
+{{- if .Values.autoscaling.enabled }}
 {{- $a := .Values.autoscaling }}
+{{- $minReplicas := required "autoscaling.minReplicas is required when autoscaling.enabled=true. It is a capacity figure: measure it in M6 (O1), do not guess." $a.minReplicas }}
+{{- $maxReplicas := required "autoscaling.maxReplicas is required when autoscaling.enabled=true. It is a capacity figure: measure it in M6 (O1), do not guess." $a.maxReplicas }}
+{{- if not $hasAutoscaleTarget }}
+{{- fail "autoscaling.enabled=true requires at least one target threshold (targetCPUUtilizationPercentage, targetMemoryUtilizationPercentage, or customMetric.name together with customMetric.targetValue). These are capacity figures: measure them in M6 (O1), do not guess." }}
+{{- end }}
 {{- range $uc := .Values.useCases }}
 {{- if $uc.enabled }}
 {{- $ctx := dict "Release" $.Release "Chart" $.Chart "Values" $.Values "useCase" $uc.name }}
@@ -30,8 +40,8 @@ spec:
     kind: Deployment
     name: {{ include "as.fullname" $ }}-{{ $uc.name }}
   # No defaults: these are the O1 answers and must come from M6.
-  minReplicas: {{ required "autoscaling.minReplicas is required when autoscaling.enabled=true. It is a capacity figure: measure it in M6 (O1), do not guess." $a.minReplicas }}
-  maxReplicas: {{ required "autoscaling.maxReplicas is required when autoscaling.enabled=true. It is a capacity figure: measure it in M6 (O1), do not guess." $a.maxReplicas }}
+  minReplicas: {{ $minReplicas }}
+  maxReplicas: {{ $maxReplicas }}
   metrics:
     {{- if $a.targetCPUUtilizationPercentage }}
     - type: Resource
