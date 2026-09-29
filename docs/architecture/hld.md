@@ -75,7 +75,7 @@ S-CSCF ──iFC 触发──▶ S-SBC ──透明桥接──▶ AS
 - **运行态在 Redis，治理态在 PostgreSQL。** 运行态（会话、对话、速率窗口）走 `RedisStateStore`（ADR-0007），治理态（规则版本、变更单、审计）归 M4 控制面。两者不互为主备、不做跨存储事务。
 - **升级走 draining（ADR-0009，skeleton，未落地）。** 语义固定为：`SIGTERM` → 摘流（不再接收新请求）→ 等 `active_calls` 归零 → 退出。因为没有进程内状态，draining 不需要状态迁移。grace window 与强制释放策略由呼叫时长硬顶定义，属 M2b / 部署侧参数。
 - **状态键命名空间 `as:{case}:{kind}:{id}`。** 运行态键**必须带 TTL**（ADR-0007：没有 TTL 的运行态键就是事实上的治理态数据，是误用）。写入**幂等**：同一 Call-ID 的重复写入产生一致结果，用于承受 Redis 脑裂窗口（风险 R5、未决 D3）。
-- **水平扩展与缩容**依赖上述无状态性；HPA 指标（`active_calls`、`cps`）与缩容保护属 ADR-0010（skeleton，未落地），M2 只保证指标可被遥测 seam 产出。
+- **水平扩展与缩容**依赖上述无状态性；HPA 指标（`active_calls`、`cps`）与缩容保护属 [ADR-0010](adr/0010-autoscaling-hpa-downscale-guard.md)，M2 只保证指标可被遥测 seam 产出。
 
 ---
 
@@ -163,7 +163,7 @@ M2 的产出（判决纯函数、StateStore、遥测队列、进程壳）都是*
 | REQ-F-11 | CANCEL 与最终响应竞态 | 状态模块幂等写入 §4、判决幂等 §5 步骤 5 | ADR-0002、ADR-0009（skeleton，未落地） |
 | REQ-NF-1 | 进程重启不丢会话 | 状态模块 `RedisStateStore` §3 §4、进程无状态 §4 | ADR-0002、ADR-0007 |
 | REQ-NF-2 | 单进程状态有界 | 一用例一进程 §2 §4、故障域边界 | ADR-0002 |
-| REQ-NF-3 | 可水平扩展 | 无状态 + 状态外置 §4、draining 语义 §4 | ADR-0002、ADR-0010（skeleton，未落地） |
+| REQ-NF-3 | 可水平扩展 | 无状态 + 状态外置 §4、draining 语义 §4 | ADR-0002、[ADR-0010](adr/0010-autoscaling-hpa-downscale-guard.md) |
 | REQ-NF-4 | ISSU 支持 | draining 流程 §4、进程壳 §7（LLD） | ADR-0009（skeleton，未落地）、ADR-0002 |
 | REQ-NF-13 | OTel 三信号导出 | 遥测模块 §3、有界队列 + 后台导出 §5 步骤 6 | ADR-0005 |
 | REQ-NF-14 | 告警规则集 | 遥测模块指标语义（前置：`active_calls` / `cps` / `dropped` 等指标准确定义后才能写告警）§3 | ADR-0005 |

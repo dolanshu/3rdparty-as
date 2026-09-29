@@ -59,5 +59,5 @@
 - [ADR-0002](0002-per-usecase-process-state-redis.md) 运行时模型与 `StateStore` seam
 - [ADR-0006](0006-config-governance.md) 配置治理：PostgreSQL 版本库 + 变更单状态机
 - ADR-0009（skeleton，未落地） ISSU 是 draining，不是状态迁移
-- ADR-0010（skeleton，未落地） 扩缩容 HPA + 缩容保护
+- [ADR-0010](0010-autoscaling-hpa-downscale-guard.md) 扩缩容 HPA + 缩容保护
 - 风险 R5（Redis 单点）、未决项 O5（容灾等级）、D3（Redis 接线与脑裂幂等）

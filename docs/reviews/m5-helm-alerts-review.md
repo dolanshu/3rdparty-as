@@ -3,7 +3,7 @@
 > 评审对象：`deploy/helm/`（values 契约与 templates）、`deploy/alerts/`
 > 评审日期：2026-09-28
 > 评审人：AI agent（对照 ADR-0002 / 0009 / 0013 / 0016、AGENT.md §2 与 plan.md §6、REQ-NF-13 / NF-14 / NF-9）
-> 评审结论：**有条件通过** —— 1 项校验缺口（无 helm 二进制，未做渲染验证）
+> 评审结论：**有条件通过** —— Helm 渲染校验已完成，PostgreSQL 接线与真实数据库闭环（H11）亦已完成；剩余缺口为运维接线与容量类告警（H10 / H12）
 
 ## 评审发现
 
@@ -22,15 +22,15 @@
 
 | # | 缺口 | 处置 |
 |---|---|---|
-| H9 | **未做 `helm template` 渲染校验**（环境无 helm 二进制）。当前只有纯 YAML 解析 + 模板静态配平自查 | 必须在**首个具备 helm 的环境**补 `helm template`（含 `--set autoscaling.enabled=true` 的失败路径）并留证据；在此之前 M5 不得判完成 |
-| H10 | 缩容保护控制器（基于 `active_calls` 阻止 HPA 缩容）尚未实现，仅有 values 开关 | M5 剩余项 |
-| H11 | PostgreSQL 版 `VersionStore` 接线（M4 转入）与其 integration 用例 | M5 剩余项；见 `m4-console-access-review.md` 的硬要求 |
+| H9 | ~~未做 `helm template` 渲染校验（环境无 helm 二进制）~~ **已于 2026-09-28 完成验证。** 历史：评审时环境无 helm 二进制，只做了纯 YAML 解析 + 模板静态配平自查。现状：用 helm v3.16.2 跑通 `helm lint deploy/helm`（0 failed）与 `helm template as deploy/helm`（exit 0）；首次渲染即暴露 `_helpers.tpl` 两处左裁剪（`as.labels` 与 `as.useCaseLabels` 内的 `{{- include ... }}` 吃掉前一行换行，标签被拼接、全模板 YAML 解析失败），已改为不带左裁剪的 `{{ include ... }}`；反例 `--set autoscaling.enabled=true` 按预期失败并给出 `required` 提示 | **已完成验证，不再是缺口**；证据见 `docs/acceptance/report.md` M5 段 |
+| H10 | 缩容保护控制器已落地（`platform/src/as_platform/ops/downscale_guard.py` + 10 条用例，ADR-0010）；剩余的是运维接线：每实例 `active_calls` 指标与缩容阻塞的超时 / 强制策略 | M5 剩余项 |
+| H11 | PostgreSQL 版 `VersionStore` 接线（M4 转入）与其 integration 用例 | **已完成（2026-09-28）。** `services/config-service/src/as_config_service/postgres_store.py` 已实现：版本只做**不可变追加**（无 UPDATE / 无 DELETE，回滚靠写回上一版本内容而不是改历史）；表名走白名单（标识符不经字符串拼接进入 SQL，防注入与误表）；`psycopg` 为**惰性 import**（不装驱动也能导入模块与跑单测）。integration 用例 9 条（`services/config-service/tests/test_postgres_store_integration.py`）**真连 `127.0.0.1:55432` 的 PostgreSQL 16 容器跑通**，含治理闭环：审批 → 落库 → 分发 → 自动回滚 → 取回上一版本；`pytest -m integration` 全仓共 **12 passed**（9 条 PG + 3 条遥测导出） |
 | H12 | 容量类告警（CPS / 并发）与 HPA 阈值 | 受 O1 / M6 阻塞，M6 之后单独加 `as.capacity` 组 |
 
 ## 确认签字
 
 | 项 | 值 |
 |---|---|
-| 评审结论 | 有条件通过（条件：H9 渲染校验、H11 真实数据库闭环） |
+| 评审结论 | 有条件通过（条件：真实环境的滚动升级与缩容验证（每实例 `active_calls` 指标接线完成后）；剩余 M5 缺口：H10 运维接线、H12 容量类告警受 O1 / M6 阻塞） |
 | 评审人 | AI agent，2026-09-28 |
 | 维护者签字 | 待填 |

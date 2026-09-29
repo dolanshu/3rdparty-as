@@ -34,6 +34,8 @@
 - 未决项 D7 裁决（ADR-0021）：运行态覆盖粒度为号段 + 稳定哈希百分比，判定幂等；`gating/overrides.py` 与其测试。
 - M5 部署产物：Helm 模板（每用例一 Deployment / Service、ConfigMap / Secret、HPA、PDB、SA、NOTES）与告警规则集（`deploy/alerts/`，8 条，只含比例 / 相对量 / 状态量阈值）。
 - 容量数字纪律：HPA 阈值与副本上下限留空并由 `required` 守卫，`deploy/` 全目录不含 CPS 或并发绝对值（O1 待 M6 实测）。
+- PostgreSQL 版 `VersionStore`（`services/config-service`）：不可变追加（无 UPDATE / DELETE）、表名白名单、`psycopg` 惰性 import；真实 PostgreSQL 16 容器 integration 用例 9 条（`pytest -m integration` 共 12 passed）。
+- 内核指标 seam（`platform/src/as_platform/telemetry/metrics.py`）：`MetricsRegistry` / `CallMetrics`，每实例 `as_active_calls` 及 `as_sip_responses_total` / `as_rule_hits_total` / `as_telemetry_dropped_total`，与 `deploy/alerts/` 的指标契约同名；不含任何阈值或默认值。
 
 ### 说明（Notes）
 

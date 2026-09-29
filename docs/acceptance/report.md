@@ -156,6 +156,21 @@
 | 容量约束 | 全仓库无 CPS / 并发绝对值；HPA 阈值与副本上下限为 `null` + `required` 守卫（未填则安装失败）；PDB 无容量默认值；告警只用比例 / 相对量 / 状态量 |
 | 安全与连续性 | 凭据占位 + 替换提示；TLS 走客户 PKI Secret 挂载（轮换不重启）；`preStop` draining + 延长终止宽限期；关闭 SA token 自动挂载 |
 | 校验 | 纯 YAML 全部 `yaml.safe_load` 通过；模板做了静态配平自查（修掉 2 处：缺 `}}`、range 内 `.Values` 应为 `$`） |
-| **未校验** | 环境无 `helm` 二进制，**未做 `helm template` 渲染验证** |
+| **已校验** | helm v3.16.2：`helm lint deploy/helm` 0 failed、`helm template as deploy/helm` exit 0；首次渲染暴露并修掉 `_helpers.tpl` 两处左裁剪导致的标签拼接；`--set autoscaling.enabled=true`（HPA 阈值未填）路径按预期失败 |
 
-**M5 未完成的项**：helm 渲染校验、缩容保护控制器、PostgreSQL 版 `VersionStore` 接线（M4 转入）及其 integration 用例、容量类告警（受 M6 / O1 阻塞）。
+**M5 未完成的项**：缩容保护的运维接线（每实例 `active_calls` 指标）、PostgreSQL 版 `VersionStore` 接线及其真实数据库 integration 用例（M4 转入）、容量类告警（受 M6 / O1 阻塞）。
+
+---
+
+## M5 PostgreSQL 闭环与指标（2026-09-28）
+
+| 项 | 结果 |
+|---|---|
+| 门禁 | ruff 146 files formatted / ruff check passed / mypy 34 source files clean / `unit or contract` **331 passed**（2 skipped）；integration **12 passed** |
+| PG 实现 | `services/config-service/src/as_config_service/postgres_store.py`：版本**不可变追加**（无 UPDATE / DELETE，回滚靠写回上一版本内容）、**表名白名单**（标识符不经拼接进 SQL）、`psycopg` **惰性 import**（未装驱动也能导入与跑单测） |
+| 真实库实跑 | `services/config-service/tests/test_postgres_store_integration.py` 9 条，真连 `127.0.0.1:55432` 的 PostgreSQL 16 容器；跑通治理闭环：审批 → 落库 → 分发 → 自动回滚 → 取回上一版本；`pytest -m integration` 全仓 **12 passed**（9 条 PG + 3 条遥测导出） |
+| 指标 seam | `platform/src/as_platform/telemetry/metrics.py`：`MetricsRegistry`（线程安全、不读时钟、不做 IO、快照确定性排序）与 `CallMetrics`（每实例 `as_active_calls`，`as_sip_responses_total` / `as_rule_hits_total` / `as_telemetry_dropped_total`），与 `deploy/alerts/README.md` 指标契约同名；导出走 `BoundedQueueSink`，满则丢弃、不阻塞呼叫路径（ADR-0005） |
+| 测试 | `platform/tests/test_metrics.py` 9 条（marker `unit`），TDD 红→绿；含并发累加不丢更新、按实例取回、状态码分类、`capacity=1` sink 不抛不阻塞且 `dropped_count > 0`、纯度（无时钟 / 无 socket） |
+| 评审 | `docs/reviews/m5-helm-alerts-review.md`：H11 判为已完成，签字条件改为"真实环境的滚动升级与缩容验证" |
+
+**未完成的项**：真实环境的滚动升级与缩容验证（每实例 `active_calls` 指标已可查询，但尚未在真实集群上验证滚动升级与缩容不掉呼叫）；容量类告警与 HPA 阈值仍受 O1 / M6 阻塞。本模块只定义指标名与语义，**不含任何阈值、目标值或默认值**。

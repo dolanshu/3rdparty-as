@@ -117,7 +117,7 @@
 | **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | **M2a 已完成；M2b seam 已落（2026-09-28），栈绑定未开始** | 内核守卫绿；能在其上构建用例而不碰 sippy |
 | **M3** | 应用 | `apps/translation` 与 `apps/anti-fraud`；决策模块先做 TDD | **已完成（2026-09-28；门禁裁决见 docs/reviews/m3-gate-review.md）** | 契约用例集对两者都重放绿 |
 | **M4** | 控制面 | `services/config-service`（PG 版本库、变更单状态机、灰度分发、回滚）与 `services/console`（读写、鉴权、审计） | **已完成（2026-09-28；PG 接线转 M5，见 docs/reviews/m4-console-access-review.md）** | 一次规则变更走完整闭环：编辑 → 审批 → 分发 → 上报版本 → 回滚；开关配置走变更流水线 + 开关两态测试 |
-| **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集 | **进行中（Helm 模板与告警已落，2026-09-28；helm 渲染校验、缩容保护控制器、PG 接线未完成）** | 滚动升级不掉呼叫；缩容不掉呼叫 |
+| **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集 | **进行中（Helm/告警/渲染校验/缩容保护/PG 闭环已落，2026-09-28；真实环境滚动升级与缩容验证未完成）** | 滚动升级不掉呼叫；缩容不掉呼叫 |
 | **M6** | **容量研究** | 真实 socket 压测 harness；测出 CPS、并发会话、建立时延 —— 按栈分别 | 未开始 | 产出 O1 的答案；在这跑起来之前不假设任何目标 |
 | **M7** | Go 迁移 | 一个用例的 `go-b2bua` 镜像，commit 固定并 vendoring；跨实现对拍 | 未开始 | **受 M6 把关。** 仅当与 Python 实现输出对输出一致时才转正（ADR-0012） |
 | **M8** | 发布候选 | 带证据的验收运行、文档链完整、统一产品版本 | 未开始 | 逐条验收报告 |
