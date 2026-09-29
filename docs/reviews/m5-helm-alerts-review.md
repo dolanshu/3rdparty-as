@@ -26,6 +26,7 @@
 | H10 | 缩容保护控制器已落地（`platform/src/as_platform/ops/downscale_guard.py` + 10 条用例，ADR-0010）；剩余的是运维接线：每实例 `active_calls` 指标与缩容阻塞的超时 / 强制策略 | M5 剩余项 |
 | H11 | PostgreSQL 版 `VersionStore` 接线（M4 转入）与其 integration 用例 | **已完成（2026-09-28）。** `services/config-service/src/as_config_service/postgres_store.py` 已实现：版本只做**不可变追加**（无 UPDATE / 无 DELETE，回滚靠写回上一版本内容而不是改历史）；表名走白名单（标识符不经字符串拼接进入 SQL，防注入与误表）；`psycopg` 为**惰性 import**（不装驱动也能导入模块与跑单测）。integration 用例 9 条（`services/config-service/tests/test_postgres_store_integration.py`）**真连 `127.0.0.1:55432` 的 PostgreSQL 16 容器跑通**，含治理闭环：审批 → 落库 → 分发 → 自动回滚 → 取回上一版本；`pytest -m integration` 全仓共 **12 passed**（9 条 PG + 3 条遥测导出） |
 | H12 | 容量类告警（CPS / 并发）与 HPA 阈值 | 受 O1 / M6 阻塞，M6 之后单独加 `as.capacity` 组 |
+| H13 | 真实 Kubernetes 集群上的滚动升级与缩容验证未执行（本机无集群，kind / kubectl 下载超时） | 需在具备集群的环境执行；在此之前 M5 不得判完成 |
 
 ## 确认签字
 

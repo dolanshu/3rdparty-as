@@ -36,6 +36,7 @@
 - 容量数字纪律：HPA 阈值与副本上下限留空并由 `required` 守卫，`deploy/` 全目录不含 CPS 或并发绝对值（O1 待 M6 实测）。
 - PostgreSQL 版 `VersionStore`（`services/config-service`）：不可变追加（无 UPDATE / DELETE）、表名白名单、`psycopg` 惰性 import；真实 PostgreSQL 16 容器 integration 用例 9 条（`pytest -m integration` 共 12 passed）。
 - 内核指标 seam（`platform/src/as_platform/telemetry/metrics.py`）：`MetricsRegistry` / `CallMetrics`，每实例 `as_active_calls` 及 `as_sip_responses_total` / `as_rule_hits_total` / `as_telemetry_dropped_total`，与 `deploy/alerts/` 的指标契约同名；不含任何阈值或默认值。
+- M5 容器镜像：`deploy/docker/Dockerfile`（多阶段 uv 构建，非 root，`python -m as_platform` 入口）与进程入口点 `platform/src/as_platform/__main__.py`；镜像内 SIGTERM 排空实测退出码 0。
 
 ### 说明（Notes）
 

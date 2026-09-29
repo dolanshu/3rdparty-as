@@ -174,3 +174,17 @@
 | 评审 | `docs/reviews/m5-helm-alerts-review.md`：H11 判为已完成，签字条件改为"真实环境的滚动升级与缩容验证" |
 
 **未完成的项**：真实环境的滚动升级与缩容验证（每实例 `active_calls` 指标已可查询，但尚未在真实集群上验证滚动升级与缩容不掉呼叫）；容量类告警与 HPA 阈值仍受 O1 / M6 阻塞。本模块只定义指标名与语义，**不含任何阈值、目标值或默认值**。
+
+---
+
+## M5 容器镜像（2026-09-30）
+
+| 项 | 结果 |
+|---|---|
+| 镜像 | `docker build -t as-platform:dev -f deploy/docker/Dockerfile .` 成功（191MB，manifest `sha256:3436b8dc84c9…`） |
+| 镜像内验证 | `import as_platform` 成功（Python 3.10.21）；入口点 `python -m as_platform --help` 可用 |
+| 安全与一致性 | 非 root（`uid=10001`）；`EXPOSE 5060/udp 5061/tcp` 与 Helm 容器端口一致；ENTRYPOINT 与模板不设 command/args 对齐 |
+| **ISSU 实测** | 容器内 `docker stop`（SIGTERM）→ 停止接新请求 → 排空 → **退出码 0**，ADR-0009 的 draining 在镜像里真的能工作 |
+| Chart 渲染 | 用真实镜像引用渲染出 `image: "as-platform:dev"`，`terminationGracePeriodSeconds: 300` 与 `preStop` 均在 |
+
+**未完成**：真实 Kubernetes 集群上的滚动升级与缩容验证 —— 本机无集群，且 `kind` / `kubectl` 下载因网络超时失败（kubectl 约 56MB 仅下载约 3MB）。该项列为 M5 剩余项，需在具备集群的环境执行。
