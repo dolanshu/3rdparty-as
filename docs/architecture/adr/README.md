@@ -35,6 +35,9 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | [0019](0019-sip-stack-selection.md) | 生产 SIP 协议栈选型（推翻 0011 的栈前提；选定 reSIProcate；go-b2bua / libre 为备选；rsipstack 因 Rust 不在团队技术栈内被否决） | 8 | **accepted** |
 | [0020](0020-feature-capability-gating.md) | Feature 能力门控：分层（部署级总开关 + 运行态细粒度覆盖），复用配置治理变更流水线 | 19 | accepted ✓ |
 | [0021](0021-runtime-override-granularity.md) | 运行态覆盖的判定粒度与 schema：号段 + 稳定哈希百分比，判定幂等（裁决未决项 D7） | — | accepted ✓ |
+| [0022](0022-resiprocate-b2bua-control.md) | reSIProcate DUM 协议机制之上的产品 `CallController`；语言桥接与状态恢复仍为阻塞项 | 8 | draft |
+| [0023](0023-redis-call-state-checkpoint.md) | 呼叫恢复方向：Redis 应用层必要状态 checkpoint；不序列化完整 DUM / `SipStack`（D10 仍未通过） | 2 | draft |
+| [0024](0024-console-password-sessions.md) | 控制台角色 + 密码认证与可撤销会话方案；待维护者评审，审计持久化仍未交付 | 18 | draft |
 
 ## 规则
 

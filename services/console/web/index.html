@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173b37" />
+    <title>Rule registry | AS Operations</title>
+    <link rel="stylesheet" href="console.css" />
+    <script src="console.js" defer></script>
+  </head>
+  <body>
+    <div class="preview-banner" role="status" aria-label="Preview, local data, not connected">
+      <span class="preview-mark" aria-hidden="true"></span>
+      <strong>PREVIEW · LOCAL DATA · NOT CONNECTED</strong>
+      <span class="preview-explainer">Changes stay in this browser tab.</span>
+    </div>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Console navigation">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">AS</div>
+          <div>
+            <span class="brand-title">Operations</span>
+            <span class="brand-subtitle">Application server</span>
+          </div>
+        </div>
+
+        <p class="sidebar-label">Control plane</p>
+        <nav class="side-nav" aria-label="Views">
+          <button class="nav-item is-current" type="button" data-nav-target="rules" aria-current="page">
+            <span>Rules</span>
+            <span class="nav-count" id="rules-nav-count">0</span>
+          </button>
+          <button class="nav-item" type="button" data-nav-target="change-orders" aria-current="false">
+            <span>Change orders</span>
+            <span class="nav-count nav-count-accent" id="orders-nav-count">0</span>
+          </button>
+          <button class="nav-item" type="button" data-nav-target="call-traces" aria-current="false">
+            <span>Call traces</span>
+          </button>
+          <button class="nav-item" type="button" data-nav-target="operations" aria-current="false">
+            <span>Operations</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span class="identity-mark" aria-hidden="true">ID</span>
+          <div>
+            <span class="sidebar-label">Identity</span>
+            <strong>Not connected</strong>
+            <span class="identity-note">Read-only placeholder</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="topbar-copy">
+            <p class="eyebrow">AS CONTROL PLANE <span aria-hidden="true">/</span> OPERATOR CONSOLE</p>
+            <h1 id="page-title" tabindex="-1">Rule registry</h1>
+            <p class="page-description" id="page-description">Review rule state and submit changes for approval.</p>
+          </div>
+          <div class="topbar-actions">
+            <span class="environment-label"><span aria-hidden="true"></span> Local preview</span>
+            <button class="button button-primary" id="create-rule-button" type="button">New rule</button>
+          </div>
+        </header>
+
+        <section class="view is-active" id="rules-view" data-view-section="rules" aria-labelledby="rules-heading">
+          <div class="section-toolbar">
+            <div>
+              <p class="eyebrow">CONFIGURATION</p>
+              <h2 id="rules-heading">Traffic rules</h2>
+              <p class="section-description">Approval updates local preview state only; no routing backend is connected. New or edited values wait for a change-order decision.</p>
+            </div>
+            <div class="summary-inline" aria-label="Rule summary">
+              <span><strong id="rule-total">0</strong> rules</span>
+              <span><strong id="rule-pending-total">0</strong> pending requests</span>
+            </div>
+          </div>
+
+          <div class="panel table-panel">
+            <div class="table-toolbar">
+              <div class="table-heading">
+                <h3>Rule inventory</h3>
+                <span class="table-count" id="rule-result-count">0 entries</span>
+              </div>
+              <div class="filter-group">
+                <label class="field-compact" for="rule-search">
+                  <span>Filter rules</span>
+                  <input id="rule-search" type="search" placeholder="Name, ID, match, target" autocomplete="off" />
+                </label>
+                <label class="field-compact" for="rule-state-filter">
+                  <span>State</span>
+                  <select id="rule-state-filter">
+                    <option value="all">All states</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                    <option value="pending">Pending approval</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="table-scroll" tabindex="0" aria-label="Rule inventory table; scroll horizontally if needed">
+              <table>
+                <caption class="sr-only">Operator rule inventory</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Rule</th>
+                    <th scope="col">Match</th>
+                    <th scope="col">Service / destination</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Version / updated</th>
+                    <th scope="col"><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody id="rules-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="change-orders-view" data-view-section="change-orders" aria-labelledby="orders-heading" hidden>
+          <div class="section-toolbar">
+            <div>
+              <p class="eyebrow">GOVERNANCE</p>
+              <h2 id="orders-heading">Change orders</h2>
+              <p class="section-description">Review proposed rule changes. Local approval only updates this preview.</p>
+            </div>
+            <div class="summary-inline" aria-label="Change-order summary">
+              <span><strong id="orders-pending-total">0</strong> awaiting review</span>
+              <span><strong id="orders-result-count">0</strong> shown</span>
+            </div>
+          </div>
+
+          <div class="panel table-panel">
+            <div class="table-toolbar">
+              <div class="table-heading">
+                <h3>Approval queue</h3>
+                <span class="table-count">Preview requests</span>
+              </div>
+              <div class="filter-group">
+                <label class="field-compact" for="order-search">
+                  <span>Filter requests</span>
+                  <input id="order-search" type="search" placeholder="Order, rule, requester" autocomplete="off" />
+                </label>
+                <label class="field-compact" for="order-state-filter">
+                  <span>Decision</span>
+                  <select id="order-state-filter">
+                    <option value="all">All decisions</option>
+                    <option value="Pending">Awaiting review</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="table-scroll" tabindex="0" aria-label="Change orders table; scroll horizontally if needed">
+              <table>
+                <caption class="sr-only">Rule change orders and decisions</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Change order</th>
+                    <th scope="col">Rule</th>
+                    <th scope="col">Requested by</th>
+                    <th scope="col">Submitted</th>
+                    <th scope="col">Decision</th>
+                    <th scope="col"><span class="sr-only">Review action</span></th>
+                  </tr>
+                </thead>
+                <tbody id="orders-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="call-traces-view" data-view-section="call-traces" aria-labelledby="traces-heading" hidden>
+          <div class="section-toolbar trace-section-toolbar">
+            <div>
+              <p class="eyebrow">CALL INVESTIGATION</p>
+              <h2 id="traces-heading">Call traces</h2>
+              <p class="section-description">Search fixture traces by Call-ID and inspect their message sequence.</p>
+            </div>
+          </div>
+
+          <form class="trace-search panel" id="trace-search-form">
+            <label class="field-compact trace-query" for="trace-search">
+              <span>Call-ID</span>
+              <input id="trace-search" name="call-id" type="search" placeholder="Enter a full or partial Call-ID" autocomplete="off" />
+            </label>
+            <div class="trace-search-actions">
+              <button class="button button-primary" type="submit">Search traces</button>
+              <button class="button button-secondary" id="clear-trace-search" type="button">Clear</button>
+            </div>
+            <p class="search-result-note" id="trace-result-summary" role="status" aria-live="polite"></p>
+          </form>
+
+          <div class="trace-layout">
+            <section class="panel trace-list-panel" aria-labelledby="trace-list-heading">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">FIXTURE DATA</p>
+                  <h3 id="trace-list-heading">Recent calls</h3>
+                </div>
+                <span class="table-count" id="trace-list-count">0 traces</span>
+              </div>
+              <div class="table-scroll trace-list-scroll">
+                <table>
+                  <caption class="sr-only">Call trace search results</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Call-ID</th>
+                      <th scope="col">Started</th>
+                      <th scope="col">Outcome</th>
+                    </tr>
+                  </thead>
+                  <tbody id="trace-results-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel trace-detail-panel" aria-labelledby="trace-detail-heading">
+              <div class="panel-heading trace-detail-heading">
+                <div>
+                  <p class="eyebrow">MESSAGE SEQUENCE</p>
+                  <h3 id="trace-detail-heading">Trace detail</h3>
+                </div>
+                <span class="table-count" id="trace-message-count"></span>
+              </div>
+              <div id="trace-detail-body" class="trace-detail-body"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="operations-view" data-view-section="operations" aria-labelledby="operations-heading" hidden>
+          <div class="section-toolbar">
+            <div>
+              <p class="eyebrow">SERVICE HEALTH</p>
+              <h2 id="operations-heading">Operations</h2>
+              <p class="section-description">A fixed fixture snapshot for layout preview; no telemetry is connected.</p>
+            </div>
+            <span class="snapshot-label"><span aria-hidden="true"></span> Fixture snapshot · 2026-10-01 10:42 UTC</span>
+          </div>
+
+          <dl class="metric-strip" aria-label="Fixture metric summary">
+            <div class="metric-item metric-green">
+              <dt>AS instances</dt>
+              <dd>4 <span>/ 4 healthy</span></dd>
+              <small>Fixture state</small>
+            </div>
+            <div class="metric-item metric-blue">
+              <dt>Active calls</dt>
+              <dd>1,284</dd>
+              <small>Across fixture instances</small>
+            </div>
+            <div class="metric-item metric-amber">
+              <dt>Ingress rate</dt>
+              <dd>37.8 <span>CPS</span></dd>
+              <small>Fixture sample, not live</small>
+            </div>
+            <div class="metric-item metric-coral">
+              <dt>Pending approvals</dt>
+              <dd id="operations-pending-total">0</dd>
+              <small>Local preview queue</small>
+            </div>
+          </dl>
+
+          <div class="operations-grid">
+            <section class="panel table-panel" aria-labelledby="instance-heading">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">FIXTURE DATA</p>
+                  <h3 id="instance-heading">AS instances</h3>
+                </div>
+                <span class="status-badge status-healthy">4 healthy</span>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <caption class="sr-only">Fixture application server instances</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Instance</th>
+                      <th scope="col">Zone</th>
+                      <th scope="col">Active calls</th>
+                      <th scope="col">State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="mono">as-01</td><td>zone-a</td><td>318</td><td><span class="status-badge status-healthy">Healthy</span></td></tr>
+                    <tr><td class="mono">as-02</td><td>zone-a</td><td>331</td><td><span class="status-badge status-healthy">Healthy</span></td></tr>
+                    <tr><td class="mono">as-03</td><td>zone-b</td><td>320</td><td><span class="status-badge status-healthy">Healthy</span></td></tr>
+                    <tr><td class="mono">as-04</td><td>zone-b</td><td>315</td><td><span class="status-badge status-healthy">Healthy</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel event-panel" aria-labelledby="event-heading">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">FIXTURE DATA</p>
+                  <h3 id="event-heading">Recent service events</h3>
+                </div>
+              </div>
+              <ul class="event-list">
+                <li><span class="event-time">10:41:52</span><span class="event-marker event-ok" aria-hidden="true"></span><span>Readiness check passed <small>as-03 · fixture</small></span></li>
+                <li><span class="event-time">10:40:17</span><span class="event-marker event-warn" aria-hidden="true"></span><span>Call setup latency elevated <small>zone-b · fixture</small></span></li>
+                <li><span class="event-time">10:38:06</span><span class="event-marker event-ok" aria-hidden="true"></span><span>Rule version loaded <small>v18 · fixture</small></span></li>
+              </ul>
+            </section>
+          </div>
+
+          <p class="integrity-note"><strong>No live telemetry or audit sink.</strong> Metrics and events above are representative fixture data. Preview actions are not persisted or attributed to an authenticated operator.</p>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast-region" id="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <dialog class="modal" id="rule-dialog" aria-labelledby="rule-dialog-title">
+      <form id="rule-form" class="modal-form">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">RULE CHANGE</p>
+            <h2 id="rule-dialog-title">New rule</h2>
+          </div>
+          <button class="button button-secondary" type="button" data-close-dialog>Close</button>
+        </header>
+        <div class="form-grid">
+          <label class="form-field form-span-two" for="rule-name">
+            <span>Name</span>
+            <input id="rule-name" name="name" type="text" maxlength="80" required />
+          </label>
+          <label class="form-field" for="rule-match-field">
+            <span>Match field</span>
+            <select id="rule-match-field" name="matchField" required>
+              <option value="Called party">Called party</option>
+              <option value="Calling party">Calling party</option>
+            </select>
+          </label>
+          <label class="form-field" for="rule-match-type">
+            <span>Match pattern</span>
+            <select id="rule-match-type" name="matchType" required>
+              <option value="Prefix">Prefix</option>
+              <option value="Regex">Regular expression</option>
+            </select>
+          </label>
+          <label class="form-field form-span-two" for="rule-match-value">
+            <span>Match value</span>
+            <input id="rule-match-value" name="matchValue" type="text" maxlength="160" required />
+          </label>
+          <label class="form-field" for="rule-target">
+            <span>Target service</span>
+            <select id="rule-target" name="target" required>
+              <option value="Translation">Translation</option>
+              <option value="Anti-fraud">Anti-fraud</option>
+              <option value="Routing">Routing</option>
+              <option value="Blocking">Blocking</option>
+              <option value="Default">Default</option>
+            </select>
+          </label>
+          <label class="form-field" for="rule-target-detail">
+            <span>Target detail</span>
+            <input id="rule-target-detail" name="targetDetail" type="text" maxlength="120" required />
+          </label>
+          <label class="check-field form-span-two" for="rule-enabled">
+            <input id="rule-enabled" name="enabled" type="checkbox" checked />
+            <span>Enabled when approved</span>
+          </label>
+        </div>
+        <p class="form-note">Submitting creates a local change order. The active rule changes only after approval in this preview.</p>
+        <footer class="modal-actions">
+          <button class="button button-secondary" type="button" data-close-dialog>Cancel</button>
+          <button class="button button-primary" type="submit">Queue for approval</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog class="modal review-modal" id="review-dialog" aria-labelledby="review-dialog-title">
+      <div class="modal-form">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">CHANGE ORDER REVIEW</p>
+            <h2 id="review-dialog-title">Review request</h2>
+          </div>
+          <button class="button button-secondary" type="button" data-close-dialog>Close</button>
+        </header>
+        <div class="review-meta" id="review-meta"></div>
+        <div class="review-comparison">
+          <section>
+            <h3>Current</h3>
+            <div class="rule-detail" id="review-current"></div>
+          </section>
+          <section>
+            <h3>Proposed</h3>
+            <div class="rule-detail" id="review-proposed"></div>
+          </section>
+        </div>
+        <p class="review-status" id="review-status" role="status"></p>
+        <div class="review-actions" id="review-actions">
+          <button class="button button-secondary" id="show-reject-form" type="button">Reject…</button>
+          <button class="button button-primary" id="approve-change" type="button">Approve change</button>
+        </div>
+        <form class="reject-form" id="reject-form" hidden>
+          <label class="form-field" for="reject-reason">
+            <span>Reason for rejection <span class="required-note">Required</span></span>
+            <textarea id="reject-reason" name="reason" rows="3" maxlength="500" required></textarea>
+          </label>
+          <div class="modal-actions">
+            <button class="button button-secondary" id="cancel-rejection" type="button">Cancel</button>
+            <button class="button button-danger" type="submit">Confirm rejection</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+  </body>
+</html>

@@ -5,7 +5,7 @@
 - **日期**：2026-09-28
 - **接受日期**：2026-09-28
 - **取代**：由 [ADR-0011](0011-sip-stack-dual-path.md) 确立的"生产栈 = sippy"前提（ADR-0011 的双栈并行框架仍有效）
-- **关联**：架构决策 8、O1、O2、O3、D1、D2；ADR-0011；[`容量量级估算.md`](../容量量级估算.md)；[`docs/SIP_stack_selection.md`](../SIP_stack_selection.md)
+- **关联**：架构决策 8、O1、O2、O3、D1、D2；ADR-0011；[`容量量级估算.md`](../容量量级估算.md)；[`docs/SIP_stack_selection.md`](../../SIP_stack_selection.md)
 - **回应 REQ**: 隐含回应所有 REQ-F-*（SIP 栈是所有信令功能的基础设施）
 
 ---
@@ -56,7 +56,7 @@
 
 ## 3. 候选范围
 
-从 [`docs/SIP_stack_selection.md`](../SIP_stack_selection.md) 按硬约束筛选。
+从 [`docs/SIP_stack_selection.md`](../../SIP_stack_selection.md) 按硬约束筛选。
 
 ### 3.1 硬约束（不满足即出局）
 
@@ -363,3 +363,9 @@ skip 不是证据，K2 不得在没有任何证据的情况下被解除。
   真实接入时由绑定侧提供（可选入口 `create_stack_under_probe(host, port)`）。
 - **E5（状态外置 / 序列化）的探针尚未编写**，列为后续项 —— E5 目前连可执行的判定都没有。
 - K2 仍然生效：probe 通过前，`platform/` 的 SIP 适配层不开工。
+
+## 10. Evidence correction (2026-09-30)
+
+The historical Accepted decision above selected reSIProcate and remains in force. A correction to its stated integration route is required: inspection of upstream reSIProcate 1.14.0, tag commit `632e215c2ca9aee5416bfe1808851ea6fa380044`, confirmed that `BUILD_PYTHON=ON` enables PyCXX-based rePro Python routing/plugin targets; it does **not** provide a general `resip`/DUM Python binding. The E1 harness's `import resip` therefore exited 2. This corrects the integration evidence, not the stack selection.
+
+The proposed [ADR-0022](0022-resiprocate-b2bua-control.md) tracks the DUM/product `CallController` responsibility split and the unresolved integration and state-recovery design. E1, E4, and E5 remain open; K2 remains unreleased. Native DUM S1/S4 smoke is not product E1 acceptance, and native TLS S1 failed to establish a call (503 Certificate Validation Failure; timeout exit 124). No product acceptance or release conclusion follows from these observations.

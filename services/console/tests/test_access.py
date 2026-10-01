@@ -226,6 +226,45 @@ def test_an_audit_record_carries_every_field_an_audit_needs() -> None:
     )
     assert record.outcome is AuditOutcome.ALLOWED
     assert record.detail == "second pair"
+    assert record.before_value is None
+    assert record.after_value is None
+
+
+def test_audit_snapshots_are_optional_and_do_not_change_legacy_construction() -> None:
+    """Snapshot fields are appended with defaults, preserving old positional construction."""
+    legacy = AuditRecord("bob", "approve", CHANGE_RESOURCE, AuditOutcome.ALLOWED, INJECTED_AT)
+    snapshotted = audit(
+        "bob",
+        "update",
+        CHANGE_RESOURCE,
+        True,
+        INJECTED_AT,
+        before_value={"enabled": False},
+        after_value={"enabled": True},
+    )
+
+    assert legacy == AuditRecord(
+        "bob", "approve", CHANGE_RESOURCE, AuditOutcome.ALLOWED, INJECTED_AT
+    )
+    assert snapshotted.before_value == {"enabled": False}
+    assert snapshotted.after_value == {"enabled": True}
+
+
+def test_authorize_and_audit_accepts_keyword_only_snapshots() -> None:
+    operator = _principal("alice", Role.OPERATOR)
+
+    allowed, record = authorize_and_audit(
+        operator,
+        Permission.SUBMIT_CHANGE,
+        CHANGE_RESOURCE,
+        INJECTED_AT,
+        before_value={"state": "draft"},
+        after_value={"state": "submitted"},
+    )
+
+    assert allowed is True
+    assert record.before_value == {"state": "draft"}
+    assert record.after_value == {"state": "submitted"}
 
 
 def test_the_timestamp_comes_from_the_caller(monkeypatch: pytest.MonkeyPatch) -> None:

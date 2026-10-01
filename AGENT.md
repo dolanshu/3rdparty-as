@@ -3,6 +3,20 @@
 > 人与 AI agent 的协作守则（rules of engagement）。
 > 在写任何代码之前先读这个文件。如果这里的规则与某条请求冲突，以本文件为准，并向维护者提出冲突。
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues; use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the canonical triage labels mapped in `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo. Read relevant domain docs and ADRs under `docs/architecture/adr/`; see `docs/agents/domain.md`.
+
 ## 1. 项目定位与范围
 
 一个**产品化的第三方 IMS Application Server（应用服务器）**：单租户、on-premises（本地部署），部署在运营商 IMS 网络之外，由 S-CSCF 经运营商的 S-SBC 触发，S-SBC 做透明桥接。

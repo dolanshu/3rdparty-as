@@ -12,9 +12,9 @@
 
 | | |
 |---|---|
-| 当前进行中的步骤 | **M5 —— 运维**（M0–M4 已完成；M5 进行中。阻塞项见 §6.2 与 handoff） |
+| 当前进行中的步骤 | **M4b —— 运维控制台 UI（强制）；当前子步骤：M4b-6b persistent audit integration**（M4b-6a 角色/密码/session engineering slice 已交付并经独立评审，无剩余具体发现；本地 focused auth/API/store 116 passed，PG12.22 config-service integration 85 passed，当前 `make gate` 为 680 passed、2 skipped、91 deselected；均非 CI。ADR-0024 仍为 draft、待维护者评审。尚无 durable audit、application rate limiting、browser login UI 或 authenticated production-proxy 部署证明；login 强制 ASGI HTTPS scheme，不证明实际 ingress/trusted-proxy 配置。M4b-6b、M4b-7 UI 与 M4b-8 browser acceptance 仍开放；整体 M4b/M4 未完成，未接受任何 REQ。较早 d2 engineering slice 不证明 AS 通知、fleet delivery 或真实健康 attestation，且 Distribution completion 与 ManagedRule/ChangeOrder APPLIED 协调是两个 PostgreSQL transactions；PG16 compatibility 为非阻塞跟进。M5 已提前部分交付，正式阶段闭合 / 后续顺序受 M4b 与真实集群验证把关；详见 §4、§5.3 与 handoff） |
 | 设计基线 | 已确认（`architecture/新系统整体架构.md`，决策 1–19） |
-| 卡住后续里程碑的未决项 | §5 |
+| 卡住后续里程碑的未决项 | §5（含 D11：REQ-F-4 SDP 原始 body 字节恒等的线上证明） |
 | POC 代码的迁移 | 刻意推迟到 M1–M3，且由 [`migration/triage.md`](migration/triage.md) 把关 |
 | M1 完成日期 | 2026-09-28（AI agent 代办；维护者签字待补，见 `docs/reviews/m1-exit-review.md`） |
 
@@ -35,7 +35,7 @@
 | 1 | 新仓库 `3rdparty-as`，建在维护者机器上。全新 git 历史 —— POC 的历史**不**导入。 |
 | 2 | POC 代码**不整块导入**。栈变了、架构重组了，所以每个文件先经过甄别（[`migration/triage.md`](migration/triage.md)），避免把 POC 时代的妥协连同代码一起继承过来。 |
 | 3 | M0 只交付骨架：目录结构、`pyproject.toml` + uv workspace、CI、`AGENT.md`、ADR 注册表、结构守卫。结构在代码迁入**之前**先评审。 |
-| 4 | **O1（容量目标）有自己独立的研究阶段。** 这里不假设它，它也不阻塞骨架。Go 迁移与 HPA 阈值都要在那项研究之后才定，而不是之前。 |
+| 4 | **O1（容量目标）有自己独立的研究阶段。** 这里不假设它，它也不阻塞骨架；HPA 阈值要在实测之后才定。 |
 
 ---
 
@@ -116,11 +116,31 @@
 | **M1** | 甄别与行为基线 | 冻结 POC commit；抓取消息样例与 trace；确认或推翻 `migration/triage.md` 里每个裁决。**无产品代码。** | **已完成（2026-09-28；门禁裁决见 §4.1）** | 每个文件都有一个带证据的裁决；基线已抓取且可复现 |
 | **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | **M2a 已完成；M2b seam 已落（2026-09-28），栈绑定未开始** | 内核守卫绿；能在其上构建用例而不碰 sippy |
 | **M3** | 应用 | `apps/translation` 与 `apps/anti-fraud`；决策模块先做 TDD | **已完成（2026-09-28；门禁裁决见 docs/reviews/m3-gate-review.md）** | 契约用例集对两者都重放绿 |
-| **M4** | 控制面 | `services/config-service`（PG 版本库、变更单状态机、灰度分发、回滚）与 `services/console`（读写、鉴权、审计） | **已完成（2026-09-28；PG 接线转 M5，见 docs/reviews/m4-console-access-review.md）** | 一次规则变更走完整闭环：编辑 → 审批 → 分发 → 上报版本 → 回滚；开关配置走变更流水线 + 开关两态测试 |
-| **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集 | **进行中（Helm/告警/渲染校验/缩容保护/PG 闭环/容器镜像已落，2026-09-30；真实集群滚动升级与缩容验证未完成）** | 滚动升级不掉呼叫；缩容不掉呼叫 |
+| **M4a** | 控制面后端与访问策略 | `services/config-service` 配置治理，以及 `services/console` 的纯访问策略 / 审计判定；console 仍是骨架，`access.py` 不含 HTTP、login、session、password 或 persistence 实现 | **后端 / 策略切片已交付（2026-09-28）；不代表整体 M4 完成** | 后端治理闭环与开关两态测试；整体 M4 还须通过 M4b |
+| **M4b** | 运维控制台 UI（强制） | operator UI：按 REQ-F-12/13/14/15 提供规则 CRUD、审批队列、Call-ID 轨迹查询、灰度分发 / 回滚工作流；M4b-1 已交付 `services/console/web/` 静态预览（四视图、本地 fixture、仅当前页面内存状态）；M4b-2 提供 config-service 管理规则 schema | **M4b-1 静态预览、M4b-2 管理规则 schema、M4b-3 journal slice、M4b-4 ManagedRule persistence、M4b-5-1 read API、5-2a/b journal proposal/write API、5-2c APPLIED shared-transaction code slice、5-2d1 durable distribution journal、5-2d2 distribution API/report-to-activation engineering slice 与 M4b-6a role/password/session engineering slice 已交付；d2 与 6a 独立评审均无剩余 actionable/具体发现；当前子步骤 M4b-6b persistent audit integration；M4b-5 与 M4b 整体仍开放、待验收；整体 M4 保持未完成** | D4 已裁决。按 [`acceptance/test-plan.md`](acceptance/test-plan.md) §1.4（REQ-F-12/13/14/15）与 §3（REQ-S-4）逐项完成真实 backend/API、鉴权与审计、持久化、workflow integration 及 browser acceptance；工程切片均不是验收证据。M4b-6a 采用 draft ADR-0024 的登录/session 设计，实现与验证证据见 [`acceptance/report.md`](acceptance/report.md) 和 [6a review](reviews/m4b-6a-auth-session-review-2026-10-02.md)：focused auth/API/store tests 116 passed、config-service PG12.22 integration 85 passed、当前本地 `make gate` 680 passed / 2 skipped / 91 deselected；未运行 CI，PG16 未测。6a 不提供 durable audit、application rate limiting、browser login UI 或 authenticated production-proxy proof；HTTPS 检查依据 ASGI `request.url.scheme`。ADR-0024 仍是待维护者评审的 draft，未接受 REQ-S-4。5-2a 只持久化 pending proposal；5-2b draft/submit/approve/reject API 仅写 ChangeOrder journal snapshots；5-2c 在 APPLIED transition 时协调 ManagedRuleStore snapshot 与 ChangeOrder head 的单一 PostgreSQL transaction；5-2d1 持久化 batch-reported outcomes；5-2d2 接入 distribution report/API 与 activation coordinator，并暴露 observed status。d2 使用注入的 `can_approve_change` permission seam，不是实际 auth provider/session；请求级 primitive lock 仅串行化同一 app 共用的注入 PG connection，该 connection 须专用且不得与外部调用共享。API 接受报告，不发送 AS 通知、不证明 AS 已加载版本或 fleet delivery，也不提供真实健康 attestation。Distribution completion 与 ManagedRule/ChangeOrder APPLIED coordinator 为两个已提交的 PostgreSQL transactions，不构成 global/distributed atomicity。运行时 schema 映射及可执行 regex semantics 仍未解决；M4b-6b persistent audit、M4b-7 UI integration、M4b-8 browser acceptance 仍待完成，M4b/M4 均未验收、无 REQ acceptance |
+| **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集 | **工程工作已提前部分交付（2026-09-28–30：Helm / 告警 / 渲染校验 / 缩容保护 / PG 闭环 / 容器镜像）；正式阶段闭合 / 后续顺序受 M4b 把关；真实集群滚动升级与缩容验证仍未完成** | M4b 通过后，在真实集群验证滚动升级不掉呼叫、缩容不掉呼叫，方可关闭 M5 |
 | **M6** | **容量研究** | 真实 socket 压测 harness；测出 CPS、并发会话、建立时延 —— 按栈分别 | 未开始 | 产出 O1 的答案；在这跑起来之前不假设任何目标 |
-| **M7** | Go 迁移 | 一个用例的 `go-b2bua` 镜像，commit 固定并 vendoring；跨实现对拍 | 未开始 | **受 M6 把关。** 仅当与 Python 实现输出对输出一致时才转正（ADR-0012） |
+| **M7** | 生产 SIP 集成与验收 | Python 产品决策模块接入 reSIProcate DUM/产品 CallController；完成协议行为和恢复验收 | 未开始（仅有探索性证据；产品集成/验收未开始） | **受 D9、D10、D11、E1/E4/E5 把关。** REQ-NF-1 为硬验收要求；REQ-F-4 SDP 字节恒等须由完整产品路径验收；M6 容量测试仍须使用真实 socket |
 | **M8** | 发布候选 | 带证据的验收运行、文档链完整、统一产品版本 | 未开始 | 逐条验收报告 |
+
+**M4b implementation checklist（按顺序；当前子步骤：M4b-6b）：**
+
+- [x] M4b-1 静态预览：四视图、本地 fixture、当前页面内存状态；不是验收证据。
+- [x] M4b-2 管理规则 schema（本步骤）：config-service immutable management-plane rule model 与 REQ-F-12 单元测试。
+- [x] M4b-3 durable PostgreSQL change-order journal（integration 在临时 PostgreSQL 12.22 上 6 passed；PG16 compatibility 为非阻塞跟进，不代表部署验收）。
+- [x] M4b-4 durable PostgreSQL 管理规则持久化（在 PostgreSQL 12.22 测试通过；PG16 compatibility 为非阻塞 follow-up；[工程评审](reviews/m4b-4-managed-rule-store-review-2026-10-01.md)）。
+- [x] M4b-5-1 identity/permission-gated read-only API：四个 managed-rule/change-order GET routes、schema-versioned response models、path validation 与 error mapping；28 个 API tests 通过；[工程评审](reviews/m4b-5-1-read-api-review-2026-10-01.md)。仅为工程切片，不代表 auth provider/session integration、M4b-5 完成或 UI 验收。
+- [x] M4b-5-2a ChangeOrder schema-v2 journal snapshot 携带 typed ManagedRule proposal；兼容读取 schema-v1；active ManagedRuleStore 不写入、不改变。
+- [x] M4b-5-2b identity/permission-gated ChangeOrder journal write API（注入 identity/permission callbacks；无真实 auth provider/session integration）：draft / submit / approve / reject，identity、权限、timestamp 与 ID generation 注入；submit / approve 权限分离、禁止 submitter 自批、拒绝理由必填、revision CAS、validation/error mapping；48 个 focused API tests 通过，独立评审无发现（维护者签字待补）。仅持久化 ChangeOrder snapshots，不改 active ManagedRuleStore、不分发或应用 ConfigBundle、不实现跨 store atomicity；该证据不是 M4b/M4 acceptance 或 REQ acceptance。
+- [x] M4b-5-2c APPLIED 时共享 PostgreSQL transaction 协调：在同一 injected connection 上应用 typed CREATE/UPDATE/DELETE proposal，并追加 ChangeOrder APPLIED snapshot/head；调用方须提供专用、空闲且在调用期间独占的连接，不得与无关操作并发共享；PG12.22 integration coverage 通过，PG16 compatibility 为非阻塞 follow-up。仅是单 PostgreSQL transaction code slice，不代表 global/distributed atomicity、实际 distribution result wiring、验收或 M4b 完成。
+- [x] M4b-5-2d1 durable PostgreSQL distribution journal：以 append-only immutable snapshots 持久化 batch-reported outcomes 与 observed status，并用 revision CAS 保证历史；PG12.22 focused integration 验证。unit 51 passed、PG integration 8 passed；[工程评审](reviews/m4b-5-2d1-distribution-journal-review-2026-10-02.md)。此 slice 不发送 AS instance 通知、不证明 fleet delivery、不激活规则或 ChangeOrder，也不是 M4b acceptance。
+- [x] M4b-5-2d2 distribution API/report-to-activation engineering slice：从 APPROVED 开始分发，读取 observed status，接收当前 batch bool reports，部分健康推进、异常自动 rollback、成功完成后调用 activation coordinator，并提供受状态门控的 apply/manual rollback。使用注入的 permission seam，不发送 AS 通知、不证明加载版本或真实健康；Distribution completion 与 ManagedRule/ChangeOrder APPLIED 是两个事务。Focused API/PostgreSQL tests 79 passed，config-service integration 61 passed；最新本地 `make gate` 641 passed、2 skipped、67 deselected；独立评审无 actionable findings，维护者签字待补。仅为工程切片，不代表 M4b/M4 acceptance 或 REQ acceptance，详见 [`acceptance/report.md`](acceptance/report.md) 与 [review](reviews/m4b-5-2d2-distribution-api-review-2026-10-02.md)。
+- [x] M4b-6a 角色 / 密码身份验证与 session integration：基于待维护者评审的 [draft ADR-0024](architecture/adr/0024-console-password-sessions.md)，实现 fail-closed session auth primary path、保留 callback compatibility、user management、bootstrap CLI、HTTPS login、Host cookies 与写请求 CSRF。Focused API/auth/store tests **116 passed**；config-service integration **85 passed, 319 deselected**（临时 PostgreSQL 12.22）；当前本地 `make gate`：Ruff format 220 files already formatted、Ruff clean、mypy 44 source files、`unit or contract` **680 passed, 2 skipped, 91 deselected**。独立 reviewer 修复后无剩余具体发现；本地、未运行 CI；PG16、deployed trusted proxy、DB least privilege、rate limiting、durable audit、login UI 均未验证/未实现。此为交付的 engineering slice，不构成 REQ-S-4/M4b/M4 acceptance；详见 [`acceptance/report.md`](acceptance/report.md) 与 [review](reviews/m4b-6a-auth-session-review-2026-10-02.md)。
+- [ ] **M4b-6b（当前）** append-only persistent audit integration；独立于已交付的登录/session slice，仍为 M4b acceptance 的必需门禁，当前未交付。
+- [ ] M4b-7 UI 接入 API，并完成规则、审批、轨迹与分发 workflow integration。
+- [ ] M4b-8 browser acceptance：验证 REQ-F-12/13/14/15 与 REQ-S-4 全部 flows。
+
+运行时 schema mapping 与 executable regex semantics 仍是 live rule application 的前置条件，M4b-2 未解决；M4b 与整体 M4 仍未验收。
 
 ### 4.1 M1 门禁裁决（2026-09-28）
 
@@ -144,7 +164,7 @@ M1 门禁原文：*每个文件都有一个带证据的裁决；基线已抓取�
 | S1 未构造出腿 `Route` 头与任何 `Record-Route` 头 | 这两条派生断言显式 skip 并注明"需 M2 probe 补"；另补了一条基线真正能证明的硬断言：入腿 Route 的 next-hop 正是出腿 Request-URI 的 host:port |
 | 14 个基线文件全部是 CRLF 换行 | 解析器按 CRLF 原样处理，SDP 逐字节比较在原始字节下通过 |
 
-M6 是一个带决策的研究里程碑，不是对某个数字的承诺。M7 在 M6 报告之前不启动。
+M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容量研究仍按原顺序留在 M6，并使用真实 socket；流量模型与负载生成器决策也留在 M6，不纳入 M4b。M7 在 M6 报告之前不启动。
 
 ---
 
@@ -154,9 +174,9 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。M7 �
 
 | # | 条目 | 阻塞 | 解决所需 |
 |---|---|---|---|
-| O1 | 容量目标：CPS、并发会话、建立时延预算。**已有量级估计**（见 [`architecture/容量量级估算.md`](architecture/容量量级估算.md)：选型设计目标 ≥500 CPS / ≥20,000 并发对话），但**仍是未决项** —— 数字来自公开统计推算，非实测 | M7（Go）、HPA 阈值（M5） | M6 的实测，在 harness 跑真实 socket 之后；须回收估算文档 §6 的 C1–C7 |
-| O2 | ~~C/C++ 栈选型：仅当 Go 被证不够才考虑。~~ **已失效并升级**：生产 SIP stack 选型整体重开（sippy 退出生产栈），C/C++ 与 Go 同为候选，见 ADR-0019 | ~~阻塞 M0 签字~~ ✅ 已选定 reSIProcate（ADR-0019 Accepted）；E1/E4/E5 probe 验证归入 M1 |
-| O3 | `go-b2bua` 与 `sippy 2.4.2` 的行为比对 | M7 | 人工比对；上游只标到 commit `61f1da28` |
+| O1 | 容量目标：CPS、并发会话、建立时延预算。**已有量级估计**（见 [`architecture/容量量级估算.md`](architecture/容量量级估算.md)：选型设计目标 ≥500 CPS / ≥20,000 并发对话），但**仍是未决项** —— 数字来自公开统计推算，非实测 | M7 集成容量验收、HPA 阈值（M5） | M6 的实测，在 harness 跑真实 socket 之后；须回收估算文档 §6 的 C1–C7；不再作为 SIP 栈选择依据 |
+| O2 | **已选定 reSIProcate C++**（ADR-0019 Accepted）；生产栈方向不变。DUM/controller 集成与 E1/E4/E5 仍未验证 | D9、D10、M7 | ADR-0019 的选型结论不代替集成或需求验收；K2 未解除 |
+| O3 | reSIProcate 生产路径的 SIP 行为验收（E1，S1–S11） | M7 / M8 | native DUM S1/S4 smoke 不是产品 E1；完成集成 spike 后由产品 adapter 通过真实 socket probe 验证 |
 | O4 | 呼叫轨迹保留期 | M4 | 客户合规要求 |
 | O5 | 容灾等级：N+1（节点）还是 N+M（机架 / AZ） | M5 Redis 拓扑 | 客户 SLA |
 
@@ -165,13 +185,39 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。M7 �
 | # | 条目 | 阻塞 | 说明 |
 |---|---|---|---|
 | D1 | **Python 3.10 在 2026 年 10 月到达生命周期终点。** 产品锁 3.10 是因为那是 sippy 验证过的版本。 | 该日期之后的任何交付 | 尽早验证 sippy 在 3.11 / 3.12 上的行为；要么迁移，要么在 ADR 里把 EOL 运行时登记为已接受的 risk。这里不定。 |
-| D2 | 同一用例的第二个（Go）实现放哪：`apps/<case>/{py,go}` 还是一棵独立的树 | M7 | 在 spike 之前由 ADR-0012 定，免得迁移中途改动结构 |
+| D2 | ~~同一用例的第二个语言实现放置位置~~ **已不适用**：当前产品决策模块保持 Python；reSIProcate 集成边界由 D9 spike 处理 | — | 不启动第二个业务实现；跨实现一致性仍按语言无关契约验证（ADR-0012） |
 | D3 | Redis 客户端与 Sentinel 接线；脑裂窗口下的判决幂等 | M2 | 风险 R5 |
-| D4 | 控制台前端形态：保留 vendored 单包、无构建步骤，还是接受一套工具链 | M4 | POC 禁止了 npm 和构建步骤；产品控制台更大 |
+| D4 | ~~控制台前端形态：保留 vendored 单包、无构建步骤，还是接受一套工具链~~ **已裁决（2026-10-01）**：使用纯 HTML/CSS/JavaScript，不引入 bundler、build tool 或前端 runtime 依赖 | —（已解决） | 当前 console 尚无 HTTP/runtime 前端；无构建步骤适合简单的 on-premises 交付。M4b-1 只交付可直接打开的静态预览，不代表 M4b 后端、鉴权、持久化、workflow integration 或验收已完成 |
 | D5 | 呼叫轨迹存储：PostgreSQL，还是独立的短保留存储 | M4 | 与 O4 相关 |
 | D6 | testbed 是否必须在 v1 支持客户验收测试 | M8 | 架构文档把它推迟到 v1.1 |
 | D7 | ~~未决~~ **已裁决（2026-09-28）**：粒度固定为号段 + 稳定哈希百分比，schema 与判定幂等见 [ADR-0021](architecture/adr/0021-runtime-override-granularity.md) | M4 | 与 ADR-0020 的分层门控相关，需在控制面设计前定 |
 | D8 | ADR-0014（三层 testbed）在 PRD 中找不到对应的需求编号：PRD 现行 REQ-NF-13 是"OTel 三信号导出"（已由 ADR-0005 承载），没有覆盖"testbed 三层"与"真实 socket 容量压测"。0014 暂以 REQ-NF-13 指向并在 Evidence 注明 | M8 / PRD 维护 | 需维护者裁决：补一条 testbed/容量压测的 REQ，或调整 0014 的指向 |
+| D9 | reSIProcate DUM 到 Python 决策模块的产品集成方式及 adapter 边界未定；上游 `BUILD_PYTHON=ON` 不提供通用 DUM Python 模块。隔离 spike 已证明 CPython native callback、真实 DUM→Python→404/500 和一个两腿 486 分支可行，但未形成产品 API/adapter | M7 实现；K2 | 维护者评审桥接可行性证据并裁决产品 adapter 边界后，才授权实现；仍须补完整 E1、forking 与 final-response race 覆盖。业务决策继续使用 Python |
+| D10 | 当前验收范围按 `docs/acceptance/test-plan.md`：基本呼叫完成 ACK 交换后 kill/restart AS，再由上游发送 in-dialog BYE；replacement 必须将 BYE 路由到对端且 Redis 中完整 dialog record 存在。跨进程 UAC `DialogSetId` + 应用保存字段的窄 re-INVITE hook 通过；fresh DUM 对该已建立 UAS dialog 的同 dialog BYE 返回 481，故当前 baseline 失败。产品两腿映射恢复仍未证明；未发现公开 UAS rehydrate API | M7 / M8；REQ-NF-1 验收 | **不通过 / 未解决，仍阻塞 M7/M8**：REQ-NF-1 保持硬要求，D10 必须通过当前 ACK-established-dialog BYE/Redis baseline。`SipStack` 在进程中途的 pending transaction recovery 尚未验证，但不属于当前 acceptance；若要加入 INVITE/CANCEL/final-response/2xx-ACK recovery，须单独修改/扩展 requirement 与 test plan 并经维护者裁决。用户已选择 Redis 应用层最小 checkpoint 方向并记录于仍为 proposed 的 ADR-0023；初版 `CallStateCheckpointRepository` 仅属 schema-v1 序列化/仓储 groundwork，尚未接入产品 DUM/CallController 恢复；不能将仓储或 UAC hook 当作完整恢复，也不得静默替换 ADR-0019 栈。详见[呼叫状态恢复方案比较](architecture/call-state-recovery-options.md)。 |
+| D11 | 隔离 native DUM 路径已对有限 SDP 样本观察到 body 字节恒等：230/143/233 字节 offer，以及一个不同的 238 字节 answer；这不是完整产品 adapter 或 REQ-F-4 验收 | M7 / M8；REQ-F-4 验收 | 扩大到需求基线、stack 接受的边界变体及完整产品 adapter 路径，以 on-wire capture 比较 body 并完成 review；在此之前不得宣称 REQ-F-4 通过 |
+
+**D10 的 M7 阻塞 TODO（依赖顺序；全部完成并有验收证据前保持“不通过 / 未解决”）**：
+
+- [ ] **M7.1 产品恢复接入**：实现产品 reSIProcate DUM / `RecoveryTU` 恢复集成，验证 ACK-established UAS/UAC 双腿可由新进程重建。
+- [ ] **M7.2 非阻塞恢复读取**：在 SIP callback 之外完成 Redis lookup，并以非阻塞 continuation 恢复处理；不得在 callback 中等待 Redis。
+- [ ] **M7.3 CallController context restoration**：从完整、已提交的双腿 checkpoint 恢复产品 `CallController` context，并验证同 dialog 新到达 BYE 的路由。
+- [ ] **M7.4 owner 与提交安全**：实现 owner generation/fencing、完整双腿 durable commit acknowledgement，以及依赖 checkpoint 的 SIP side effect 前 write-before-side-effect；旧 owner 不得继续产生 side effect。
+- [ ] **M7.5 checkpoint 生命周期**：为活跃呼叫实现 TTL renewal 和 terminal cleanup，并覆盖续期、终态、重试及 owner 交接行为。
+- [ ] **M7.6 D10 验收**：按当前 `docs/acceptance/test-plan.md` 完成 ACK 后 kill/restart、完整 Redis dialog record、replacement BYE 路由至 peer 的产品路径测试与 review。
+
+本次 4 KiB extension payload、16 KiB checkpoint 与 30-day TTL 上限只是 payload / retention groundwork only，不实现上述恢复、提交或生命周期语义。此 TODO 序列仅覆盖当前 ACK-established-dialog baseline，不把 D10 扩展到崩溃时的 mid-transaction recovery；该可选未来范围须另行获得 requirement 与 test-plan 批准。
+
+### 5.3 PM / AM / UM 产品管理能力缺口（需求待补）
+
+以下是尚未完整需求化的产品能力缺口，不是 M4b 的隐含扩项；M4b 仅包含当前控制台的 REQ-S-4 基础鉴权与审计。
+
+| 能力 | 已有部分能力 | 尚缺能力与下一步 |
+|---|---|---|
+| PM（Performance Management） | REQ-NF-13 提供 OTel metrics / traces / logs；M5 已有指标与告警规则工件 | 这些不是 PM 管理产品或工作流，也不代表已有 live dashboard。补充 PRD requirement 与验收标准后，可作为独立 feature 规划 |
+| AM（Alarm Management） | REQ-NF-14 与 M5 告警规则集 | 尚无完整告警生命周期管理（ack / clear / suppress / history / operator workflows）。先补 PRD requirement 与验收标准，再单独规划 |
+| UM（User Management） | M4b-6a 在草案 ADR-0024 下提供基础本地账号、角色、密码 / session 管理工程切片；不构成 REQ-S-4 验收或审计 | 尚无获批的完整 UM requirement / acceptance，覆盖完整 operator lifecycle / workflows、browser UI、SSO / MFA、password recovery / lockout / session-management UX；durable audit 仍由 M4b-6b 单独交付。超出此基线的范围须补充独立 feature / REQ |
+
+在上述需求与验收标准获批前，不把 PM / AM / UM 的未定义功能并入 M4b。
 
 ---
 

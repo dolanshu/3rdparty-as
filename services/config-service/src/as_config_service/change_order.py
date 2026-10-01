@@ -29,9 +29,11 @@ again would falsify the audit trail that ADR-0006 exists to produce.
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, replace
 from enum import Enum
 
+from as_config_service.managed_rule import ManagedRule
 from as_platform.api.contract import ConfigBundle
 
 ACTION_SUBMIT = "submit"
@@ -52,6 +54,53 @@ class ChangeState(Enum):
     APPLIED = "applied"
     REJECTED = "rejected"
     ROLLED_BACK = "rolled_back"
+
+
+class ManagedRuleChangeAction(Enum):
+    """The management-plane operation proposed by a change order."""
+
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+
+
+@dataclass(frozen=True)
+class ManagedRuleChange:
+    """A pending rule proposal; it does not change active ManagedRuleStore state."""
+
+    action: ManagedRuleChangeAction
+    rule_id: str
+    proposed_rule: ManagedRule | None
+    expected_revision: int | None
+
+    def __post_init__(self) -> None:
+        """Enforce action-specific rule shape and optimistic revision semantics."""
+        if type(self.action) is not ManagedRuleChangeAction:
+            raise TypeError("action must be a ManagedRuleChangeAction")
+        if type(self.rule_id) is not str:
+            raise TypeError("rule_id must be a string")
+        if not self.rule_id.strip():
+            raise ValueError("rule_id must not be blank")
+        rejected_categories = {"Cc", "Cf", "Cs", "Zl", "Zp"}
+        if any(
+            unicodedata.category(character) in rejected_categories for character in self.rule_id
+        ):
+            raise ValueError("rule_id contains prohibited Unicode characters")
+
+        if self.action is ManagedRuleChangeAction.CREATE:
+            if self.expected_revision is not None:
+                raise ValueError("CREATE requires expected_revision to be None")
+        elif type(self.expected_revision) is not int or self.expected_revision < 1:
+            raise ValueError("UPDATE and DELETE require a positive integer expected_revision")
+
+        if self.action is ManagedRuleChangeAction.DELETE:
+            if self.proposed_rule is not None:
+                raise ValueError("DELETE requires proposed_rule to be None")
+        elif type(self.proposed_rule) is not ManagedRule:
+            raise TypeError("CREATE and UPDATE require a ManagedRule proposed_rule")
+
+        if self.proposed_rule is not None and self.proposed_rule.rule_id != self.rule_id:
+            raise ValueError("proposed_rule.rule_id must match rule_id")
 
 
 # The seven edges of the ADR-0006 machine, and nothing else. See ADR-0006.
@@ -120,7 +169,9 @@ class ChangeOrder:
     Attributes:
         change_id: Stable identifier of the change order.
         state: Where the order is in the ADR-0006 machine.
-        bundle: The configuration the order carries into the version repository.
+        bundle: The unchanged runtime configuration carried into the version repository.
+        managed_rule_change: Optional management-plane proposal, separate from runtime bundle
+            and active managed-rule state.
         created_by: Who submitted the order.
         created_at: When the order was created, injected by the caller.
         approver: Who approved it; ``None`` until ``approve`` runs. REQ-F-14.
@@ -136,6 +187,15 @@ class ChangeOrder:
     approver: str | None = None
     approved_at: float | None = None
     audit: tuple[AuditEntry, ...] = ()
+    managed_rule_change: ManagedRuleChange | None = None
+
+    def __post_init__(self) -> None:
+        """Keep an embedded proposal inside the typed management-plane boundary."""
+        if (
+            self.managed_rule_change is not None
+            and type(self.managed_rule_change) is not ManagedRuleChange
+        ):
+            raise TypeError("managed_rule_change must be a ManagedRuleChange or None")
 
 
 def is_terminal(state: ChangeState) -> bool:
@@ -259,6 +319,8 @@ def reject(order: ChangeOrder, actor: str, reason: str, now: float) -> ChangeOrd
     Raises:
         IllegalTransitionError: If the order is not in SUBMITTED.
     """
+    if not reason.strip():
+        raise ValueError("rejection reason must not be blank")
     _guard(order, ChangeState.REJECTED)
     return replace(
         order,
@@ -331,6 +393,8 @@ def roll_back(order: ChangeOrder, actor: str, reason: str, now: float) -> Change
     Raises:
         IllegalTransitionError: If the order is neither APPLIED nor DISTRIBUTING.
     """
+    if not reason.strip():
+        raise ValueError("rollback reason must not be blank")
     _guard(order, ChangeState.ROLLED_BACK)
     return replace(
         order,

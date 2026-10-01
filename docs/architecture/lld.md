@@ -1,332 +1,156 @@
-# 低层设计（LLD）— platform 内核（M2a）
+# Low-Level Design (LLD) — 3rdparty-as
 
-- **版本**：v0.1（reviewed）
-- **日期**：2026-09-28
-- **状态**：reviewed — 2026-09-28 评审通过，见 docs/reviews/m2-design-review.md
-- **依据 ADR**：ADR-0002 / ADR-0003 / ADR-0005 / ADR-0007 / ADR-0016 / ADR-0019 / ADR-0020
-- **对应 REQ**：见 `hld.md` §8 追溯表
+- **Status:** Design draft; maintainer review required. This update does not imply approval.
+- **As of:** 2026-10-02
+- **Scope:** Current interfaces, module responsibilities, contracts, and known implementation gaps across M2–M6.
+- **Parent:** [`hld.md`](hld.md). Requirements: [`../requirements/prd.md`](../requirements/prd.md). Milestones/open items: [`../plan.md`](../plan.md).
 
----
+## 1. Implementation Inventory
 
-## 1. 文件清单
+Status meanings: **Implemented** = code exists; **tested** = named test evidence exists; **seam** = contract/policy without the runtime integration; **open** = not implemented or not verified. A test of a pure policy is not evidence of production wiring.
 
-路径前缀：`platform/src/as_platform/`
+| Module | Responsibility and public surface | Status / evidence |
+|---|---|---|
+| `platform/decision/{rules,decide}.py` | Immutable `Rule`/`RuleSet`, number normalization, rule selection, `DecisionRequest` to `Decision`. | Implemented pure policy. Called-number match; block outranks translate, then longer prefix within action. No SIP I/O. (REQ-F-6, REQ-F-7; ADR-0002.) |
+| `apps/translation/decision.py` | Kernel verdict plus longest-prefix `TranslationRule` rewrite. | Implemented pure policy. (REQ-F-16; ADR-0002.) |
+| `apps/anti-fraud/decision.py` | Kernel verdict plus longest-prefix rate limit using caller-injected counters. | Implemented pure policy; Redis counter mutation/expiry caller is not wired here. (REQ-F-7; ADR-0002, ADR-0007.) |
+| `platform/api/contract.py` | `RuleDTO`, `ToggleDTO`, `ConfigBundle`, `AppliedVersionReport`, contract version. | Implemented data contract; no production serving/report transport established. (ADR-0002, ADR-0006, ADR-0020.) |
+| `platform/state/` | `StateStore` protocol, namespaced keys, in-memory and Redis implementations. | Implemented; shared contract tests exist. Sentinel wiring/topology are open. The ACK-established-dialog BYE/Redis recovery baseline is not met; recovery of a pre-crash in-flight `SipStack` transaction is an optional, untested extension. (ADR-0002, ADR-0007.) |
+| `platform/gating/` | Deployment toggle lookup and runtime override evaluator. | Pure evaluation implemented/tested; live bundle/Redis source wiring open. (REQ-G-1; ADR-0020, ADR-0021.) |
+| `platform/sip/` | `SipAdapter` protocol, status mapping, transport policy, TLS configuration value reload, byte-level SIP message parse/build. | Seam and wire helpers implemented. The planned reSIProcate DUM adapter and product `CallController` are absent; no production listener or TLS handshake. Native DUM smoke is not E1/E4 acceptance. (REQ-F-1–REQ-F-5, REQ-S-1–REQ-S-3; ADR-0003, ADR-0016, ADR-0019, proposed ADR-0022.) |
+| Planned `SipStack` / DUM integration / `CallController` | Logical boundary only: `SipStack` owns transports and transaction processing/timers; DUM is a `TransactionUser`/UA layer using `SipStack` and owns dialog/`InviteSession` semantics and session-level behavior; controller owns semantic cross-leg mapping, business decisions, outbound commands, and recoverable business context. | D9 exploratory probes establish narrow native bridge and DUM→Python feasibility, including one 486 branch; no production bridge API, adapter, controller, or stable API has been selected. Full E1, forks, and final-response races remain open. (REQ-F-1–REQ-F-5, REQ-F-8–REQ-F-11; ADR-0019, proposed ADR-0022.) |
+| `platform/telemetry/` | `TelemetrySink`, bounded queue, background exporter thread, no-op default; `MetricsRegistry`/`CallMetrics`. | Implemented and unit/integration tested for non-blocking export behavior. Full OTel SDK/exporter, traces and structured-log integration are not evidenced. (REQ-NF-13–REQ-NF-14; ADR-0005.) |
+| `platform/shell.py`, `__main__.py` | Signal-aware termination, stop-accepting flag, bounded wait for active calls. | Shell policy implemented; executable currently injects `active_calls=lambda: 0`, so not connected to actual SIP work. Container signal test is not cluster upgrade proof. (REQ-NF-1, REQ-NF-4; ADR-0002, ADR-0009.) |
+| `platform/ops/downscale_guard.py` | Pure selection of removable per-instance candidates. | Implemented/tested; returns a plan only and does not call Kubernetes. (REQ-NF-3; ADR-0010.) |
+| `services/config-service/` | Change-order/distribution state machines and selected internal API routes, store adapters, console auth/session integration. | Implemented engineering slices with PostgreSQL integration evidence. The API is not a complete production workflow: no instance notification transport, durable console audit, browser UI, or proof that all workflow/audit entities are durably persisted. Auth/session slice test evidence is recorded in [`../acceptance/report.md`](../acceptance/report.md). (REQ-F-12, REQ-F-14, REQ-F-15, REQ-NF-10, REQ-S-4; ADR-0006, ADR-0007, draft ADR-0024.) |
+| `services/console/src/as_console/access.py` | Roles, permission evaluation, two-person approval check, audit-record construction. | Pure policy implemented/tested. Durable append-only audit is not implemented here or by the 6a slice. (REQ-S-4; ADR-0016.) |
+| `services/config-service/src/as_config_service/auth.py` | `PostgresConsoleAuthStore`; password verifier, accounts, sessions, CSRF, bootstrap state, role resolution and user mutations. | M4b-6a implementation: PBKDF2-HMAC-SHA256, 600,000 iterations, 16-byte salt, 32-byte output; exact UTF-8 input, no normalization/truncation, reject over 1,024 bytes, constant-time digest comparison. 256-bit session/CSRF values are stored digest-only; session TTL is at most eight hours. Current enabled roles resolve per request; role/password/disable mutations revoke sessions transactionally. Dedicated injected PostgreSQL connection contract; store failures roll back the entire active transaction, including `commit=False`. No Redis session storage or `search_path` mutation. (REQ-S-4; ADR-0016, draft ADR-0024.) |
+| `services/config-service/src/as_config_service/api.py` | `create_app` routes, optional session authentication, CSRF, RBAC and account operations. | Session mode is primary and fail-closed when configured; injected identity/authorization callbacks remain backward compatible and are not fallback auth. HTTPS login checks ASGI `request.url.scheme`; cookies use `__Host-` scope; CSRF is required for writes. An app-scoped request lock serializes its shared auth connection only within that process; it is not a cross-process lock. API auth tests are in `test_api.py` and PostgreSQL-backed API coverage in `test_postgres_auth_api_integration.py`. No durable audit, application rate limiter, browser login UI, or deployed trusted-proxy proof. ADR-0024 remains draft and this is not REQ-S-4 acceptance. |
+| `services/config-service/src/as_config_service/bootstrap_admin.py` | `as-config-bootstrap-admin` first-admin CLI. | One-time bootstrap uses `getpass` and the PostgreSQL singleton lock; no default password or unauthenticated claim route. Auth store tests include bootstrap and last-enabled-admin behavior. ADR-0024 remains draft; no REQ acceptance. |
+| `deploy/helm/`, `deploy/alerts/` | Per-use-case Kubernetes resources, conditional HPA/PDB, configuration/secrets, alerts. | Chart/render and alert artifacts exist. Autoscaling is off by default; real cluster rollout/scale-down and alert firing remain unverified. (REQ-NF-3, REQ-NF-4, REQ-NF-9, REQ-NF-14; ADR-0009, ADR-0010, ADR-0013.) |
 
-| 路径 | 职责 | 关键公共 API（类型签名） | ADR 标注 |
-|---|---|---|---|
-| `shell.py` | 进程壳：加载配置、注入依赖、注册信号、就绪探针、主循环、draining | `def main(argv: Sequence[str]) -> int`、`def build_context(config: ConfigSource) -> AppContext`、`def run(ctx: AppContext) -> None` | ADR-0002、ADR-0009（skeleton，未落地） |
-| `decision/__init__.py` | 决策包入口，重导出判决契约 | `DecisionRequest`、`Decision`、`Rule`、`RuleSet`、`DecisionAction`、`Leg` | ADR-0002 |
-| `decision/rules.py` | 规则集合：归一化、最长前缀匹配、候选集构造 | `def normalize_number(raw: str) -> str`、`def match_candidates(rules: RuleSet, number: str) -> tuple[Rule, ...]`、`def select_winner(candidates: tuple[Rule, ...]) -> Rule \| None` | ADR-0002、REQ-F-6 / F-7 |
-| `decision/decide.py` | 判决纯函数 | `def decide(request: DecisionRequest, rules: RuleSet) -> Decision` | ADR-0002、AGENT.md §5 |
-| `state/store.py` | `StateStore` Protocol 与键命名空间构造 | `class StateStore(Protocol)`、`def build_key(case: str, kind: str, id: str) -> str` | ADR-0002、ADR-0007 |
-| `state/in_memory.py` | 测试与本地开发实现 | `class InMemoryStateStore`（实现 `StateStore`） | ADR-0002 |
-| `state/redis_store.py` | 生产实现（Redis + Sentinel） | `class RedisStateStore`（实现 `StateStore`） | ADR-0007、ADR-0002 |
-| `gating/__init__.py` | feature 门控：判定入口与 `ToggleSource`（两层来源） | `class ToggleSource(Protocol)`、`class StaticToggleSource`、`def is_enabled(name: str, scope: ToggleScope, source: ToggleSource) -> bool` | ADR-0020 |
-| `telemetry/__init__.py` | 遥测：有界队列、后台导出、空实现 | `class TelemetrySink(Protocol)`、`class BoundedQueueSink`、`class BackgroundExporter`、`class NoOpSink` | ADR-0005 |
-| `api/contract.py` | 内核对用例进程暴露的内部 API 契约（数据结构 + 回调协议） | `DecisionRequest`、`Decision`、`CallState`、`AppContext`、`def handle_request(ctx: AppContext, request: DecisionRequest) -> Decision` | ADR-0002 |
-| `sip/transport.py` | 对端白名单与 TLS 配置热轮换 seam | `class PeerIdentity`、`class PeerPolicy`、`class TlsConfig`、`class TransportSeam`、`def authorize_peer(peer, policy) -> bool` | ADR-0016 |
-| `sip/adapter.py` | SIP 边界 seam（仅 Protocol，不含栈实现） | `class SipAdapter(Protocol)`、`def to_decision_request(view, received_at) -> DecisionRequest`、`def decision_to_status_code(action) -> int` | ADR-0016、ADR-0019 |
+## 2. Decision and Use-Case Contracts
 
-**命名约束**：`src/` 下禁止出现 `util`、`helper`、`misc`、`common`、`tools` 一类模块名（AGENT.md §5）。上表十二个模块名均为领域名。
+### 2.1 Kernel Decision
 
----
+The kernel input is `DecisionRequest(call_id, calling_number, called_number, received_at)` and output is `Decision(action, target, reason_code, matched_rule_id)`. Time is provided by the caller. `decide()` reads no clock, socket, global state, or configuration store; it receives one `RuleSet`. (REQ-F-6, REQ-F-7; ADR-0002.)
 
-## 2. 数据结构
+`RuleSet.match()` normalizes the called number and prefixes, collects prefix matches, then chooses by action rank (`BLOCK` > `TRANSLATE` > `FORWARD`) and prefix length. No candidate yields `NOT_FOUND`; block yields `DECLINE`; translation yields a target for the app to refine; forward uses its rule target or normalized called number. The SIP seam maps `NOT_FOUND` to 404 and `DECLINE` to 603; `FORWARD`/`TRANSLATE` map to the internal continue marker, not a SIP response. This mapping is not proof those responses are emitted on a live stack. (REQ-F-6, REQ-F-7; ADR-0002, ADR-0019.)
 
-```python
-from __future__ import annotations
+### 2.2 Application Decisions
 
-from dataclasses import dataclass
-from enum import Enum
+- Translation first delegates to the kernel. Only `TRANSLATE` is refined: `find_translation_rule()` selects the longest matching prefix, and `translate_number()` strips/adds configured prefixes. Other kernel outcomes pass through unchanged. (REQ-F-16; ADR-0002.)
+- Anti-fraud also preserves kernel `NOT_FOUND` and `DECLINE`. For a routable verdict, it selects a rate window by longest called-number prefix and compares the caller-supplied count with `max_calls`. A spent window returns `DECLINE` with `RATE_LIMIT`; state increment, TTL, and counter fetch belong outside this pure function. (REQ-F-7; ADR-0002, ADR-0007.)
+- `testbed/contracts/decision/cases.json` contains 14 language-neutral cases. The translation and anti-fraud replay tests compare action, target, reason code, and matched rule ID and fail if their applicable case set is empty. These prove app policy against the shared contract, not SIP stack parity. (ADR-0012, ADR-0015.)
 
+## 3. Feature Enablement
 
-class Leg(str, Enum):
-    """呼叫的哪一条腿产生了本次请求。"""
+`ToggleDTO` carries `name`, `enabled`, mandatory `removal_condition`, and deployment `scope`; `ConfigBundle` carries toggles with rules in the same version. A missing/unregistered toggle is off. The feature does not change the API contract, and disabled behavior uses the existing default path. Every named feature must declare default-off, rollout scope, and removal condition before use. (REQ-G-1; ADR-0006, ADR-0020.)
 
-    INBOUND = "inbound"
-    OUTBOUND = "outbound"
+The runtime override schema is `RuntimeOverride(name, prefix, percent, enabled, removal_condition)`. Empty prefix covers the full number space. `match_override()` filters by name and prefix, chooses the longest prefix, returns false for explicit disable, otherwise calls `in_bucket(call_id, percent)`. `in_bucket` clamps at the endpoints (`<=0` false, `>=100` true) and uses `FNV-1a-32(call_id) % 100 < percent`; no clock, randomness, or Redis read participates. No matching override returns `None`, leaving the deployment-level decision. This is the accepted ADR-0021 granularity; user-level and durable per-call override are excluded.
 
+The evaluator and contract DTOs exist with open/closed unit coverage. No production `ToggleSource` backed by the governed configuration and runtime store, refresh transport, or named feature rollout is evidenced. This LLD does not add one or infer its failure policy beyond the accepted fail-closed rules. (ADR-0020, ADR-0021.)
 
-class DecisionAction(str, Enum):
-    """判决动作。取值与 hld.md §5 步骤 4 的四个分支一一对应。"""
+## 4. State and Configuration Persistence
 
-    FORWARD = "forward"
-    TRANSLATE = "translate"
-    DECLINE = "decline"
-    NOT_FOUND = "not_found"
+### 4.1 Runtime State
 
+`StateStore` exposes `get`, `set`, `delete`, and `expire`; `build_key(case, kind, entity_id)` yields `as:{case}:{kind}:{entity_id}`. Runtime data is expected to carry TTL and writes should be idempotent. `InMemoryStateStore` supports tests/local use; `RedisStateStore` accepts an injected client or constructs a direct-URL client lazily. The protocol currently permits `ttl_seconds=None`; production callers must not use that for runtime keys. Contract tests replay key, expiration, idempotency, miss, deletion, and byte-safety behavior against both adapters, using test collaborators rather than proving deployed Redis/Sentinel failover. (REQ-NF-1–REQ-NF-3; ADR-0002, ADR-0007.)
 
-@dataclass(frozen=True)
-class DecisionRequest:
-    """内核看到的请求。不含任何 SIP 概念（无 header、无 dialog、无事务）。"""
+Sentinel topology/client integration and split-brain semantics are still D3/O5. State in Redis does not prove that DUM dialog/session runtime or the product `CallController` mapping can be reconstructed after process loss. `SipStack` owns live transport/transaction state while running; DUM is its `TransactionUser`/UA layer and owns dialog/`InviteSession` state; the application `CallController` owns the semantic cross-leg mapping and recoverable business context. Do not claim either stack's runtime objects are Redis-serializable. A narrow two-process UAC `DialogSetId` re-INVITE hook succeeded after manually restoring dialog fields; it is exploratory evidence, not a current D10 acceptance step. A fresh DUM returned 481 for a same-dialog UAS BYE after restart; no public UAS rehydrate API was found. That 481 fails the current ACK-established-dialog baseline: the replacement must restore enough dialog and cross-leg state to route the new BYE and retain the complete Redis record. Recovery of a transaction that was already in flight at process failure was not tested and is outside the current baseline; it remains an optional extension. DUM/`SipStack` transaction state may matter for other restart points, but it is not part of the current D10 gate. ADR-0002's all-session-state externalization statement conflicts with this ownership model, while REQ-NF-1 still requires active calls not to be dropped on restart. D10 is not passed / unresolved; REQ-NF-1 remains hard. (ADR-0002, ADR-0019, proposed ADR-0022, plan §5.)
 
-    call_id: str
-    calling_number: str
-    called_number: str
-    method: str
-    leg: Leg
-    received_at: float  # 由调用方注入，函数内部绝不取时钟。See ADR-0002
+### 4.2 Governance State and Workflow
 
+`ChangeOrder` transitions are `DRAFT -> SUBMITTED -> APPROVED -> DISTRIBUTING -> APPLIED`, with `SUBMITTED -> REJECTED` and distribution/applied rollback to `ROLLED_BACK`. Transition functions are pure; actor, reason, and time are explicit inputs, and audit entries are appended in the returned value. `Distributor` separately tracks batches, instance reports, health results, and rollback target; an unhealthy batch terminates rollout and selects the previous immutable version. (REQ-F-14, REQ-F-15, REQ-NF-10; ADR-0006.)
 
-@dataclass(frozen=True)
-class Decision:
-    """decide() 的唯一产出。"""
+`VersionStore` is the repository abstraction. `PostgresVersionStore` appends serialized `ConfigBundle` rows and reads history; version rows are never updated or deleted. Its connection is caller-owned. Real-PostgreSQL integration evidence covers the approval/persist/distribution/rollback retrieval path reported in [`../acceptance/report.md`](../acceptance/report.md). The current source does not provide a complete HTTP service, durable repository for all change-order/distribution/audit state, or an instance notification transport. Do not describe the pure state machines as a running control plane. (ADR-0006, ADR-0007.)
 
-    action: DecisionAction
-    target: str | None
-    reason_code: str
-    matched_rule_id: str | None
+## 5. SIP and Transport Boundary
 
+`SipRequestView` contains method, Request-URI, Call-ID, calling/called numbers, and raw body bytes. `to_decision_request()` discards wire details and injects `received_at`. `decision_to_status_code()` maps only terminal decision outcomes. `SipAdapter` specifies parse/respond/forward operations; its protocol has no implementation that owns sockets, SIP transactions, or dialogs. reSIProcate DUM is the selected protocol mechanism, while the product adapter and logical `CallController` below describe planned boundaries only.
 
-@dataclass(frozen=True)
-class Rule:
-    rule_id: str
-    prefix: str
-    action: DecisionAction
-    priority: int
+`message.py` parses a SIP message into start line, ordered repeated headers, and unchanged body bytes; builders produce CRLF framing and compute Content-Length. It is a wire-format helper, not a complete RFC 3261 stack. Do not infer correct B2BUA dialog separation, Route/Record-Route processing, retransmission, CANCEL race behavior, or in-dialog routing from it. (REQ-F-1–REQ-F-5, REQ-F-8–REQ-F-11; ADR-0003, ADR-0004, ADR-0019.)
 
+### 5.1 Planned DUM adapter and product CallController
 
-@dataclass(frozen=True)
-class RuleSet:
-    version: str
-    rules: tuple[Rule, ...]
+This is the logical design boundary, not an implemented module or a selected C++/Python API. reSIProcate `SipStack` owns transport and live SIP transaction processing, retransmission, transaction timers, and its process loop. DUM is a `TransactionUser`/UA layer constructed with and using `SipStack`; it owns dialog/`InviteSession` semantics and session-level behavior, including supported session timers. A planned adapter translates DUM events and commands across the product boundary; the product `CallController` owns cross-leg semantics/business context and invokes the existing Python decision modules. It must not duplicate stack transactions or timers. Isolated D9 spikes now demonstrate native CPython callback feasibility and a real DUM→Python decision path, but do not define a product bridge API or adapter. `BUILD_PYTHON=ON` is not a general DUM Python binding. Product implementation still requires maintainer review/authorization and broader E1 coverage, including forks and final-response races.
 
+The controller's invariants and lifecycle responsibilities are:
 
-@dataclass(frozen=True)
-class CallState:
-    call_id: str
-    leg_state: str
-    created_at: float  # 同 DecisionRequest.received_at，由调用方注入
-    ttl: int  # 运行态键必须带 TTL。See ADR-0007
+- Represent the inbound UAS and outbound UAC legs as independent legs with distinct Call-IDs; retain a semantic mapping from both leg identities to one business call context.
+- Map initial request/session events into a Python decision and an outbound command. Keep Request-URI, SDP, Route/Record-Route, and per-leg dialog semantics compliant with REQ-F-1–REQ-F-5 and REQ-F-8–REQ-F-9.
+- Coordinate provisional and final responses. A non-2xx final outcome is propagated and the failed leg is cleaned up; a successful dialog remains available for in-dialog requests and termination.
+- Coordinate CANCEL and BYE across the appropriate legs. For CANCEL racing a final response, consume DUM transaction/session events and converge according to SIP transaction semantics; do not create a second timer/retransmission implementation in the controller.
+- Route in-dialog requests through the correct mapped leg while preserving required Route/Record-Route behavior. Release cross-leg business mappings when terminal protocol events establish cleanup is complete.
+- Keep DUM callbacks nonblocking: no synchronous network round trips, unbounded work, or blocking policy I/O on the callback path. Use the existing pure Python decision modules; persistence/export work must not block SIP callbacks.
 
+Source-verified boundary (upstream reSIProcate 1.14.0, commit `632e215c2ca9aee5416bfe1808851ea6fa380044`): `InviteSessionHandler::onNewSession` overloads include the client/server handle, `OfferAnswerType`, and `const SipMessage&`; callback overloads differ by leg, `onTerminated` supplies a reason and optional related message, and there is no `onCancel` virtual. On an inbound initial UAS INVITE CANCEL, DUM handles that leg's 200 response to CANCEL and 487 to INVITE and notifies termination with `RemoteCancel`; the controller remains responsible for coordinating the opposite UAC leg and cleanup/races. `InviteSession::end()` is BYE, not CANCEL; the exact cancellation API is intentionally unspecified pending D9 adapter spike and race tests. DUM includes RFC session-timer support; controller policy/other retries are separate. `makeInviteSession(...)` returns a message to send, while the session handle arrives through callbacks; this is not a selected product/bridge API.
 
-@dataclass(frozen=True)
-class ToggleScope:
-    """门控判定范围。ADR-0020 层 ② 的粒度载体。"""
+REQ-F-4 remains an explicit wire-level requirement. Bounded native DUM captures show identity for 230-, 143-, and 233-byte offers and one distinct 238-byte answer, but do not cover the full product adapter, broader boundary corpus, or route behavior. Neither `Contents` handling nor leaving callbacks unchanged proves preservation; full product-path on-wire evidence and review are still required before acceptance (D11).
 
-    case: str
-    number_range: str | None = None
-    call_id: str | None = None
-```
+State ownership is deliberately split. `SipStack` owns live transport/transaction runtime and DUM owns live dialog/session runtime while the process runs. `CallController` owns the semantic cross-leg mapping and recoverable business context. A Redis copy of that context is not proof that dialog or product mapping state can be reconstructed after process restart. The UAC `DialogSetId` re-INVITE/re-association hook is exploratory only, not a D10 acceptance step or UAS recovery: a separate fresh-DUM UAS test returned 481 to a valid same-dialog BYE after restart, so the current ACK-established-dialog baseline fails. At the required restart point, the old INVITE/ACK transaction is complete; the test checks a new upstream BYE transaction routed over the established UAC leg and does not restore the old INVITE transaction. DUM/`SipStack` transaction state may be needed for other states or extensions, but is not a current D10 gate. REQ-NF-1 remains hard; D10 is not passed / unresolved. The maintainer must decide how to address the current UAS/dialog and cross-leg recovery gap or commission a formal ADR/design review. No recovery mechanism or store is selected here.
 
-### frozen / slots 取舍
+Evidence boundaries: current SIP message helpers and seam tests establish only parsing, formatting, and pure policy behavior. D9 native callback, DUM→Python 404/500, one two-leg 486, and one early CANCEL branch are exploratory feasibility evidence only; they do not constitute a product adapter test, E1 pass, fork/race coverage, or requirement acceptance. The Python E1 harness exits 2 because `resip` is absent; TLS S1 did not establish a call. D11 byte identity covers only a bounded set of offers and one distinct answer. D10's required current baseline is ACK-complete dialog recovery followed by upstream BYE routing and complete Redis-record verification; the fresh-DUM UAS test returns 481, so REQ-NF-1 remains unresolved. This is a SIP dialog/control-state recovery failure; no RTP/media path is tested. Recovery of a transaction already in flight at restart is not required by this baseline and remains an optional extension requiring separate/expanded requirement and test-plan scope. Required future coverage includes controller unit tests for leg correlation/lifecycle and error branches, product adapter integration, E1 S1–S11, E4 TLS rotation, broader D11 captures, and E5/REQ-NF-1 baseline recovery. No product adapter/controller tests currently exist.
 
-- **采用 `@dataclass(frozen=True)`。** 判决路径上的对象一旦可变，纯函数性质与幂等性都无法陈述 —— 不可变是 §3「同输入必同输出」的数据层保证，也让 `RuleSet` 可以安全地在测试间共享而不被意外改写。
-- **暂不启用 `slots=True`。** Python 3.10 起可用，但 `slots=True` 会重新构造类，对子类化与序列化（判决对象后续可能要跨进程 / 跨语言边界传递）引入额外摩擦，而判决对象生命周期极短，内存收益不抵这份摩擦。若 M6 容量评估认为对象分配成为热点，再单独裁决启用。
-- 所有公共函数与数据结构都有完整类型标注，**`mypy` strict 必须干净**。
+`TransportSeam` contains `TlsConfig`, `PeerPolicy`, versioned reload, and pure peer authorization. An empty allowlist denies all; a configured address or certificate identity match permits the peer. These are policy/value semantics only: certificate file loading, mTLS handshake, identity extraction, live-connection rotation, and E4/S12 remain unverified. Upstream reSIProcate 1.14.0 `BUILD_PYTHON=ON` does not provide a general DUM Python binding; probes fail with exit code 2 when `resip` is missing, not pass/skip evidence. Integration D9 and recovery D10 remain blocking. (REQ-S-1–REQ-S-3; ADR-0016, ADR-0019, proposed ADR-0022.)
 
----
+## 6. Telemetry, Metrics, and Call Traces
 
-## 3. `decide()` 算法
+`TelemetrySink.emit()` is the call-path boundary. `BoundedQueueSink` uses `put_nowait`; full queues increment `dropped_count`. A daemon worker batches events to an `Exporter`; export exceptions increment `export_failure_count` and do not escape into the call path. `NoOpSink` is the default. The real-socket integration test verifies exporter activity does not block its caller. No claim is made that a configured OTel SDK or customer exporter is currently connected. (REQ-NF-13; ADR-0005.)
 
-```
-def decide(request: DecisionRequest, rules: RuleSet) -> Decision:
-    # ① 归一化号码：E.164，保留 '+' 前缀；去分隔符与非号码字符
-    called = normalize_number(request.called_number)
-    calling = normalize_number(request.calling_number)
+`MetricsRegistry` is a thread-safe in-process counter/gauge store. `CallMetrics` currently defines:
 
-    # ② 最长前缀匹配：构造候选集（默认匹配对象为被叫号码，REQ-F-6/F-7）
-    candidates = match_candidates(rules, called)   # 按 prefix 长度降序
-
-    if not candidates:
-        # ④ 无匹配 → NOT_FOUND（404，REQ-F-6）
-        return Decision(action=NOT_FOUND, target=None,
-                        reason_code="no_rule_matched", matched_rule_id=None)
-
-    # ③ 冲突裁决：block 优先于 translate（与 test-plan REQ-F-7 验收一致）
-    winner = select_winner(candidates)            # 最长前缀优先；同长则 priority 高者优先；
-                                                  # 跨长度冲突时 block(DECLINE) 压过 TRANSLATE
-
-    # ⑤ 命中 block → DECLINE（603，REQ-F-7）
-    if winner.action is DECLINE:
-        return Decision(action=DECLINE, target=None,
-                        reason_code="blocked", matched_rule_id=winner.rule_id)
-
-    if winner.action is TRANSLATE:
-        return Decision(action=TRANSLATE, target=translate(called, winner),
-                        reason_code="translated", matched_rule_id=winner.rule_id)
-
-    return Decision(action=FORWARD, target=called,
-                    reason_code="forwarded", matched_rule_id=winner.rule_id)
-```
-
-**性质（必须成立，也是测试断言的对象）：**
-
-- **纯函数**：无 socket、无时钟、无全局状态（AGENT.md §5）。`received_at` 是入参，不是内部读取。
-- **无 IO**：不读配置、不写状态、不发遥测 —— 状态写入与遥测由调用方在拿到 `Decision` 之后做（hld.md §5 步骤 5 / 6）。
-- **幂等**：同输入必同输出；重复求值不产生副作用，因此重复执行不改变结果（未决 D3 的前提）。
-
----
-
-## 4. StateStore
-
-### 4.1 Protocol
-
-```python
-class StateStore(Protocol):
-    def get(self, key: str) -> bytes | None: ...
-    def set(self, key: str, value: bytes, ttl_seconds: int) -> None: ...
-    def delete(self, key: str) -> None: ...
-    def expire(self, key: str, ttl_seconds: int) -> None: ...
-```
-
-语义要求：
-
-- `set` 与 `delete` **幂等**：同一 key 重复 `set` 同一 value 结果一致；删除不存在的 key 不报错。
-- `get` 未命中返回 `None`，不抛异常。
-- 键由 `build_key(case, kind, entity_id)` 统一构造，命名空间 `as:{case}:{kind}:{entity_id}`（ADR-0007）。**参数名避用 `id`** —— `id` 是内置名，用作参数会触发 `ruff` A002，故取 `entity_id`。
-
-### 4.2 `InMemoryStateStore`
-
-- 用途：测试与本地开发。
-- **TTL 判定用注入的到期时间戳 / 单调时钟，不在实现内部读系统时钟。** 这样 TTL 行为可被确定性测试（注入时间即可断言过期），与 §3 的纯函数纪律同源。
-- 不引入线程锁假设之外的并发语义；并发语义由契约测试定义。
-
-### 4.3 `RedisStateStore`
-
-- 生产实现（Redis + Sentinel）。
-- 键命名空间 `as:{case}:{kind}:{id}`，运行态键**必须带 TTL**。
-- 写入**幂等**：同一 key 重复写入同一 value 结果一致（承受脑裂窗口，风险 R5 / 未决 D3）。
-- 连接参数（地址、Sentinel 集合、超时）由配置注入，不在代码里写死。
-- `redis` 依赖声明在 `platform/pyproject.toml`；根 `pyproject.toml` 已为 `redis` 预留 mypy override。
-
-### 4.4 契约测试
-
-同一套契约用例（`marker = contract`）对两个实现**重放**：键构造、TTL 过期、幂等写入、未命中返回、删除不存在键、二进制安全。任何实现差异都是缺陷，不是"实现特性"。
-
----
-
-## 5. 门控（gating）
-
-```python
-class ToggleSource(Protocol):
-    """分层门控必须能区分两层来源，因此是两个方法而不是一个。"""
-
-    def deployment_value(self, name: str) -> bool | None: ...  # 层 ①
-    def runtime_override(self, name: str, scope: ToggleScope) -> bool | None: ...  # 层 ②
-
-
-@dataclass(frozen=True)
-class StaticToggleSource:
-    """测试与默认实现：未登记的开关一律返回 None（→ 关）。"""
-
-    deployment: Mapping[str, bool] = field(default_factory=dict)
-    overrides: Mapping[tuple[str, str], bool] = field(default_factory=dict)
-
-    def deployment_value(self, name: str) -> bool | None:
-        return self.deployment.get(name)
-
-    def runtime_override(self, name: str, scope: ToggleScope) -> bool | None:
-        return self.overrides.get((name, scope.scope_key()))
-
-
-def is_enabled(name: str, scope: ToggleScope, source: ToggleSource) -> bool:
-    override = source.runtime_override(name, scope)
-    if override is not None:
-        return override  # 层 ② 压过层 ①。See ADR-0020
-    deployment_value = source.deployment_value(name)
-    if deployment_value is not None:
-        return deployment_value
-    return False  # fail-closed：未注册的开关是关。See ADR-0020
-```
-
-规则：
-
-- **两层来源分列。** `ToggleSource` 用 `deployment_value(name)`（层 ①，部署级总开关）与 `runtime_override(name, scope)`（层 ②，运行态细粒度覆盖）两个方法，而不是单一 `value()` —— 单一方法无法表达"层 ② 覆盖层 ①"的语义，也无法表达两层的不同失效含义。判定顺序固定为层 ② 优先、层 ① 兜底。
-- **默认关。** 未注册的开关名 → 关（**fail-closed**）。这是 ADR-0020 的硬要求，也是"开关债务不变成放行漏洞"的保证。
-- **纯函数。** `is_enabled` 不读 Redis、不读时钟、不读全局；值全部来自注入的 `ToggleSource`。测试注入 `StaticToggleSource` 即可覆盖开 / 关两态，不需要任何外部依赖。
-- **判定幂等。** 同一 `scope` 重复求值结果一致 —— 脑裂窗口内不得出现翻转。由 `ToggleSource` 实现保证（层 ② 覆盖值最终一致），并由契约测试断言。
-- 层 ①（部署级总开关，PG 版本库热加载）在 M4 落地；M2 只定义契约，`StaticToggleSource` 是默认实现。
-
----
-
-## 6. 遥测（telemetry）
-
-```python
-class TelemetrySink(Protocol):
-    def emit(self, event: TelemetryEvent) -> None: ...
-
-
-@dataclass(frozen=True)
-class BoundedQueueSink:
-    """呼叫路径唯一允许触碰的 sink：入队即返回。"""
-
-    queue: BoundedQueue
-
-    @property
-    def dropped_count(self) -> int: ...  # 队列满而丢弃的事件数
-    @property
-    def export_failure_count(self) -> int: ...  # 导出失败次数
-
-    def emit(self, event: TelemetryEvent) -> None:
-        if not self.queue.try_put(event):
-            self._dropped += 1  # 丢弃是设计选择，不是异常 See ADR-0005
-```
-
-规则：
-
-- 呼叫路径只调用 `emit(event)` → 写入**有界队列**。队列满则**丢弃**新事件并让 `dropped_count` 计数自增（导出失败另计 `export_failure_count`）。遥测丢失可接受，反压呼叫路径不可接受（ADR-0005）。
-- `BackgroundExporter` 在**独立线程**消费队列并批量导出。后端中立：代码只依赖 OTel API 与配置，换后端是配置变更不是代码变更。
-- `NoOpSink` 是**默认**实现 —— 未配置遥测时零开销，也让测试无需任何后端。
-- **绝不在呼叫路径做网络 IO。** 阻塞事件循环里做一次网络写，等于把后端抖动直接加进呼叫建立时延（ADR-0005、AGENT.md §5）。
-- 载荷日志默认关闭、可开关；开启时同样走有界队列，不回写到呼叫路径。
-
----
-
-## 7. 进程壳（shell）
-
-启动顺序：
-
-1. **加载配置** —— 经注入的 `ConfigSource` 读取（配置热更新走同一个 seam，证书热轮换复用它，ADR-0016）。
-2. **注入依赖** —— 构造 `StateStore`（`RedisStateStore` 或 `InMemoryStateStore`）、`TelemetrySink`（默认 `NoOpSink`）、`ToggleSource`（默认 `StaticToggleSource`），组装 `AppContext`。
-3. **注册 `SIGTERM` / `SIGINT`** —— 触发 draining。
-4. **就绪探针** —— 依赖装配完成且可服务后标记 ready。
-5. **主循环** —— **M2a 不含 SIP 循环**；SIP 事件循环属 M2b 适配层。
-
-draining（ADR-0009，skeleton，未落地）：
-
-```
-收到 SIGTERM
-  → 停止接收新请求（摘流）
-  → 等 active_calls 归零，或超过 grace window
-  → 退出
-```
-
-因为进程内无状态（ADR-0002），draining 不需要状态迁移；grace window 与强制释放策略由呼叫时长硬顶定义，作为部署侧参数注入。
-
----
-
-## 8. 错误策略
-
-| 场景 | 处置 |
+| Metric | Semantics |
 |---|---|
-| 入口校验失败（对端不在白名单） | **丢弃** + 记一条**安全事件**（不是普通日志）。ADR-0016 / REQ-S-1 |
-| 判决异常 | **fail-closed**：按配置返回 404（默认）或 603。**默认 404 不得放行** —— 拿不到判决时，"我不知道这个号段"比"我允许它过去"安全 |
-| 状态写入失败 | 记遥测，按策略终止呼叫；不静默继续 |
-| 任何异常 | **不得冒泡到 SIP 回调。** 在适配层边界捕获、记遥测、转成 fail-closed 判决。SIP 回调里抛异常意味着状态机停在未知位置 |
+| `as_active_calls` | Per-pod and per-use-case gauge; `active_calls_for()` reads one instance. |
+| `as_sip_responses_total` | Counter labeled by use case, status class, and exact code. |
+| `as_rule_hits_total` | Counter labeled by rule ID. |
+| `as_telemetry_dropped_total` | Counter labeled by use case. |
 
----
+There is no `cps` metric in this implementation. Metrics are handed to the telemetry sink as events; real OTel metric exposition/export, complete traces, structured logs, and alert execution are separate integration work. `deploy/alerts/as-alerts.yaml` and its documented metric names are configuration artifacts, not evidence of an alert backend firing. (REQ-NF-13, REQ-NF-14; ADR-0005, ADR-0010.)
 
-## 9. 测试策略
+Call-ID call trace is a distinct, complete product/query record, not sampled OTel trace and not CDR. No trace storage/query implementation is present in the examined code; retention O4 and storage D5 remain open. Do not imply `trace_id` availability or a console query endpoint. (REQ-F-13, REQ-NF-7; ADR-0005, ADR-0017.)
 
-| 层 | 覆盖对象 | 断言要点 | marker |
-|---|---|---|---|
-| unit | `decide()` 与 `rules`（归一化、最长前缀、冲突裁决、无匹配 / DECLINE 分支） | 同输入同输出；block 压过 translate；无匹配 → `NOT_FOUND`；无时钟 / 无 IO（注入 `received_at` 即可断言） | `unit` |
-| unit | 门控 `is_enabled` | **开 / 关两态都要覆盖**；未注册开关名 → 关（fail-closed）；同 scope 重复求值一致 | `unit` |
-| unit | 遥测 `BoundedQueueSink` | 入队不阻塞；队列满 → 丢弃且 `dropped_count` 自增；`NoOpSink` 零副作用 | `unit` |
-| unit | `InMemoryStateStore` TTL 与幂等 | 注入时钟可确定性断言过期；重复 `set` / 删除不存在键不报错 | `unit` |
-| contract | `StateStore` 契约 | **同一套用例对 `InMemory` 与 `Redis` 两个实现重放**：键构造、TTL、幂等、未命中、二进制安全 | `contract` |
-| contract | `api/contract.py` 内部 API 契约 | 用例进程视角的请求 / 判决契约，跨实现一致 | `contract` |
-| integration | 进程壳启动 / draining、遥测后台导出 | 真实信号 → 摘流 → active_calls 归零 → 退出；导出线程与呼叫路径隔离 | `integration` |
+## 7. Process Lifecycle and Operations
 
-**强制 TDD**：`decide()` 与规则匹配走**红 - 绿 - 重构**（AGENT.md §6）。这两处纯函数是 TDD 回报最高的地方，不允许先写实现再补测试。
+`ProcessShell` changes from accepting to terminating on `request_terminate()`, then polls injected `active_calls`, clock, and sleeper until zero or timeout. The executable registers SIGTERM/SIGINT and returns success on zero or a nonzero timeout/runtime code. Its current `active_calls` provider always returns zero, so tests establish shell logic and container SIGTERM behavior only, not draining real calls. (REQ-NF-1, REQ-NF-4; ADR-0002, ADR-0009.)
 
----
+`plan_scale_down(current, desired_replicas, protect_above=0)` returns a deterministic partial/full candidate plan, preferring lower active-call count then stable instance ID, excluding already-draining instances. It has no Kubernetes API calls. HPA computes desired replicas; actuation and coordination with draining remain operations-layer responsibilities. Threshold zero is a safety condition, not a capacity estimate. (REQ-NF-3; ADR-0009, ADR-0010.)
 
-## 10. 代码标注约定
+The Helm chart creates standard resources per enabled use case, references external Redis/PostgreSQL and customer-managed TLS, and has conditional HPA/PDB rendering. HPA is disabled by default and refuses missing capacity inputs when enabled; one replica in a render fallback is not a measured target. `preStop` and `terminationGracePeriodSeconds` encode draining. Helm lint/render and image build have passed as recorded; live Kubernetes rolling-upgrade/scale-down are still unverified. PostgreSQL/Redis HA, cross-site RTO/RPO, and O5 disaster-recovery scope are not settled. Production deployment is Helm only; no Operator/CRD. (REQ-NF-4, REQ-NF-9; ADR-0008–ADR-0010, ADR-0013.)
 
-- 不显而易见的代码行末标 `# See ADR-00NN`（AGENT.md §5、REQ-G-3）。审稿人必须能从代码一步走到理由。
-- 所有公共函数必须有完整类型标注；`mypy` **strict** 必须干净。
-- `ruff` 必须干净：google docstring 约定、`line-length = 100`。
-- 标识符、注释、日志、错误字符串用英文；面向人的文档用中文（AGENT.md §5）。
-- 禁止 `util` / `helper` / `misc` / `common` / `tools` 模块名（AGENT.md §5）。
+### 7.1 Call-State Recovery Lifecycle and Ownership
+
+ This is a conceptual lifecycle, not an implementation API or object model. No product recovery adapter, snapshot schema, or UAS rehydrate path exists today.
+
+**Scope note:** The current D10/REQ-NF-1 [acceptance check](../acceptance/test-plan.md) is exactly the ACK-established-dialog baseline: complete a basic two-leg call through the ACK exchange; kill and restart the AS; send an upstream in-dialog BYE; assert that the replacement restores the UAS/UAC mapping and forwards the BYE over the already-established UAC leg to the peer; and assert that Redis contains the complete dialog record. The post-restart BYE is a new transaction. The test does not restore the completed INVITE transaction or a transaction that was in flight at process failure, and does not cover downstream/UAC-initiated in-dialog re-INVITE or BYE. REQ-NF-1 remains a hard acceptance requirement. This AS does not carry or anchor RTP (REQ-NF-6; ADR-0004), and the baseline does not test media interruption or resumption. The fresh-DUM 481 is a SIP control-state recovery failure against this baseline, not evidence of RTP interruption. No media blocker or new media requirement is introduced.
+
+ 1. **Live ownership:** `SipStack` continues to own live transport and transaction processing/timers; DUM owns live UAS/UAC dialog and `InviteSession` behavior; `CallController` owns the semantic mapping of both legs, business state, and the configuration version used for the call. A checkpoint stores only the product-owned state required by the agreed recovery contract, not live C++ handles or an assumed serialization of DUM objects.
+ 2. **Checkpoint boundary:** for the current baseline, the logical call checkpoint must contain both legs' dialog identifiers and routing data, the CSeq values needed to construct/process the post-restart BYE, and the `CallController` cross-leg/business mapping and configuration context/version. It must also account for owner/generation fencing where needed to prevent conflicting SIP actions. The write path must define the ordering between durable checkpoint progress and externally visible SIP actions. Persistence must not block the `SipStack`/DUM callback path; any asynchronous writer therefore needs an explicit durability/barrier policy rather than silently treating queued data as durable. Pending pre-crash transaction correlation and next-action state are not part of this baseline.
+ 3. **Store candidates:** the existing `RedisStateStore` is a generic runtime-state seam and could be evaluated for the checkpoint, consistent with accepted ADR-0002, but it is not a recovery adapter and does not own protocol runtime. A transactional store such as PostgreSQL could be evaluated for a coherent multi-leg commit, but that would require separate review against ADR-0002's accepted latency/storage rationale. The existing PostgreSQL configuration-version store is not a call-state store, and there is no cross-store transaction between it and Redis.
+ 4. **Owner takeover and peer routing:** after process loss, the replacement must acquire a newer recovery generation/owner fence and make the paired legs routable to that owner before processing them. The former generation must be unable to send SIP actions after takeover. `ClientIP` session affinity alone is not proof of ownership or fencing. The owner directory, stale-owner rejection, and routing/failover behavior are design gaps, not currently implemented APIs.
+ 5. **Restore and reconcile:** the current baseline restores an ACK-complete established dialog so the replacement can accept the new upstream BYE, route it over the existing UAC leg, and retain the complete Redis dialog record. The UAC `DialogSetId` hook is a narrow exploratory re-association path, not a baseline acceptance step; the fresh-DUM UAS BYE probe returned 481 and no public UAS rehydrate API was found, so the baseline currently fails. The previous INVITE transaction has completed and is not restored by this test. DUM/`SipStack` transaction state may be important for other states or recovery extensions, but it is not a current D10 gate.
+ 6. **Optional future recovery extension:** downstream/UAC-initiated in-dialog re-INVITE or BYE after restart, and process loss during pending INVITE/CANCEL/final-response/2xx-ACK processing, are outside current D10 acceptance. Any addition as a gate requires separate or expanded REQ/test-plan changes and explicit maintainer approval. In-flight transaction recovery would need explicit `SipStack` transaction correlation/reconciliation, which the UAC hook does not restore and no current public API has been shown to restore.
+ 7. **Expiry and failure:** an active call must not be discarded solely because a generic TTL elapsed. Terminal cleanup, recovery timeout, stale/partial snapshots, and store unavailability need explicit product semantics and tests. A lease expiry is not equivalent to call termination. These semantics remain open under D10 and REQ-NF-1.
+
+ The required state categories and acceptance boundary are defined in the HLD [Call-State Recovery Contract](hld.md#call-state-recovery-contract) and compared in [call-state-recovery-options.md](call-state-recovery-options.md). Neither document selects a store, recovery adapter, or exact schema.
+
+Product release version comes from root `VERSION`; component API versions remain in each member's `pyproject.toml`, guarded by version-consistency tests. No component owns its own `VERSION`. (REQ-NF-11; ADR-0018.)
+
+## 8. Test and Contract Evidence
+
+| Evidence layer | Current artifacts | What they establish / do not establish |
+|---|---|---|
+| Unit | `platform/tests/test_decide.py`, `test_rules.py`, `test_gating.py`, `test_gating_overrides.py`, `test_metrics.py`, `test_shell.py`, app tests, service tests. | Pure logic and deterministic edge behavior; not live SIP serving or external-store integration. |
+| Contract | `testbed/contracts/decision/cases.json`; app `test_contract_replay.py`; `platform/tests/test_state_store_contract.py`. | Shared decisions replay across both Python use cases; state-store contract with test implementations. Does not establish cross-language parity (M7) or a production Redis cluster. (ADR-0012, ADR-0015.) |
+| SIP baseline/probe | `testbed/contracts/sip-baseline/`, `testbed/probe/e1_baseline_probe.py`, `tls_hot_rotation_probe.py`, self-checks; native bridge/DUM probes recorded in acceptance report. | Existing S1–S4 captures and derived checks remain as stated. D9 evidence includes DUM→Python 404/500, one two-leg 486, and one early CANCEL branch; not product E1. D11 bounded byte comparisons passed, not REQ-F-4 acceptance. D10 UAC recreation succeeded narrowly; default-DUM UAS same-dialog BYE after restart returned 481, so the current ACK-established-dialog BYE/Redis baseline fails. Product CallController mapping recovery remains unproven. Recovery of a transaction already in flight at restart is outside the current baseline and remains an optional, untested extension. Native TLS S1 returned 503 Certificate Validation Failure and timed out (exit 124); E4 remains unverified. No product adapter/controller tests exist. (ADR-0003, ADR-0004, ADR-0019, proposed ADR-0022.) |
+| Integration | `platform/tests/test_telemetry_export_integration.py`, `services/config-service/tests/test_postgres_store_integration.py`, probe self-check. | Real-socket telemetry isolation, real PostgreSQL version workflow test, and harness behavior. Not production deployment integration. |
+| E2E/performance | CI markers; `testbed/load/` milestone boundary. | No completed product E2E or M6 real-socket capacity result. Capacity layer must measure the real socket/event-loop/stack path; no CPS, concurrency, latency target, or HPA capacity threshold is asserted here. (ADR-0014, ADR-0015.) |
+
+The handoff records 391 unit/contract passes and 2 known skips, plus 12 integration passes at its reporting point. Consult [`../acceptance/report.md`](../acceptance/report.md) for dated evidence; this design update does not rerun or certify those gates. Current repository has `docs/acceptance/test-plan.md`, `report.md`, and README; `docs/acceptance/criteria.md` is absent.
+
+## 9. Open Items and Review Boundary
+
+This LLD intentionally does not decide: Python/native integration technique (D9); implementation of the current ACK-established-dialog/upstream-BYE/UAC-leg/Redis recovery required by REQ-NF-1/E5 (D10); optional future recovery of downstream/UAC-initiated in-dialog requests or process loss during pending transaction/final-response/2xx-ACK state, which is outside the current gate and requires separate or expanded REQ/test-plan changes plus explicit maintainer approval; REQ-F-4 SDP body byte identity, which requires native-adapter on-wire capture (D11); Redis Sentinel client/topology and split-brain details (D3, O5); call-trace store/retention (D5, O4); cross-site or AZ redundancy beyond the accepted design direction (O5); testbed customer-delivery scope (D6); ADR-0014's missing direct PRD requirement mapping (D8); product E1/E4 evidence; live Kubernetes upgrade/downscale verification; or M6 capacity. See [`../plan.md`](../plan.md) §5, [`adr/0019-sip-stack-selection.md`](adr/0019-sip-stack-selection.md), and [proposed ADR-0022](adr/0022-resiprocate-b2bua-control.md).
+
+The previous M2 review record applies to the earlier kernel-only draft, not this product-level update. A separate review record exists at [`../reviews/hld-lld-design-review-2026-09-30.md`](../reviews/hld-lld-design-review-2026-09-30.md); this product-level update remains a draft, and maintainer approval/signature is pending.

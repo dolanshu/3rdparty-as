@@ -1,186 +1,153 @@
-# 高层设计（HLD）— 3rdparty-as 内核（M2）
+# High-Level Design (HLD) — 3rdparty-as
 
-- **版本**：v0.1（reviewed）
-- **日期**：2026-09-28
-- **状态**：reviewed — 2026-09-28 评审通过，见 docs/reviews/m2-design-review.md
-- **依据 ADR**：ADR-0002 / ADR-0003 / ADR-0005 / ADR-0007 / ADR-0016 / ADR-0019 / ADR-0020
-- **对应 REQ**：见 §8 追溯表
+- **Status:** Design draft; maintainer review required. This update does not imply approval.
+- **As of:** 2026-10-02
+- **Scope:** Product architecture across M2–M6, with implementation status called out explicitly.
+- **Normative source:** [`../requirements/prd.md`](../requirements/prd.md). Milestone and unresolved-item status: [`../plan.md`](../plan.md).
+- **Baseline:** [`新系统整体架构.md`](新系统整体架构.md) and the accepted ADRs linked below.
 
----
+## 1. Purpose and Status Convention
 
-## 1. 范围与非目标
+This document describes the target product boundaries and the evidence currently present in the repository. **Implemented** means code or a test exists; it does not by itself mean production integration or acceptance. **Seam/contract** means an interface or pure policy exists without its runtime adapter. **Open/unverified** means the repository or handoff does not establish the behavior. The distinction is particularly important for SIP serving, because the selected stack is not yet bound to the process.
 
-### 1.1 M2a —— 本设计覆盖
+The architecture supports a single-tenant, on-premises third-party IMS Application Server. S-CSCF triggers it over ISC through the operator's transparent S-SBC; the operator owns S-CSCF, S-SBC, and HSS. Product scope excludes media, CDR/billing, lawful interception, Diameter Sh, multi-tenancy, and GitOps configuration. (REQ-F-1, REQ-NF-5–REQ-NF-9; ADR-0003, ADR-0004, ADR-0013, ADR-0016, ADR-0017.)
 
-`platform` 内核的**非 SIP 部分**：
+## 2. Context and Boundaries
 
-- 进程壳（shell）：启动、依赖注入、信号与 draining、就绪探针。
-- `decide()` 缝与其背后的判决纯函数：规则匹配、冲突裁决、产出 `Decision`。
-- `StateStore` seam：Protocol 定义 + `InMemoryStateStore`（测试与本地开发）+ `RedisStateStore`（生产）。
-- feature 门控 seam：`is_enabled(name, scope)` 与可注入的 `ToggleSource`。
-- 遥测 seam：有界队列 + 后台导出线程，呼叫路径只做内存入队。
-- 内部 API 契约：内核对外暴露的数据结构与函数签名。
-
-### 1.2 M2b —— 本设计只落 seam 与契约，不实现
-
-- SIP adapter：SIP 消息与内核数据结构之间的翻译层。
-- Transport / TLS 绑定：生产栈为 **reSIProcate**（ADR-0019 已接受，经 Python 绑定接入）。
-
-**理由**：绑定一个 C++ 栈需要独立的构建集成（CMake + submodule vendoring）与跨语言契约工作，本身就是一份独立工作量；同时内核必须先能在**没有栈**的情况下被测试 —— 这正是 `docs/plan.md` 中 M2 的退出标准「能在其上构建用例而不碰 sippy」的含义。因此 M2b 只把 seam 的形状定死（什么进、什么出、谁负责 TLS），不写实现。
-
-### 1.3 非目标
-
-- 不做媒体（REQ-NF-6）：不实现 RTP、不转码、不做媒体锚定。
-- 不做 CDR（REQ-NF-7）：不采集话单、不批价。
-- 不做合法监听（LI）。
-- 不做业务用例实现 —— 那是 M3（`apps/translation`、`apps/anti-fraud`）。
-- 不做控制面 —— 那是 M4（`services/config-service`、`services/console`），治理态的 PostgreSQL 版本库随之延后。
-
----
-
-## 2. 上下文与边界
-
-```text
-S-CSCF ──iFC 触发──▶ S-SBC ──透明桥接──▶ AS
-                                          │
-                                          ├── platform 内核（本设计）
-                                          └── apps/<case> 用例进程
+```mermaid
+flowchart LR
+   SCSCF["Operator S-CSCF<br/>iFC / ISC trigger"] --> SBC["Operator S-SBC<br/>transparent bridge"]
+   SBC --> SIP["AS SIP boundary<br/>TLS / peer policy"]
+   SIP -. "selected stack; product binding open" .-> STACK["reSIProcate SipStack<br/>transports / transaction engine / timers"]
+   STACK -. "TransactionUser / UA layer" .-> DUM["reSIProcate DUM<br/>dialogs / InviteSessions / session behavior"]
+   DUM -. "planned product control" .-> CC["CallController<br/>cross-leg mapping / commands"]
+   CC -. "planned decision call" .-> APP["One use case per process<br/>translation | anti-fraud"]
+   APP --> CORE["platform kernel<br/>decision / state / gating / metrics"]
+   CORE --> REDIS[("External Redis<br/>runtime state")]
+   CON["console + config service<br/>control plane"] --> PG[("External PostgreSQL<br/>governance versions")]
+   CON -. "version distribution contract" .-> APP
+   APP -. "telemetry seam" .-> OBS["Customer observability backend"]
+   TB["testbed: contracts / simulators / load"] -. "development and verification only" .-> APP
 ```
 
-- S-CSCF 按 iFC（3GPP TS 24.229）触发，S-SBC 做**透明桥接**（ADR-0003）：我们从来看不见「网内 / 网外」的差异，因此只有一种接入语义。
-- AS = `platform` 内核 + `apps` 用例进程。ADR-0002 确立：**一个用例一个进程、一个故障域、一个灰度单元**。进程内不持有需要持久化的会话级状态。
-- 内核的单向依赖规则：内核**不得** import `apps` / `services` / `testbed`。monorepo 里任何 import 都能解析成功，这条规则由 `platform/tests/test_library_independence.py` 强制。
+The solid business/data edges above describe intended responsibility; dotted edges do not imply an implemented production connection. The repository has SIP parsing/building and transport/adaptation contracts, but no reSIProcate product adapter, `CallController`, or end-to-end app process wiring. reSIProcate DUM is the selected protocol mechanism; the controller is a planned product layer, not code present today. ADR-0019's stack choice remains in force; E1/E4/E5 remain open. See [ADR-0022](adr/0022-resiprocate-b2bua-control.md).
 
----
-
-## 3. 模块视图
-
-| 模块 | 职责 | 是否纯函数 | 依赖的 ADR |
-|---|---|---|---|
-| 进程壳（shell） | 加载配置、注入依赖、注册信号、就绪探针、主循环、draining | 否（有 IO 与信号） | ADR-0002、ADR-0009（skeleton，未落地） |
-| 入口校验（peer guard） | 对端白名单校验，失败即丢弃并记安全事件 | 否（读配置） | ADR-0016 |
-| 决策（decision：`rules` + `decide`） | 规则匹配、冲突裁决、产出 `Decision` | **是** | ADR-0002 |
-| 状态（state：`StateStore` Protocol / InMemory / Redis） | 运行态读写，键命名空间与 TTL，写入幂等 | 否（IO），但契约幂等 | ADR-0002、ADR-0007 |
-| 门控（gating） | `is_enabled(name, scope)` 判定，默认关、fail-closed | **是**（值由注入的 `ToggleSource` 提供） | ADR-0020 |
-| 遥测（telemetry） | 有界队列入队 + 后台线程导出，`dropped` 计数 | 入队是内存操作，导出在独立线程 | ADR-0005 |
-| SIP 适配 seam（sip adapter，M2b） | SIP 消息 ↔ 内核数据结构翻译（seam 已落：纯函数与 Protocol，不含栈实现；评审见 `docs/reviews/m2b-seam-review.md`） | 否 | ADR-0019、ADR-0003 |
-| 传输 seam（transport / TLS，M2b） | TLS 终止、mTLS、证书热轮换（seam 已落：纯函数与 Protocol，不含栈实现；评审见 `docs/reviews/m2b-seam-review.md`） | 否 | ADR-0016、ADR-0019 |
-| 内部 API 契约（api） | 内核对用例进程暴露的数据结构与签名 | —（契约层） | ADR-0002 |
-
----
-
-## 4. 运行模型
-
-- **每用例进程独立部署。** 一用例一进程、一故障域、一灰度单元（ADR-0002）。进程内不持有会话级状态，进程随时可重启。
-- **运行态在 Redis，治理态在 PostgreSQL。** 运行态（会话、对话、速率窗口）走 `RedisStateStore`（ADR-0007），治理态（规则版本、变更单、审计）归 M4 控制面。两者不互为主备、不做跨存储事务。
-- **升级走 draining（ADR-0009，skeleton，未落地）。** 语义固定为：`SIGTERM` → 摘流（不再接收新请求）→ 等 `active_calls` 归零 → 退出。因为没有进程内状态，draining 不需要状态迁移。grace window 与强制释放策略由呼叫时长硬顶定义，属 M2b / 部署侧参数。
-- **状态键命名空间 `as:{case}:{kind}:{id}`。** 运行态键**必须带 TTL**（ADR-0007：没有 TTL 的运行态键就是事实上的治理态数据，是误用）。写入**幂等**：同一 Call-ID 的重复写入产生一致结果，用于承受 Redis 脑裂窗口（风险 R5、未决 D3）。
-- **水平扩展与缩容**依赖上述无状态性；HPA 指标（`active_calls`、`cps`）与缩容保护属 [ADR-0010](adr/0010-autoscaling-hpa-downscale-guard.md)，M2 只保证指标可被遥测 seam 产出。
-
----
-
-## 5. 关键流（INVITE 判决）
-
-1. **入口。** TLS 终止 + 对端白名单校验（ADR-0016）。校验失败即丢弃，并记一条**安全事件**（不是普通日志）。该步由 transport / peer guard 承担，**M2b 落实现**。
-2. **适配。** SIP adapter 把 SIP 消息翻成 `DecisionRequest` —— 内核数据结构，**不含任何 SIP 概念**（没有 header、没有 dialog、没有事务）。这样判决逻辑对栈无感知。
-3. **求值。** `decide()` 纯函数对 `DecisionRequest` 求值，产出 `Decision`（action / target / reason_code / matched_rule_id）。
-4. **判决分支。**
-   - `FORWARD`：建 B2BUA 出腿，按 `target` 转发。
-   - `TRANSLATE`：改号后转发（REQ-F-16 语义，M3 用例侧实现）。
-   - `DECLINE`：**603 Decline**（REQ-F-7）。
-   - `NOT_FOUND`：**404 Not Found**（REQ-F-6）。
-5. **状态写入。** 判决结果与呼叫状态写入 `StateStore`，写入**幂等**。
-6. **遥测。** 事件投递到**有界队列**，不阻塞；队列满则丢弃并自增 `dropped`。
-7. **返回。** 判决回到适配层，由适配层翻译成 SIP 行为并继续。
-
-**明确写出**：`decide()` 里**没有 socket、没有时钟、没有全局状态**（AGENT.md §5）。这一条不是风格偏好，而是它可被 TDD 的前提 —— 同输入必同输出，测试不需要任何 fixture 之外的世界。
-
----
-
-## 6. 数据模型
-
-| 结构 | 字段 |
-|---|---|
-| `DecisionRequest` | `call_id`、`calling_number`、`called_number`、`method`、`leg`、`received_at` |
-| `Decision` | `action`、`target`、`reason_code`、`matched_rule_id` |
-| `Rule` | `prefix`、`action`、`priority` |
-| `RuleSet` | 一组 `Rule` 及其版本标识 |
-| `CallState` | `call_id`、`leg_state`、`created_at`、`ttl` |
-
-`received_at` **由调用方注入，而不是函数内部取时钟**。原因就是 §5 那条：`decide()` 一旦自己读时钟，它就不再是对同一输入给出同一输出的函数 —— 时间成了隐藏入参，测试必须打桩时钟，幂等性也无法陈述。把时间作为显式入参，纯函数性质才成立，规则中的时段类判定也才可测。
-
-`CallState` 的 `ttl` 是硬要求的直接体现（ADR-0007）：运行态键必须有 TTL。
-
----
-
-## 7. Feature enablement 设计（AGENT.md §3.4 强制项）
-
-### 7.1 分层（ADR-0020）
-
-| 层 | 粒度 | 存储 | 生效方式 |
-|---|---|---|---|
-| ① 部署级总开关 | 整个部署 | PostgreSQL 版本库 | 热加载，不重启；走变更单 → 审批 → 灰度 → 回滚 |
-| ② 运行态细粒度覆盖 | 号段 / 呼叫 | Redis | 判决时求值；判定结果必须幂等 |
-
-两层共用 [ADR-0006](adr/0006-config-governance.md) 的变更流水线，不开第二套交付形态。
-
-### 7.2 M2 落什么
-
-- 判定入口 `is_enabled(name, scope) -> bool`。
-- 默认态**关**（ADR-0020：默认关；未注册的开关名 → 关，fail-closed）。
-- 求值走**注入的 `ToggleSource`** —— 测试注入 `StaticToggleSource`（固定值），不需要 Redis 即可覆盖开 / 关两态。
-- 判定**幂等**：同一 `scope` 重复求值结果一致，以承受脑裂窗口（风险 R5 / 未决 D3）。
-- 层 ① 的存储与热加载在 M4 控制面落地；M2 只定义 `ToggleSource` 契约。
-
-### 7.3 M2 是否引入新开关
-
-**M2 不引入新开关，只落 seam。**
-
-判定标准（对每个候选能力逐条问，全答「是」才引入）：
-
-1. 它是否有**独立的失效模式** —— 关掉它，系统仍能走既有默认路径完成呼叫？
-2. 它是否需要在**客户现场按范围灰度**（号段 / 百分比），而不是随版本一起生效？
-3. 它是否**尚未稳定**到可以直接作为默认行为发布？
-4. 关掉它是否会**改变接口契约**？（若是，则它不是开关问题，ADR-0020 明确排除。）
-
-M2 的产出（判决纯函数、StateStore、遥测队列、进程壳）都是**系统本来就必须有的路径**，没有「既有默认路径」可以退回，因此不满足标准 1 与 3 —— 给它们加开关只会制造开关债务。`decision.rule_priority_v2` 一类的候选同理：优先级语义若在 M2 内定稿，就不需要开关；若未定稿，则应先在 ADR 层裁决语义，而不是用开关把未定稿的语义带进生产。
-
-**移除条件条款**（将来每引入一个开关都必须写明，AGENT.md §3.4）：默认态、灰度策略、移除条件，三者在 ADR 与本文件同步登记；缺失任一项的开关不得合入。
-
----
-
-## 8. REQ / ADR 追溯表
-
-| REQ | 需求（摘要） | 本设计中承载它的模块 / 章节 | ADR |
-|---|---|---|---|
-| REQ-F-1 | 基本呼叫信令序列遵循 RFC 3261 | 进程壳 §4、适配 seam §3、判决流 §5、SIP adapter（M2b） | ADR-0002、ADR-0019 |
-| REQ-F-2 | B2BUA 对话分离，两侧 Call-ID 不同 | 状态模块 §3、`CallState.leg_state` §6 | ADR-0002 |
-| REQ-F-3 | Request-URI 改写 | 决策模块 §3、`Decision.target` §6、适配 seam（M2b） | ADR-0002、ADR-0003 |
-| REQ-F-6 | 无匹配 → 404 Not Found | `decide()` 无匹配分支 §5 步骤 4、§3 决策模块 | ADR-0002 |
-| REQ-F-7 | 命中阻止 → 603 Decline | `decide()` `DECLINE` 分支 §5 步骤 4；冲突裁决 block 优先 | ADR-0002 |
-| REQ-F-9 | in-dialog 请求路由 | 状态模块 §3（`CallState` 按 call_id + leg 定位活跃对话）、适配 seam（M2b） | ADR-0002、ADR-0003 |
-| REQ-F-10 | 非 2xx 响应分支（486 / 480 / 408） | 适配 seam §3（M2b）、遥测事件 §5 步骤 6 | ADR-0002、ADR-0019 |
-| REQ-F-11 | CANCEL 与最终响应竞态 | 状态模块幂等写入 §4、判决幂等 §5 步骤 5 | ADR-0002、ADR-0009（skeleton，未落地） |
-| REQ-NF-1 | 进程重启不丢会话 | 状态模块 `RedisStateStore` §3 §4、进程无状态 §4 | ADR-0002、ADR-0007 |
-| REQ-NF-2 | 单进程状态有界 | 一用例一进程 §2 §4、故障域边界 | ADR-0002 |
-| REQ-NF-3 | 可水平扩展 | 无状态 + 状态外置 §4、draining 语义 §4 | ADR-0002、[ADR-0010](adr/0010-autoscaling-hpa-downscale-guard.md) |
-| REQ-NF-4 | ISSU 支持 | draining 流程 §4、进程壳 §7（LLD） | ADR-0009（skeleton，未落地）、ADR-0002 |
-| REQ-NF-13 | OTel 三信号导出 | 遥测模块 §3、有界队列 + 后台导出 §5 步骤 6 | ADR-0005 |
-| REQ-NF-14 | 告警规则集 | 遥测模块指标语义（前置：`active_calls` / `cps` / `dropped` 等指标准确定义后才能写告警）§3 | ADR-0005 |
-| REQ-S-1 | 对端白名单校验 | 入口校验（peer guard）§3、判决流步骤 1 | ADR-0016 |
-| REQ-S-2 | 与 S-SBC 端到端 TLS | 传输 seam（M2b）§3、判决流步骤 1；决策模块不感知 TLS | ADR-0016、ADR-0019 |
-| REQ-S-3 | 证书热轮换 | 传输 seam（M2b）+ 配置热更新 seam（进程壳）§3 §7 | ADR-0016 |
-
-> REQ-F-4 / F-5 / F-8 / F-12~F-16、REQ-NF-5 ~ NF-12、REQ-S-4 由 M3 / M4 承载，不在 M2a 范围（§1.3），M2b 的 SIP adapter 是它们的前置。
-
----
-
-## 9. 风险与未决
-
-| # | 风险 / 未决 | 说明与当前处置 |
+| Boundary | Responsibility | Current evidence |
 |---|---|---|
-| R5 | **Redis 成为新的 SPoF** | 运行态的唯一持有者，其可用性等价于会话状态可用性。缓解：Sentinel 拓扑（1 主 + 2 从 + 3 哨兵）+ 写入幂等。彻底消除要等未决项 O5 定稿。 |
-| D3 | **Sentinel 脑裂窗口下的判决幂等** | 窗口内速率窗口可能重复计数、运行态覆盖读可能抖动。处置：判决与写入都按幂等设计（§4、§5 步骤 5、§7.2）；具体 Redis 客户端与 Sentinel 接线属未决项，M2 内定。 |
-| M2b | **绑定 reSIProcate 的构建与跨语言契约** | CMake + submodule vendoring 进 monorepo 构建与 CI；Python 绑定（`BUILD_PYTHON=ON`）的版本 pin 与契约边界未定。ADR-0019 已把它登记为接受的缺口（E1 / E4 / E5 待 probe 验证）。 |
-| M2b / ADR-0016 | **TLS 证书热轮换实现** | 要求换证书不重启进程、不丢在途呼叫；reSIProcate 的 TCP/TLS 传输层是已知短板（ADR-0019 K8）。M2 只落 `ConfigSource` 热更新 seam 与契约，实现与 probe（S12）随后。 |
-| O1 | **容量数字未定** | 在 M6 容量报告出具前不对外发布任何容量数字。M2 只保证容量指标可被采集（遥测 seam），不做承诺。 |
+| `apps/` — signaling use cases | Separate process and rollout/failure unit per use case; compose policy with kernel decisions. | Translation and anti-fraud pure decision packages and contract replays exist; a SIP-serving composition is open. (REQ-NF-2; ADR-0002.) |
+| `platform/` — kernel | Protocol-neutral decision contracts, state/gating seams, SIP wire helpers and operational primitives. Must not import apps, services, or testbed. | Implemented and guarded by [`../../platform/tests/test_library_independence.py`](../../platform/tests/test_library_independence.py). SIP wire helpers are not the planned DUM adapter/controller. (ADR-0001, ADR-0002, ADR-0015.) |
+| reSIProcate `SipStack` + DUM + product `CallController` | `SipStack` owns transports, transaction processing, retransmission/timers, and its process loop. DUM is a `TransactionUser`/UA layer using `SipStack`; it owns dialog/`InviteSession` semantics and session-level behavior. `CallController` correlates independent UAS/UAC legs, maps session events to business decisions and commands, and coordinates call lifecycle; it does not duplicate stack transactions or timers. | Logical design only. D9 probes establish narrow native bridge/DUM→Python feasibility, not a product binding, adapter, or controller. Full E1 and product integration remain open. (REQ-F-1–REQ-F-5, REQ-F-8–REQ-F-11; ADR-0019, proposed ADR-0022.) |
+| `services/` — control plane | Configuration versioning/change workflow and console access policy. | Config workflow/API and pure access policy exist. A role/password verifier, PostgreSQL-backed sessions, session-auth API wiring, user management, and bootstrap CLI are implemented as the M4b-6a engineering slice; [ADR-0024](adr/0024-console-password-sessions.md) remains draft pending maintainer review, and this is not REQ-S-4 acceptance. Durable append-only audit, application rate limiting, browser login UI, and production trusted-proxy proof remain open. (REQ-F-12–REQ-F-15, REQ-NF-10, REQ-S-4; ADR-0006, ADR-0016, draft ADR-0024.) |
+| Data stores | Redis runtime state; PostgreSQL governance state. They are not replicas of one another and have no cross-store transaction. | Redis store and PostgreSQL version-store implementations exist; production Redis Sentinel wiring/topology is open. (ADR-0002, ADR-0007.) |
+| `deploy/` | Helm is the only production delivery form; Compose is development-only. | Chart and image exist; external dependencies and a real Kubernetes rollout remain operational prerequisites/unverified. (REQ-NF-9; ADR-0013.) |
+| `testbed/` | Language-neutral contracts, simulators/probes, and future real-socket load harness. Never a runtime dependency. | Decision contracts and SIP baseline/probe harness exist; reSIProcate probes did not run and M6 load harness is not started. (ADR-0012, ADR-0014.) |
+
+Dependencies point inward: apps may use platform; services may use platform contracts; testbed may exercise platform and apps. Platform must not depend outward, and one app must not import another (AGENT.md §4; REQ-NF-12; ADR-0001, ADR-0015).
+
+## 3. Runtime Design
+
+The intended INVITE path is:
+
+1. The SIP transport accepts an operator peer using TLS/mTLS and a fail-closed peer allowlist. There is one ISC service semantic; the S-SBC is transport/topology mediation, not a second business mode. (REQ-NF-5, REQ-S-1–REQ-S-3; ADR-0003, ADR-0016.) **The policy/configuration seam exists; real handshake and stack integration are unverified.**
+2. reSIProcate `SipStack` owns transports, SIP transaction processing, retransmission/timers, and the process loop. DUM is a `TransactionUser`/UA layer over `SipStack`; it owns dialogs, `InviteSession` semantics, and session-level behavior. The product controller must not duplicate stack transactions or timers. (REQ-F-1–REQ-F-5, REQ-F-8–REQ-F-11; ADR-0019, proposed ADR-0022.) **The product stack/DUM adapter is not implemented.**
+3. The planned `CallController` correlates an inbound UAS leg and an independent outbound UAC leg, including their distinct Call-IDs. It maps DUM session events to business decisions/outbound commands and coordinates provisional/final responses, CANCEL/BYE, in-dialog requests, non-2xx outcomes, cancellation/final-response races, and cleanup. Request-URI, SDP handling, and Route/Record-Route behavior follow the referenced requirements. Callbacks remain nonblocking. **This is design, not implemented runtime behavior.**
+4. The app invokes existing Python decision policy against one loaded configuration version. No rule match produces 404; a block produces 603; a translation rule produces a translated target; anti-fraud applies its injected rate-window count. Decisions are pure and do not themselves send SIP. (REQ-F-6, REQ-F-7, REQ-F-16; ADR-0002.) **The functions are implemented and contract-tested; wire behavior is not established.**
+5. Runtime business context belongs in Redis with a TTL and a per-use-case namespace. While running, `SipStack` owns live transaction runtime and DUM owns live dialog/session runtime; the controller owns the semantic cross-leg mapping and recoverable business context. Redis storage does not make either runtime reconstructible. A two-process UAC `DialogSetId` re-INVITE recreation hook succeeded after manually restoring dialog fields, but a fresh DUM returned 481 for a same-dialog UAS BYE after restart; no public UAS rehydrate API was found. The UAS result fails the current ACK-established-dialog D10 baseline because the replacement does not handle the required new BYE transaction. Recovery of a pre-crash in-flight `SipStack` transaction is a separate, untested extension; the baseline INVITE transaction has completed before restart. Product cross-leg mapping recovery also remains unproven. ADR-0002's all-session-state externalization statement and REQ-NF-1's no-active-call-loss-on-restart requirement are not reconciled: D10 is not passed / unresolved, and REQ-NF-1 remains a hard acceptance requirement. (REQ-NF-1–REQ-NF-3; ADR-0002, ADR-0007, ADR-0019.)
+
+The process model is one use case per process and Deployment. It isolates failures and rollout units; it does not establish that live DUM protocol state can be moved or recovered after process loss. In-service upgrade and safe removal use draining: stop new work, let existing calls finish, exit at zero active calls, and force exit only at the configured deadline. (REQ-NF-2–REQ-NF-4; ADR-0002, ADR-0009, ADR-0010.) `ProcessShell` implements this policy, but the current executable supplies an `active_calls` callback that always returns zero; traffic integration and live-cluster validation remain open. Proving restart recovery against REQ-NF-1/E5 or documenting the design gap is a separate blocker (plan D10).
+
+Source-verified reSIProcate layering and DUM behavior (1.14.0, commit `632e215c2ca9aee5416bfe1808851ea6fa380044`): `SipStack` owns transports, transaction processing/timers, and the process loop; DUM is a `TransactionUser` constructed with and holding a `SipStack&`, and supplies UA/dialog/`InviteSession` and session-level behavior. Inbound initial UAS INVITE CANCEL handling on that leg sends 200 for CANCEL and 487 for INVITE, then reports `RemoteCancel` through termination; the product controller still coordinates the opposite UAC leg, race resolution, and cleanup. `InviteSession::end()` means BYE, not CANCEL. DUM includes RFC session-timer support; transaction timers/retransmissions belong to `SipStack`, while product policy and non-protocol retries remain controller concerns. The handler has no `onCancel` virtual, and callback signatures are leg/overload-specific. `makeInviteSession(...)` returns a message to send, with handles delivered through callbacks; this is a fact about an unselected bridge, not a product API specification.
+
+REQ-F-4 requires byte-for-byte SDP body preservation on the product wire. Bounded exploratory native DUM captures now show exact identity for 230-, 143-, and 233-byte offers and one distinct 238-byte answer. This is not complete product-adapter acceptance: broader stack-accepted variants, the full route, and review remain pending. Neither `Contents` use nor unchanged callbacks alone establish byte identity.
+
+### Exploratory Evidence Boundary (2026-10-01; Non-Acceptance)
+
+Isolated D9 probes show native CPython callbacks, a real DUM `onNewSession`→Python decision path returning 404 (and 500 on injected exception), one two-leg 486 branch, and one early CANCEL branch. They establish feasibility only: no product API/adapter, forking, final-response race, or full E1 is implemented or accepted. D10's UAC recreation hook is narrow; the default-DUM UAS restart probe returns 481 to the post-restart BYE required by the current baseline, so REQ-NF-1 remains blocking. Recovery of a transaction already in flight at process failure and complete cross-leg mapping recovery remain unproven; only the former is outside the current baseline and an optional extension. D11 byte equality covers only the bounded samples above, not REQ-F-4 acceptance. Exact temporary evidence paths are recorded in [`../acceptance/report.md`](../acceptance/report.md) and [`../handoff/2026-09-30.md`](../handoff/2026-09-30.md); all probes were outside the repository.
+
+## 4. Configuration and Control-Plane Flow
+
+Configuration changes use one governed path for rules and feature toggles:
+
+```mermaid
+sequenceDiagram
+   actor Operator
+   participant Console
+   participant Config as config-service
+   participant PG as PostgreSQL version store
+   participant Fleet as AS instances
+   Operator->>Console: edit and submit change
+   Console->>Config: change order
+   Config->>Config: validate; submit; approve/reject
+   Config->>PG: append immutable configuration version after approval
+   Config->>Fleet: distribute by batches
+   Fleet-->>Config: applied version + health report
+   alt a batch is unhealthy or rollout is aborted
+      Config->>PG: retain history; select previous version for rollback
+   else all batches healthy
+      Config->>Config: mark applied
+   end
+```
+
+The seven-state change-order policy and staged distribution are implemented as pure logic; `PostgresVersionStore` is the database adapter for immutable configuration version rows. Acceptance evidence records a real-PostgreSQL integration exercise of approval, persistence, distribution, automatic rollback, and previous-version retrieval. This does **not** establish a deployed console/API, complete persistence of all workflow/audit state, or a fleet notification transport. (REQ-F-12, REQ-F-14, REQ-F-15, REQ-NF-10, REQ-S-4; ADR-0006, ADR-0007.)
+
+Each loaded bundle carries a version, rules, and optional toggles. An instance's applied-version report is the intended means of observing runtime version, rather than inferring it from database write time. A production report transport is not evidenced. The pure console access policy remains in `services/console/src/as_console/access.py`; session and account persistence live in `services/config-service/src/as_config_service/auth.py`, with HTTP wiring in `api.py` and the one-time bootstrap CLI in `bootstrap_admin.py`. When configured, session auth is primary and fail-closed; the existing injected identity/authorization callback mode remains backward compatible and is not a fallback after failed session authentication. The login HTTPS check uses ASGI `request.url.scheme`; no deployed ingress or trusted-proxy configuration has been verified. M4b-6a does not persist authorization decisions or all access events: durable append-only audit remains undelivered and required before M4b/REQ-S-4 acceptance. Application rate limiting and browser login UI are also open. Call-trace query/storage is not implemented; retention (O4) and storage (D5) remain open. (REQ-F-13, REQ-NF-7, REQ-S-4; ADR-0005–ADR-0007, ADR-0016, draft ADR-0024, ADR-0017.)
+
+## 5. Feature Enablement
+
+Feature gates control capability availability, not interface shape. Disabled behavior must follow the established default path. Every introduced toggle must have an explicit default (off), rollout policy, and removal condition; license gating is out of scope. (REQ-G-1; ADR-0006, ADR-0020.)
+
+| Layer | Design | Implemented evidence / limitation |
+|---|---|---|
+| Deployment-wide | A versioned value in the approved configuration bundle; distribute and roll back through the same PostgreSQL/change-order path as rules; hot-load without process restart. Missing/unregistered name is off. | `ToggleDTO`, `ConfigBundle.toggles`, and deployment-value folding exist. Runtime control-plane delivery/hot-load is not established. |
+| Runtime override | Number prefix (empty means all numbers), optional stable percentage based on FNV-1a 32-bit of Call-ID; longest matching prefix wins; explicit disabled override wins; no matching override defers to deployment value. No user or persisted per-call override. | Pure evaluator exists under `platform/gating/overrides.py` and is tested. A production Redis-backed source/refresh path is not established. (ADR-0021.) |
+
+No named product capability is evidenced as currently enabled through a production toggle bundle. The framework has open/closed unit coverage; rollout and removal conditions must be supplied for each future named toggle. No schema or open item is resolved here beyond ADR-0021.
+
+## 6. State, Transport, and Observability
+
+- **Runtime/governance split:** Redis owns expiring call/runtime keys; PostgreSQL owns immutable configuration versions and governance records. No cross-store transaction or replication is designed. Redis Sentinel client wiring, split-brain behavior, and topology remain open (D3, O5; risk R5). (ADR-0002, ADR-0007.)
+- **Transport/security:** SIP peer policy is fail-closed; TLS settings and immutable hot-reload values have a pure seam. Actual certificate loading, handshake, peer identity extraction, and certificate-rotation probe remain unverified. Console role/password/session integration is implemented as an engineering slice under draft ADR-0024, but does not establish REQ-S-4 or M4b acceptance. Login requires the ASGI request scheme to be HTTPS; deployed proxy/ingress trust has not been verified. Durable append-only audit and application rate limiting are not delivered. (REQ-S-1–REQ-S-4; ADR-0016, draft ADR-0024.)
+- **Observability:** call-path events enter a bounded non-blocking queue; full queues drop events and count drops; an independent background worker calls an exporter. Metrics currently define per-instance `as_active_calls`, `as_sip_responses_total`, `as_rule_hits_total`, and `as_telemetry_dropped_total`. OTel three-signal semantics are the target; complete OTel SDK/exporter wiring, end-to-end spans/structured logs, and customer backend integration are not established. Call traces remain a separate product query channel and are not a substitute for sampled traces. (REQ-NF-13, REQ-NF-14, REQ-F-13; ADR-0005, ADR-0017.)
+
+<a id="call-state-recovery-contract"></a>
+### 6.1 Call-State Recovery Contract
+
+ Call-state recovery is a product target, not only a future research question. REQ-NF-1 remains a hard acceptance requirement. Accepted ADR-0002 remains unchanged; choosing Redis for runtime data does not by itself make `SipStack` transaction state or DUM dialog/session state reconstructible. The production persistence and recovery mechanism is unresolved; see the [source-backed options comparison](call-state-recovery-options.md).
+
+**Scope note:** The current D10/REQ-NF-1 [acceptance check](../acceptance/test-plan.md) is exactly the ACK-established-dialog baseline: establish a basic two-leg call through the ACK exchange; kill and restart the AS; send an upstream in-dialog BYE; then assert that the replacement restores the UAS/UAC mapping, forwards the BYE over the already-established UAC leg to the peer, and that Redis still contains the complete dialog record. The post-restart BYE is a new transaction; the check does not require restoring the completed INVITE transaction or any transaction that was in flight at process failure. A downstream/UAC-initiated in-dialog re-INVITE or BYE after restart is not part of this baseline; the UAC `DialogSetId` re-INVITE probe is exploratory evidence only. REQ-NF-1 remains a hard acceptance requirement. This AS does not carry or anchor RTP (REQ-NF-6; ADR-0004), and the baseline does not test media interruption or resumption. The fresh-DUM 481 to the same-dialog BYE is a SIP control-state recovery failure against this baseline, not evidence of RTP interruption. No media blocker or new media requirement is introduced.
+
+ The recovery design distinguishes the current acceptance baseline from a possible future extension:
+
+ - **Current baseline — established dialog:** restore enough state to route the post-restart upstream BYE across both independent B2BUA legs and retain the required Redis dialog record.
+- **Optional future recovery extension — broader requests and in-flight transactions:** cover requests initiated from the downstream/UAC leg after restart (such as in-dialog re-INVITE or BYE) and process loss while INVITE/CANCEL, final-response, or 2xx/ACK processing is pending. These are outside current D10 acceptance. Recovering or safely reconciling pre-crash transaction obligations is distinct from restoring an established dialog. Making any of these behaviors a gate requires separate or expanded REQ/test-plan changes and explicit maintainer approval.
+
+For the current baseline, the minimum state categories to evaluate are one logical call key; both leg identities (per-leg Call-ID, local tag, and remote tag); each leg's remote target and route set; the CSeq values needed to construct and process the new in-dialog BYE; and the `CallController` cross-leg mapping, business state, and configuration context/version. Together, these must restore the UAS-to-UAC mapping needed to forward the upstream BYE over the already-established UAC leg. Recovery generation/owner fencing must also be considered where needed to prevent conflicting SIP actions. This is a category list, not a schema. Exact fields and checkpoint boundaries must be derived from the baseline flow and tested; no store, schema, or DUM restoration API is selected here. Recovery of pending INVITE/CANCEL/final-response correlation and next action belongs only to the optional future extension. None of this promises that the fields can be serialized into, or restored through, reSIProcate's public DUM API.
+
+ The two legs must be checkpointed and transferred coherently enough that no process generation can own only one side of a logical call. Before a new owner serves either leg, the previous owner must be fenced from further SIP actions; peer routing must follow the authoritative owner rather than relying only on transport affinity. How that ownership and fencing are implemented remains open.
+
+The current D10 acceptance checkpoint is exactly the test-plan flow: establish a basic two-leg call and complete the ACK exchange; kill and restart the AS; send an upstream in-dialog BYE; verify that the replacement restores the UAS/UAC mapping and forwards the BYE over the existing UAC leg to the remote peer; and verify that Redis contains the complete dialog record. The replacement handles a new BYE transaction, not the completed INVITE transaction. Downstream/UAC-initiated in-dialog re-INVITE/BYE after restart and process loss during pending INVITE/CANCEL/final-response/2xx-ACK processing are optional future coverage, not current acceptance checkpoints; adding any of them as a gate requires separate or expanded REQ/test-plan changes and explicit maintainer approval. Current evidence is narrower: the UAC `DialogSetId` re-INVITE/re-association hook is exploratory only, while default-DUM UAS recovery returned 481, so the current baseline fails. `SipStack`/DUM transaction-state restoration may matter for those other restart points, but remains untested and is not a current D10 gate.
+
+## 7. Deployment and Operations
+
+Helm is the sole production form, using standard Kubernetes objects; Compose is for development. Redis and PostgreSQL are external to the chart. The chart renders one Deployment and Service per enabled use case, enables ClientIP session affinity, mounts customer TLS material, and configures preStop/termination grace for draining. Autoscaling defaults off. Capacity-bearing values and PDB minimums remain unset rather than guessed; rendering guards require capacity inputs when HPA is enabled. The replica-count rendering fallback of one is explicitly not a capacity claim. (REQ-NF-3, REQ-NF-4, REQ-NF-9; ADR-0002, ADR-0009, ADR-0010, ADR-0013.)
+
+The scale-down guard is a pure per-instance selector: HPA determines desired scale, the guard only proposes instances at or below its safety threshold, and actual draining/deletion is an operations responsibility. Do not infer that an actuator/controller is implemented from the pure function or chart. Site-internal redundancy is an accepted design direction; customer-level N+1 versus N+M and Redis topology remain open (O5). Cross-site RTO/RPO are unspecified. (ADR-0008, ADR-0010.)
+
+M5 evidence includes Helm lint/render checks, an image build, container SIGTERM/drain check, PostgreSQL integration, and alert-rule artifacts. A real Kubernetes rolling upgrade and scale-down have not been run; no capacity result exists. M6 capacity research must use real sockets before any CPS, concurrency, latency budget, or HPA capacity threshold is published. (ADR-0009, ADR-0010, ADR-0013, ADR-0014; plan §4–§5.)
+
+## 8. Verification and Traceability
+
+`testbed/contracts/decision/cases.json` is language-neutral decision data replayed by both app packages (ADR-0012). SIP baselines and simulators constrain protocol behavior; capacity testing must include real sockets and belongs to M6 (ADR-0014). Testing layers and CI markers follow ADR-0015. Native DUM self-loop S1/S4 smoke completed, but it is not product E1 or acceptance. The Python E1 harness exited 2 because `resip` is unavailable; native TLS S1 failed with 503 Certificate Validation Failure and timeout exit 124; E4 remains unverified. E5/restart recovery remains unverified. See [`../acceptance/report.md`](../acceptance/report.md), [`../acceptance/test-plan.md`](../acceptance/test-plan.md), and [`../handoff/2026-09-30.md`](../handoff/2026-09-30.md).
+
+| Requirement scope | Design mapping | Current limit |
+|---|---|---|
+| REQ-F-1–REQ-F-5, REQ-F-8–REQ-F-11 | SIP boundary, two-leg B2BUA, routing/body/dialog semantics; ADR-0003, ADR-0004, ADR-0019 | D9 has narrow bridge and DUM→Python feasibility evidence, not product adapter/E1 acceptance. D11 bounded native DUM body comparisons passed, but broader product-path evidence/review is pending; REQ-F-4 is not accepted. |
+| REQ-F-6, REQ-F-7, REQ-F-16 | Pure route/block/translation policy; ADR-0002 | Decision behavior tested; SIP response/wire integration open. |
+| REQ-F-12, REQ-F-14, REQ-F-15, REQ-NF-10 | Versioned rules/toggles, approval, staged rollout, rollback; ADR-0006, ADR-0020 | Workflow and DB integration evidence exists; production API/fleet transport incomplete. |
+| REQ-F-13, REQ-NF-7 | Complete Call-ID queryable call trace, separate from telemetry; ADR-0005, ADR-0017 | Trace product path, storage, retention, and query are open (O4, D5). |
+| REQ-NF-1–REQ-NF-4 | External runtime state, per-use-case isolation, scale and draining; ADR-0002, ADR-0007, ADR-0009, ADR-0010, proposed ADR-0022 | REQ-NF-1 remains hard; the ACK-established-dialog BYE/Redis recovery baseline fails at the fresh-DUM UAS BYE (481), and product cross-leg recovery/serving integration are unverified. Recovery of a pre-crash in-flight `SipStack` transaction is outside this baseline and remains an optional, untested extension. |
+| REQ-NF-9, REQ-NF-11–REQ-NF-14 | Helm-only single-tenant delivery, version governance, telemetry and alerts; ADR-0005, ADR-0013, ADR-0018 | No capacity results; OTel full-stack and cluster alert exercise remain unverified. |
+| REQ-S-1–REQ-S-4 | Peer allowlist/TLS and console authorization/audit; ADR-0016, draft ADR-0024 | SIP handshake remains unverified. Console password/session integration is implemented as a 6a engineering slice, but ADR-0024 remains draft; durable append-only audit, browser UI, application rate limiting, and deployed trusted-proxy proof remain open. No REQ-S-4 or M4b acceptance is claimed. |
+| REQ-G-1–REQ-G-4 | Feature enablement and test/change traceability; ADR-0006, ADR-0012, ADR-0015, ADR-0020, ADR-0021 | ADR-0014's PRD mapping has the D8 traceability gap recorded in plan §5.2. |
+
+**Open items preserved:** D3 (Redis/Sentinel and idempotence), O4 (call-trace retention), D5 (trace storage), O5 (disaster-recovery topology), D6 (testbed as customer deliverable), D8 (ADR-0014 requirement mapping), and M5 cluster validation/M6 capacity research. `docs/acceptance/criteria.md` is absent; acceptance evidence lives in `test-plan.md` and `report.md`. This document does not replace either artifact or decide their gaps.

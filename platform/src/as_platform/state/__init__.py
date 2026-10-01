@@ -6,10 +6,20 @@ the process itself stays stateless and restartable. See ADR-0002 and ADR-0007.
 
 from __future__ import annotations
 
+from .call_checkpoint import (
+    CallStateCheckpoint,
+    CallStateCheckpointRepository,
+    CheckpointHeaderExtension,
+    DialogLegCheckpoint,
+)
 from .in_memory import InMemoryStateStore
 from .store import StateStore, build_key
 
 __all__: list[str] = [
+    "CallStateCheckpoint",
+    "CallStateCheckpointRepository",
+    "CheckpointHeaderExtension",
+    "DialogLegCheckpoint",
     "InMemoryStateStore",
     "StateStore",
     "build_key",

@@ -47,3 +47,7 @@
 | 门禁 | 全绿（309 passed / 2 skipped；integration 3 passed） |
 | 评审人 | AI agent，2026-09-28 |
 | 维护者签字 | 待填 |
+
+## 范围修正（2026-10-01）
+
+本评审原始范围是访问策略代码与 D7 裁决；未审查或交付前端 UI，也未进行 UI 验收。保留上述历史发现，但其整体 M4 closure 结论已由用户 2026-10-01 的决定 supersede：M4 仍未完成，须待强制 M4b operator UI 按 [`plan.md`](../plan.md) 和 [`acceptance/test-plan.md`](../acceptance/test-plan.md) 中 REQ-F-12/13/14/15、REQ-S-4 的现有标准验收通过。

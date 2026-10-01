@@ -20,6 +20,8 @@ from as_config_service.change_order import (
     ChangeOrder,
     ChangeState,
     IllegalTransitionError,
+    ManagedRuleChange,
+    ManagedRuleChangeAction,
     approve,
     begin_distribution,
     is_terminal,
@@ -28,6 +30,7 @@ from as_config_service.change_order import (
     roll_back,
     submit,
 )
+from as_config_service.managed_rule import ManagedRule, MatchField, MatchMode, TargetService
 from as_platform.api.contract import ConfigBundle, RuleDTO
 
 pytestmark = pytest.mark.unit
@@ -61,6 +64,82 @@ def _order() -> ChangeOrder:
         created_by=ACTOR,
         created_at=CREATED_AT,
     )
+
+
+def _managed_rule(rule_id: str = "managed-1") -> ManagedRule:
+    return ManagedRule(
+        rule_id=rule_id,
+        name="International callers",
+        match_field=MatchField.CALLING,
+        match_mode=MatchMode.PREFIX,
+        match_value="+8613",
+        target_service=TargetService.TRANSLATION,
+        enabled=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("action", "proposed_rule", "expected_revision"),
+    [
+        (ManagedRuleChangeAction.CREATE, _managed_rule(), None),
+        (ManagedRuleChangeAction.UPDATE, _managed_rule(), 3),
+        (ManagedRuleChangeAction.DELETE, None, 3),
+    ],
+)
+def test_managed_rule_change_accepts_valid_action_shapes(
+    action: ManagedRuleChangeAction,
+    proposed_rule: ManagedRule | None,
+    expected_revision: int | None,
+) -> None:
+    change = ManagedRuleChange(action, "managed-1", proposed_rule, expected_revision)
+
+    assert change.action is action
+    assert change.rule_id == "managed-1"
+    assert change.proposed_rule == proposed_rule
+    assert change.expected_revision == expected_revision
+
+
+@pytest.mark.parametrize(
+    ("action", "rule_id", "proposed_rule", "expected_revision", "error"),
+    [
+        ("create", "managed-1", _managed_rule(), None, TypeError),
+        (ManagedRuleChangeAction.CREATE, 1, _managed_rule(), None, TypeError),
+        (ManagedRuleChangeAction.CREATE, " ", _managed_rule(), None, ValueError),
+        (ManagedRuleChangeAction.CREATE, "managed\u200b1", _managed_rule(), None, ValueError),
+        (ManagedRuleChangeAction.CREATE, "managed-1", _managed_rule("other"), None, ValueError),
+        (ManagedRuleChangeAction.CREATE, "managed-1", _managed_rule(), 1, ValueError),
+        (ManagedRuleChangeAction.CREATE, "managed-1", None, None, TypeError),
+        (ManagedRuleChangeAction.UPDATE, "managed-1", _managed_rule(), None, ValueError),
+        (ManagedRuleChangeAction.UPDATE, "managed-1", _managed_rule(), 0, ValueError),
+        (ManagedRuleChangeAction.UPDATE, "managed-1", _managed_rule(), True, ValueError),
+        (ManagedRuleChangeAction.UPDATE, "managed-1", None, 1, TypeError),
+        (ManagedRuleChangeAction.DELETE, "managed-1", None, None, ValueError),
+        (ManagedRuleChangeAction.DELETE, "managed-1", None, 0, ValueError),
+        (ManagedRuleChangeAction.DELETE, "managed-1", None, True, ValueError),
+        (ManagedRuleChangeAction.DELETE, "managed-1", _managed_rule(), 1, ValueError),
+    ],
+)
+def test_managed_rule_change_rejects_invalid_action_shapes(
+    action: object,
+    rule_id: object,
+    proposed_rule: object,
+    expected_revision: object,
+    error: type[Exception],
+) -> None:
+    with pytest.raises(error):
+        ManagedRuleChange(action, rule_id, proposed_rule, expected_revision)  # type: ignore[arg-type]
+
+
+def test_change_order_rejects_untyped_managed_rule_change() -> None:
+    with pytest.raises(TypeError, match="ManagedRuleChange or None"):
+        ChangeOrder(
+            change_id="co-1",
+            state=ChangeState.DRAFT,
+            bundle=_bundle(),
+            created_by=ACTOR,
+            created_at=CREATED_AT,
+            managed_rule_change=object(),  # type: ignore[arg-type]
+        )
 
 
 def _order_in(state: ChangeState) -> ChangeOrder:
@@ -219,6 +298,17 @@ def test_reject_is_terminal_and_carries_its_reason() -> None:
     assert rejected.audit[-1].at == CREATED_AT + 2.0
 
 
+@pytest.mark.parametrize("reason", ["", " \t\n"])
+def test_reject_refuses_blank_reason_without_changing_submitted_order(reason: str) -> None:
+    submitted = submit(_order(), ACTOR, CREATED_AT + 1.0)
+
+    with pytest.raises(ValueError, match="reason must not be blank"):
+        reject(submitted, APPROVER, reason, CREATED_AT + 2.0)
+
+    assert submitted.state is ChangeState.SUBMITTED
+    assert len(submitted.audit) == 1
+
+
 @pytest.mark.parametrize("origin", [ChangeState.APPLIED, ChangeState.DISTRIBUTING])
 def test_roll_back_is_reachable_and_terminal(origin: ChangeState) -> None:
     """A roll back is possible once distribution started, and it ends the order. REQ-NF-10."""
@@ -229,6 +319,27 @@ def test_roll_back_is_reachable_and_terminal(origin: ChangeState) -> None:
     assert is_terminal(rolled_back.state)
     assert "roll_back" in rolled_back.audit[-1].action
     assert "health check failed" in rolled_back.audit[-1].action
+
+
+@pytest.mark.parametrize(
+    ("origin", "reason"),
+    [
+        (ChangeState.APPLIED, ""),
+        (ChangeState.APPLIED, " \t\n"),
+        (ChangeState.DISTRIBUTING, ""),
+        (ChangeState.DISTRIBUTING, " \t\n"),
+    ],
+)
+def test_roll_back_refuses_blank_reason_without_changing_order(
+    origin: ChangeState, reason: str
+) -> None:
+    order = _order_in(origin)
+
+    with pytest.raises(ValueError, match="reason must not be blank"):
+        roll_back(order, ACTOR, reason, CREATED_AT + 9.0)
+
+    assert order.state is origin
+    assert len(order.audit) == (4 if origin is ChangeState.APPLIED else 3)
 
 
 def test_migration_leaves_the_original_order_untouched() -> None:

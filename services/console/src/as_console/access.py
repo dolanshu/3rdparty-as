@@ -118,6 +118,8 @@ class AuditRecord:
             clock (AGENT.md §5).
         detail: Optional context. It must never carry payload data, whose
             logging is off by default (AGENT.md §13).
+        before_value: Optional canonicalizable snapshot before the operation.
+        after_value: Optional canonicalizable snapshot after the operation.
     """
 
     actor: str
@@ -126,6 +128,8 @@ class AuditRecord:
     outcome: AuditOutcome
     at: float
     detail: str = ""
+    before_value: object | None = None
+    after_value: object | None = None
 
 
 def permissions_for(principal: Principal) -> frozenset[Permission]:
@@ -188,6 +192,9 @@ def audit(
     allowed: bool,
     at: float,
     detail: str = "",
+    *,
+    before_value: object | None = None,
+    after_value: object | None = None,
 ) -> AuditRecord:
     """Build one audit line for a decision that has already been made.
 
@@ -202,6 +209,8 @@ def audit(
         allowed: Whether the decision allowed it.
         at: When it happened, injected by the caller.
         detail: Optional context, never payload data.
+        before_value: Optional snapshot of the resource before the operation.
+        after_value: Optional snapshot of the resource after the operation.
 
     Returns:
         The record, carrying whichever outcome ``allowed`` selected.
@@ -213,6 +222,8 @@ def audit(
         outcome=AuditOutcome.ALLOWED if allowed else AuditOutcome.DENIED,
         at=at,
         detail=detail,
+        before_value=before_value,
+        after_value=after_value,
     )
 
 
@@ -222,6 +233,9 @@ def authorize_and_audit(
     resource: str,
     at: float,
     detail: str = "",
+    *,
+    before_value: object | None = None,
+    after_value: object | None = None,
 ) -> tuple[bool, AuditRecord]:
     """Decide and record in one call, for the resource the decision was about.
 
@@ -235,9 +249,20 @@ def authorize_and_audit(
         resource: What they want to do it to, recorded as ``resource``.
         at: When the attempt happened, injected by the caller.
         detail: Optional context for the record.
+        before_value: Optional snapshot of the resource before the operation.
+        after_value: Optional snapshot of the resource after the operation.
 
     Returns:
         The verdict, and the audit record of the attempt whichever way it went.
     """
     allowed = authorize(principal, permission)
-    return allowed, audit(principal.user_id, permission.value, resource, allowed, at, detail)
+    return allowed, audit(
+        principal.user_id,
+        permission.value,
+        resource,
+        allowed,
+        at,
+        detail,
+        before_value=before_value,
+        after_value=after_value,
+    )
