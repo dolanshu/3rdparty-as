@@ -10,6 +10,7 @@ from as_config_service.audit_store import (
     PostgresAuditStore,
     _normalize_constraint_definition,
     _serialize_snapshot,
+    _validate_publication_catalog,
 )
 from as_console.access import AuditOutcome, AuditRecord
 
@@ -92,6 +93,15 @@ def test_constraint_normalization_preserves_string_literal_case() -> None:
     ) != _normalize_constraint_definition(expected)
 
 
+def test_missing_publication_namespace_catalog_is_rejected_on_postgres_15() -> None:
+    with pytest.raises(RuntimeError, match="publication namespace catalog is missing"):
+        _validate_publication_catalog(150000, False)
+
+
+def test_missing_publication_namespace_catalog_is_allowed_before_postgres_15() -> None:
+    _validate_publication_catalog(120000, False)
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), {"nested": [float("-inf")]}])
 def test_non_finite_snapshot_numbers_are_rejected(value: object) -> None:
     with pytest.raises(ValueError, match="non-finite"):
@@ -163,6 +173,34 @@ def test_plain_token_word_without_assignment_is_not_rejected() -> None:
     assert _serialize_snapshot({"note": "the token is an opaque identifier"}) == (
         '{"note":"the token is an opaque identifier"}'
     )
+
+
+def test_innocuous_nested_snapshot_keys_and_public_certificate_are_allowed() -> None:
+    assert (
+        _serialize_snapshot({"nested": [{"note": "ordinary text", "label": "BEGIN CERTIFICATE"}]})
+        == '{"nested":[{"label":"BEGIN CERTIFICATE","note":"ordinary text"}]}'
+    )
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----END RSA PRIVATE KEY-----",
+        "-----BEGIN EC PRIVATE KEY-----",
+        "-----END EC PRIVATE KEY-----",
+        "-----BEGIN DSA PRIVATE KEY-----",
+        "-----END DSA PRIVATE KEY-----",
+        "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "-----END OPENSSH PRIVATE KEY-----",
+        "-----BEGIN PRIVATE KEY-----",
+        "-----END PRIVATE KEY-----",
+        "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    ],
+)
+def test_pem_private_key_markers_are_rejected_recursively(marker: str) -> None:
+    with pytest.raises(ValueError, match="credential"):
+        _serialize_snapshot({"nested": [{"description": f"innocuous prefix {marker}"}]})
 
 
 def test_store_validates_names_and_has_no_mutation_api() -> None:

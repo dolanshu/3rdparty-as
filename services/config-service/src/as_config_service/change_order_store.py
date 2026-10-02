@@ -104,7 +104,7 @@ class _Connection(Protocol):
 class ChangeOrderStore(Protocol):
     """The operations needed by the next config-service API slice."""
 
-    def create(self, order: ChangeOrder) -> StoredChangeOrder:
+    def create(self, order: ChangeOrder, *, commit: bool = True) -> StoredChangeOrder:
         """Persist a new DRAFT order at revision one."""
         ...
 

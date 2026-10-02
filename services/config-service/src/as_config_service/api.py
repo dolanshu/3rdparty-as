@@ -6,18 +6,26 @@ are disabled until the API has a real authentication scheme.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import time
 import unicodedata
 from collections.abc import Callable, Iterator
+from contextlib import suppress
+from importlib.resources import files
+from pathlib import Path as FilePath
 from threading import Lock
 from typing import Annotated, Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from starlette.staticfiles import StaticFiles
 
 from as_config_service.activation import apply_distributed_change
+from as_config_service.audit_store import PostgresAuditStore
 from as_config_service.auth import (
     ConsoleBootstrapRequiredError,
     ConsoleUser,
@@ -55,6 +63,7 @@ from as_config_service.distribution_store import (
     PostgresDistributionStore,
     StaleDistributionRevisionError,
     StoredDistribution,
+    serialize_distribution,
 )
 from as_config_service.distributor import (
     DistributionPlan,
@@ -69,7 +78,7 @@ from as_config_service.managed_rule_store import (
     StoredManagedRule,
     serialize_managed_rule,
 )
-from as_console.access import Permission, Principal, Role, authorize
+from as_console.access import AuditOutcome, AuditRecord, Permission, Principal, Role, authorize
 from as_platform.api.contract import ConfigBundle, RuleDTO, ToggleDTO
 
 _MAX_PATH_ID_LENGTH = 256
@@ -345,6 +354,10 @@ Clock = Callable[[], float]
 ChangeIdFactory = Callable[[], str]
 
 
+def _resource_digest(key: bytes, value: object) -> str:
+    return hmac.new(key, str(value).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def create_app(
     managed_rule_store: ManagedRuleStore,
     change_order_store: ChangeOrderStore,
@@ -357,6 +370,10 @@ def create_app(
     distribution_store: PostgresDistributionStore | None = None,
     can_manage_users: UserManagementAuthorizer | None = None,
     auth_store: PostgresConsoleAuthStore | None = None,
+    audit_store: PostgresAuditStore | None = None,
+    *,
+    allow_unaudited_callback_mode: bool = False,
+    audit_resource_hmac_key: bytes | None = None,
 ) -> FastAPI:
     """Build the API around injected stores, identity, and authorization callbacks.
 
@@ -365,16 +382,82 @@ def create_app(
     """
     if auth_store is None and resolve_identity is None:
         raise ValueError("resolve_identity is required when session authentication is disabled")
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    if allow_unaudited_callback_mode and auth_store is not None:
+        raise ValueError("allow_unaudited_callback_mode requires callback authentication")
+    if audit_store is None and not allow_unaudited_callback_mode:
+        raise ValueError(
+            "audit_store is required unless unaudited callback mode is explicitly enabled"
+        )
+    if audit_store is not None and (
+        not isinstance(audit_resource_hmac_key, bytes) or len(audit_resource_hmac_key) != 32
+    ):
+        raise ValueError("audit_resource_hmac_key must be exactly 32 bytes when audit_store is set")
     api_request_lock = Lock()
     connections_by_id: dict[int, Any] = {}
-    for store in (managed_rule_store, change_order_store, distribution_store, auth_store):
+    request_stores = (managed_rule_store, change_order_store, distribution_store, auth_store)
+    for store in (*request_stores, audit_store):
         connection = getattr(store, "connection", None)
         if connection is not None:
             connections_by_id.setdefault(id(connection), connection)
     api_connections = tuple(connections_by_id.values())
+    if audit_store is not None:
+        postgres_stores = (
+            store
+            for store in (*request_stores, audit_store)
+            if isinstance(
+                store,
+                (
+                    PostgresChangeOrderStore,
+                    PostgresManagedRuleStore,
+                    PostgresDistributionStore,
+                    PostgresConsoleAuthStore,
+                    PostgresAuditStore,
+                ),
+            )
+        )
+        postgres_connections = tuple(store.connection for store in postgres_stores)
+        if postgres_connections and any(
+            connection is not postgres_connections[0] for connection in postgres_connections[1:]
+        ):
+            raise ValueError("all PostgreSQL API stores must share one connection")
+    if isinstance(audit_store, PostgresAuditStore):
+        audit_store.validate_runtime_connection()
+    audit_connection = None if audit_store is None else getattr(audit_store, "connection", None)
 
-    def serialize_api_request() -> Iterator[None]:
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.middleware("http")
+    async def replace_audit_failure_response(request: Request, call_next: Any) -> Response:
+        try:
+            response = await call_next(request)
+        except BaseException:
+            if not getattr(request.state, "audit_response_failure", False):
+                raise
+            return JSONResponse(status_code=500, content={"detail": "audit service unavailable"})
+        if getattr(request.state, "audit_response_failure", False):
+            return JSONResponse(status_code=500, content={"detail": "audit service unavailable"})
+        return cast(Response, response)
+
+    def rollback_api_connections() -> None:
+        for connection in api_connections:
+            connection.rollback()
+
+    def append_request_audit(request: Request, outcome: AuditOutcome) -> None:
+        assert audit_store is not None
+        audit_store.append(
+            AuditRecord(
+                actor=request.state.audit_actor,
+                action=request.state.audit_action,
+                resource=request.state.audit_resource,
+                outcome=outcome,
+                at=now(),
+                before_value=request.state.audit_before,
+                after_value=request.state.audit_after,
+            ),
+            commit=False,
+        )
+
+    def serialize_api_request(request: Request) -> Iterator[None]:
         from psycopg.pq import TransactionStatus
 
         api_request_lock.acquire()
@@ -386,7 +469,56 @@ def create_app(
             ):
                 raise HTTPException(status_code=409, detail="database connection is not idle")
             request_started = True
-            yield
+            request.state.audit_actor = "anonymous"
+            route = request.scope.get("route")
+            route_template = getattr(route, "path", "<unmatched>")
+            request.state.audit_action = f"{request.method.upper()} {route_template}"
+            path_params = request.scope.get("path_params", {})
+            if audit_resource_hmac_key is None:
+                parameter_digests = ""
+            else:
+                resource_key = audit_resource_hmac_key
+                parameter_digests = " ".join(
+                    f"{name}#{_resource_digest(resource_key, path_params[name])}"
+                    for name in sorted(path_params)
+                )
+            request.state.audit_resource = (
+                f"{route_template} {parameter_digests}" if parameter_digests else route_template
+            )
+            request.state.audit_before = None
+            request.state.audit_after = None
+            request.state.audit_failed = False
+            try:
+                yield
+            except BaseException:
+                if audit_store is None:
+                    raise
+                try:
+                    rollback_api_connections()
+                    request.state.audit_before = None
+                    request.state.audit_after = None
+                    if request.state.audit_failed:
+                        request.state.audit_response_failure = True
+                        return
+                    append_request_audit(request, AuditOutcome.DENIED)
+                    if audit_connection is not None:
+                        audit_connection.commit()
+                except BaseException:
+                    with suppress(BaseException):
+                        rollback_api_connections()
+                    request.state.audit_response_failure = True
+                    return
+                raise
+            else:
+                if audit_store is not None:
+                    try:
+                        append_request_audit(request, AuditOutcome.ALLOWED)
+                        if audit_connection is not None:
+                            audit_connection.commit()
+                    except BaseException:
+                        with suppress(BaseException):
+                            rollback_api_connections()
+                        request.state.audit_response_failure = True
         finally:
             try:
                 if request_started:
@@ -413,7 +545,21 @@ def create_app(
             identity = resolve_identity(request)
         if identity is None:
             raise HTTPException(status_code=401, detail="authentication required")
+        request.state.audit_actor = identity.user_id
         return identity
+
+    def set_audit_context(
+        request: Request,
+        *,
+        action: str | None = None,
+        resource: str | None = None,
+        before_value: object | None = None,
+        after_value: object | None = None,
+    ) -> None:
+        request.state.audit_action = action or request.state.audit_action
+        request.state.audit_resource = resource or request.state.audit_resource
+        request.state.audit_before = before_value
+        request.state.audit_after = after_value
 
     identity_dependency: Any = Depends(require_identity)
 
@@ -452,22 +598,42 @@ def create_app(
     router = APIRouter(
         prefix="/internal/v1",
         dependencies=[
-            Depends(serialize_api_request),
+            Depends(serialize_api_request, scope="function"),
             identity_dependency,
             Depends(require_config_read),
         ],
     )
     write_router = APIRouter(
         prefix="/internal/v1",
-        dependencies=[Depends(serialize_api_request), identity_dependency, csrf_dependency],
+        dependencies=[
+            Depends(serialize_api_request, scope="function"),
+            identity_dependency,
+            csrf_dependency,
+        ],
     )
     session_router = APIRouter(
         prefix="/internal/v1",
-        dependencies=[Depends(serialize_api_request), identity_dependency],
+        dependencies=[Depends(serialize_api_request, scope="function"), identity_dependency],
     )
     login_router = APIRouter(
         prefix="/internal/v1",
-        dependencies=[Depends(serialize_api_request)],
+        dependencies=[Depends(serialize_api_request, scope="function")],
+    )
+    unmatched_read_router = APIRouter(
+        prefix="/internal/v1",
+        dependencies=[
+            Depends(serialize_api_request, scope="function"),
+            identity_dependency,
+            Depends(require_config_read),
+        ],
+    )
+    unmatched_write_router = APIRouter(
+        prefix="/internal/v1",
+        dependencies=[
+            Depends(serialize_api_request, scope="function"),
+            identity_dependency,
+            csrf_dependency,
+        ],
     )
 
     def require_submit_permission(identity: ApiIdentity) -> None:
@@ -585,6 +751,19 @@ def create_app(
             response["change_order"] = _change_order_response(order)
         return response
 
+    def workflow_snapshot(
+        distribution: StoredDistribution | None,
+        order: StoredChangeOrder | None = None,
+        managed_rule: StoredManagedRule | None = None,
+    ) -> dict[str, object]:
+        return {
+            "distribution": (
+                None if distribution is None else json.loads(serialize_distribution(distribution))
+            ),
+            "change_order": None if order is None else _change_order_response(order),
+            "managed_rule": None if managed_rule is None else _managed_rule_response(managed_rule),
+        }
+
     def get_order(change_id: str) -> StoredChangeOrder:
         try:
             stored = change_order_store.get(change_id)
@@ -596,7 +775,9 @@ def create_app(
 
     def append_order(order: ChangeOrder, expected_revision: int) -> StoredChangeOrder:
         try:
-            return change_order_store.append_transition(order, expected_revision)
+            if audit_store is None:
+                return change_order_store.append_transition(order, expected_revision)
+            return change_order_store.append_transition(order, expected_revision, commit=False)
         except ChangeOrderNotFoundError as exc:
             raise HTTPException(status_code=404, detail="change order not found") from exc
         except (
@@ -643,6 +824,7 @@ def create_app(
     )
     def create_change_order(
         body: CreateChangeOrderRequest,
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         require_submit_permission(identity)
@@ -659,14 +841,19 @@ def create_app(
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail="invalid change order request") from exc
         try:
-            stored = change_order_store.create(order)
+            if audit_store is None:
+                stored = change_order_store.create(order)
+            else:
+                stored = change_order_store.create(order, commit=False)
         except DuplicateChangeOrderError as exc:
             raise HTTPException(status_code=409, detail="change order already exists") from exc
         except InvalidChangeOrderTransitionError as exc:
             raise HTTPException(status_code=409, detail="change order transition conflict") from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail="change order storage error") from exc
-        return _change_order_response(stored)
+        response = _change_order_response(stored)
+        set_audit_context(request, after_value=response)
+        return response
 
     @write_router.post(
         "/change-orders/{change_id}/submit",
@@ -674,6 +861,7 @@ def create_app(
     )
     def submit_change_order(
         change_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         require_submit_permission(identity)
@@ -684,7 +872,14 @@ def create_app(
             transitioned = submit(stored.order, identity.user_id, now())
         except IllegalTransitionError as exc:
             raise HTTPException(status_code=409, detail="change order transition conflict") from exc
-        return _change_order_response(append_order(transitioned, stored.revision))
+        updated = append_order(transitioned, stored.revision)
+        response = _change_order_response(updated)
+        set_audit_context(
+            request,
+            before_value=_change_order_response(stored),
+            after_value=response,
+        )
+        return response
 
     @write_router.post(
         "/change-orders/{change_id}/distribution",
@@ -694,6 +889,7 @@ def create_app(
     def start_distribution(
         change_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
         body: StartDistributionRequest,
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         require_approve_permission(identity)
@@ -719,7 +915,13 @@ def create_app(
             updated_order = change_order_store.append_transition(
                 distributing, stored_order.revision, commit=False
             )
-            connection.commit()
+            if audit_store is None:
+                connection.commit()
+            set_audit_context(
+                request,
+                before_value=workflow_snapshot(None, stored_order),
+                after_value=workflow_snapshot(started, updated_order),
+            )
             return workflow_response(started, updated_order)
         except HTTPException:
             connection.rollback()
@@ -765,6 +967,7 @@ def create_app(
     def report_distribution_batch(
         change_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
         body: ReportDistributionBatchRequest,
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         require_approve_permission(identity)
@@ -774,6 +977,10 @@ def create_app(
         validated_id = _validate_path_id(change_id)
         connection = store.connection
         try:
+            previous_distribution = get_distribution(store, validated_id)
+            previous_order = change_order_store.get(validated_id)
+            if previous_order is None:
+                raise HTTPException(status_code=404, detail="change order not found")
             updated_distribution = store.record_batch(
                 validated_id,
                 body.reports,
@@ -797,11 +1004,23 @@ def create_app(
                 updated_order = change_order_store.append_transition(
                     rolled_back, stored_order.revision, commit=False
                 )
-                connection.commit()
+                if audit_store is None:
+                    connection.commit()
+                set_audit_context(
+                    request,
+                    before_value=workflow_snapshot(previous_distribution, previous_order),
+                    after_value=workflow_snapshot(updated_distribution, updated_order),
+                )
                 return workflow_response(updated_distribution, updated_order)
 
-            connection.commit()
             if updated_distribution.distribution.state is not DistributionState.COMPLETED:
+                if audit_store is None:
+                    connection.commit()
+                set_audit_context(
+                    request,
+                    before_value=workflow_snapshot(previous_distribution, previous_order),
+                    after_value=workflow_snapshot(updated_distribution),
+                )
                 return workflow_response(updated_distribution)
 
             confirmed_distribution = get_distribution(store, validated_id)
@@ -812,7 +1031,37 @@ def create_app(
                 raise HTTPException(status_code=404, detail="change order not found")
             if stored_order.order.state is not ChangeState.DISTRIBUTING:
                 raise HTTPException(status_code=409, detail="change order is not distributing")
+            rule_change = stored_order.order.managed_rule_change
+            managed_rule_before = (
+                None if rule_change is None else activation_rules.get(rule_change.rule_id)
+            )
+            if audit_store is not None:
+                set_audit_context(
+                    request,
+                    before_value=workflow_snapshot(
+                        previous_distribution, previous_order, managed_rule_before
+                    ),
+                    after_value=workflow_snapshot(
+                        confirmed_distribution, stored_order, managed_rule_before
+                    ),
+                )
+                try:
+                    append_request_audit(request, AuditOutcome.ALLOWED)
+                    connection.commit()
+                except BaseException:
+                    request.state.audit_failed = True
+                    connection.rollback()
+                    raise HTTPException(
+                        status_code=500, detail="audit service unavailable"
+                    ) from None
+                set_audit_context(
+                    request,
+                    before_value=workflow_snapshot(confirmed_distribution, stored_order),
+                )
+            else:
+                connection.commit()
             connection.rollback()
+            set_audit_context(request)
             applied_order = apply_distributed_change(
                 activation_orders,
                 activation_rules,
@@ -820,6 +1069,19 @@ def create_app(
                 stored_order.revision,
                 identity.user_id,
                 now(),
+                commit=audit_store is None,
+            )
+            managed_rule_after = (
+                None if rule_change is None else activation_rules.get(rule_change.rule_id)
+            )
+            set_audit_context(
+                request,
+                before_value=workflow_snapshot(
+                    confirmed_distribution, stored_order, managed_rule_before
+                ),
+                after_value=workflow_snapshot(
+                    confirmed_distribution, applied_order, managed_rule_after
+                ),
             )
             return workflow_response(confirmed_distribution, applied_order)
         except HTTPException:
@@ -855,6 +1117,7 @@ def create_app(
     def apply_completed_distribution(
         change_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
         body: ApplyDistributionRequest,
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         require_approve_permission(identity)
@@ -878,12 +1141,25 @@ def create_app(
                     and audit[-1].actor == identity.user_id
                 ):
                     store.connection.rollback()
+                    rule_change = stored_order.order.managed_rule_change
+                    managed_rule = (
+                        None if rule_change is None else activation_rules.get(rule_change.rule_id)
+                    )
+                    set_audit_context(
+                        request,
+                        before_value=workflow_snapshot(distribution, stored_order, managed_rule),
+                        after_value=workflow_snapshot(distribution, stored_order, managed_rule),
+                    )
                     return workflow_response(distribution, stored_order)
                 raise HTTPException(status_code=409, detail="change order revision conflict")
             if stored_order.revision != body.expected_change_order_revision:
                 raise HTTPException(status_code=409, detail="change order revision conflict")
             if stored_order.order.state is not ChangeState.DISTRIBUTING:
                 raise HTTPException(status_code=409, detail="change order is not distributing")
+            rule_change = stored_order.order.managed_rule_change
+            managed_rule_before = (
+                None if rule_change is None else activation_rules.get(rule_change.rule_id)
+            )
             store.connection.rollback()
             applied_order = apply_distributed_change(
                 activation_orders,
@@ -892,6 +1168,15 @@ def create_app(
                 body.expected_change_order_revision,
                 identity.user_id,
                 now(),
+                commit=audit_store is None,
+            )
+            managed_rule_after = (
+                None if rule_change is None else activation_rules.get(rule_change.rule_id)
+            )
+            set_audit_context(
+                request,
+                before_value=workflow_snapshot(distribution, stored_order, managed_rule_before),
+                after_value=workflow_snapshot(distribution, applied_order, managed_rule_after),
             )
             return workflow_response(distribution, applied_order)
         except HTTPException:
@@ -916,6 +1201,7 @@ def create_app(
     def rollback_distribution(
         change_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
         body: RollbackDistributionRequest,
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         require_rollback_permission(identity)
@@ -926,6 +1212,10 @@ def create_app(
             raise HTTPException(status_code=422, detail="rollback reason must not be blank")
         connection = store.connection
         try:
+            previous_distribution = get_distribution(store, validated_id)
+            previous_order = change_order_store.get(validated_id)
+            if previous_order is None:
+                raise HTTPException(status_code=404, detail="change order not found")
             rolled_back_distribution = store.roll_back(
                 validated_id,
                 body.reason.strip(),
@@ -947,7 +1237,13 @@ def create_app(
             updated_order = change_order_store.append_transition(
                 rolled_back_order, stored_order.revision, commit=False
             )
-            connection.commit()
+            if audit_store is None:
+                connection.commit()
+            set_audit_context(
+                request,
+                before_value=workflow_snapshot(previous_distribution, previous_order),
+                after_value=workflow_snapshot(rolled_back_distribution, updated_order),
+            )
             return workflow_response(rolled_back_distribution, updated_order)
         except HTTPException:
             connection.rollback()
@@ -982,6 +1278,7 @@ def create_app(
     )
     def approve_change_order(
         change_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         require_approve_permission(identity)
@@ -992,7 +1289,14 @@ def create_app(
             transitioned = approve(stored.order, identity.user_id, now())
         except IllegalTransitionError as exc:
             raise HTTPException(status_code=409, detail="change order transition conflict") from exc
-        return _change_order_response(append_order(transitioned, stored.revision))
+        updated = append_order(transitioned, stored.revision)
+        response = _change_order_response(updated)
+        set_audit_context(
+            request,
+            before_value=_change_order_response(stored),
+            after_value=response,
+        )
+        return response
 
     @write_router.post(
         "/change-orders/{change_id}/reject",
@@ -1001,6 +1305,7 @@ def create_app(
     def reject_change_order(
         change_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
         body: RejectChangeOrderRequest,
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         require_approve_permission(identity)
@@ -1008,13 +1313,22 @@ def create_app(
         if not reason:
             raise HTTPException(status_code=422, detail="rejection reason must not be blank")
         stored = get_order(_validate_path_id(change_id))
+        if stored.order.created_by == identity.user_id:
+            raise HTTPException(status_code=403, detail="creator may not reject this change")
         try:
             transitioned = reject(stored.order, identity.user_id, reason, now())
         except IllegalTransitionError as exc:
             raise HTTPException(status_code=409, detail="change order transition conflict") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="invalid rejection reason") from exc
-        return _change_order_response(append_order(transitioned, stored.revision))
+        updated = append_order(transitioned, stored.revision)
+        response = _change_order_response(updated)
+        set_audit_context(
+            request,
+            before_value=_change_order_response(stored),
+            after_value=response,
+        )
+        return response
 
     @login_router.post("/auth/login")
     def login(body: LoginRequest, request: Request, response: Response) -> dict[str, bool]:
@@ -1029,12 +1343,24 @@ def create_app(
             ) from exc
         if principal is None:
             raise HTTPException(status_code=401, detail="invalid credentials")
+        request.state.audit_actor = principal.user_id
         try:
-            session = store.create_session(principal.user_id, now())
+            if audit_store is None:
+                session = store.create_session(principal.user_id, now())
+            else:
+                session = store.create_session(principal.user_id, now(), commit=False)
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail="authentication service unavailable"
             ) from exc
+        set_audit_context(
+            request,
+            after_value={
+                "user_id": principal.user_id,
+                "created_at": session.created_at,
+                "expires_at": session.expires_at,
+            },
+        )
         response.set_cookie(
             "__Host-as_console_session",
             session.token,
@@ -1068,11 +1394,31 @@ def create_app(
         if token is None:
             raise HTTPException(status_code=401, detail="authentication required")
         try:
-            store.revoke_session(token, now())
+            if audit_store is None:
+                revoked = store.revoke_session(token, now())
+            else:
+                revoked = store.revoke_session(token, now(), commit=False)
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail="authentication service unavailable"
             ) from exc
+        if revoked is None:
+            raise HTTPException(status_code=401, detail="authentication required")
+        set_audit_context(
+            request,
+            before_value={
+                "user_id": revoked.user_id,
+                "created_at": revoked.created_at,
+                "expires_at": revoked.expires_at,
+                "revoked_at": None,
+            },
+            after_value={
+                "user_id": revoked.user_id,
+                "created_at": revoked.created_at,
+                "expires_at": revoked.expires_at,
+                "revoked_at": revoked.revoked_at,
+            },
+        )
         response.delete_cookie(
             "__Host-as_console_session",
             httponly=True,
@@ -1105,18 +1451,22 @@ def create_app(
     )
     def create_console_user(
         body: CreateConsoleUserRequest,
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         store = require_auth_store()
         require_manage_users(identity)
         try:
-            user = store.create_user(
+            user_args = (
                 body.user_id,
                 body.password.get_secret_value(),
                 frozenset(Role(role) for role in body.roles),
                 now(),
-                enabled=body.enabled,
             )
+            if audit_store is None:
+                user = store.create_user(*user_args, enabled=body.enabled)
+            else:
+                user = store.create_user(*user_args, enabled=body.enabled, commit=False)
         except DuplicateConsoleUserError as exc:
             raise HTTPException(status_code=409, detail="console user already exists") from exc
         except ConsoleBootstrapRequiredError as exc:
@@ -1125,7 +1475,9 @@ def create_app(
             raise HTTPException(status_code=422, detail="invalid console user request") from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail="console account storage error") from exc
-        return console_user_response(user)
+        response = console_user_response(user)
+        set_audit_context(request, after_value=response)
+        return response
 
     @write_router.patch(
         "/auth/users/{user_id}",
@@ -1134,6 +1486,7 @@ def create_app(
     def update_console_user(
         body: UpdateConsoleUserRequest,
         user_id: Annotated[str, Path(min_length=1, max_length=128)],
+        request: Request,
         identity: ApiIdentity = identity_dependency,
     ) -> dict[str, object]:
         store = require_auth_store()
@@ -1143,17 +1496,32 @@ def create_app(
         if any(getattr(body, field) is None for field in body.model_fields_set):
             raise HTTPException(status_code=422, detail="user fields must not be null")
         try:
-            user = store.update_user(
-                user_id,
-                now(),
-                roles=(
-                    frozenset(Role(role) for role in body.roles)
-                    if "roles" in body.model_fields_set and body.roles is not None
-                    else None
-                ),
-                password=(body.password.get_secret_value() if body.password is not None else None),
-                enabled=body.enabled,
+            before_user = store.get_user(user_id)
+            updated_roles = (
+                frozenset(Role(role) for role in body.roles)
+                if "roles" in body.model_fields_set and body.roles is not None
+                else None
             )
+            updated_password = (
+                body.password.get_secret_value() if body.password is not None else None
+            )
+            if audit_store is None:
+                user = store.update_user(
+                    user_id,
+                    now(),
+                    roles=updated_roles,
+                    password=updated_password,
+                    enabled=body.enabled,
+                )
+            else:
+                user = store.update_user(
+                    user_id,
+                    now(),
+                    roles=updated_roles,
+                    password=updated_password,
+                    enabled=body.enabled,
+                    commit=False,
+                )
         except ConsoleUserNotFoundError as exc:
             raise HTTPException(status_code=404, detail="console user not found") from exc
         except LastEnabledConsoleAdminError as exc:
@@ -1164,12 +1532,35 @@ def create_app(
             raise HTTPException(status_code=422, detail="invalid console user request") from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail="console account storage error") from exc
-        return console_user_response(user)
+        response = console_user_response(user)
+        set_audit_context(
+            request,
+            before_value=(None if before_user is None else console_user_response(before_user)),
+            after_value=response,
+        )
+        return response
+
+    @unmatched_read_router.api_route("/{unmatched_path:path}", methods=["GET", "HEAD"])
+    def unmatched_read(unmatched_path: str) -> None:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    @unmatched_write_router.api_route(
+        "/{unmatched_path:path}",
+        methods=["POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT"],
+    )
+    def unmatched_write(unmatched_path: str) -> None:
+        raise HTTPException(status_code=404, detail="Not Found")
 
     app.include_router(router)
     app.include_router(write_router)
     app.include_router(session_router)
     app.include_router(login_router)
+    app.include_router(unmatched_read_router)
+    app.include_router(unmatched_write_router)
+    console_assets = files("as_console").joinpath("web")
+    if not console_assets.is_dir():
+        console_assets = FilePath(__file__).resolve().parents[3] / "console" / "web"
+    app.mount("/", StaticFiles(directory=str(console_assets), html=True), name="console")
     return app
 
 

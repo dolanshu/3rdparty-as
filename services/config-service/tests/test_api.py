@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,7 +15,7 @@ from fastapi.testclient import TestClient
 from pydantic import TypeAdapter, ValidationError
 
 from as_config_service.api import ApiIdentity, ManagedRuleChangeResponse, create_app
-from as_config_service.auth import ConsoleUser, IssuedSession
+from as_config_service.auth import ConsoleUser, IssuedSession, RevokedSession
 from as_config_service.change_order import (
     AuditEntry,
     ChangeOrder,
@@ -35,12 +37,13 @@ from as_config_service.managed_rule_store import (
     StoredManagedRule,
     serialize_managed_rule,
 )
-from as_console.access import Principal, Role
+from as_console.access import AuditOutcome, AuditRecord, Principal, Role
 from as_platform.api.contract import ConfigBundle, RuleDTO, ToggleDTO
 
 pytestmark = pytest.mark.unit
 
 _NOW = 1_700_000_000.0
+_AUDIT_RESOURCE_HMAC_KEY = b"t" * 32
 _PATHS = (
     "/internal/v1/managed-rules",
     "/internal/v1/managed-rules/rule@region-1",
@@ -96,7 +99,7 @@ class FakeChangeOrderStore:
         self.stale_on_append = False
         self.invalid_transition_on_append = False
 
-    def create(self, order: ChangeOrder) -> StoredChangeOrder:
+    def create(self, order: ChangeOrder, *, commit: bool = True) -> StoredChangeOrder:
         self.create_calls += 1
         if order.change_id in self.records:
             raise DuplicateChangeOrderError("duplicate")
@@ -113,7 +116,9 @@ class FakeChangeOrderStore:
     def history(self, change_id: str) -> tuple[StoredChangeOrder, ...]:
         raise AssertionError("read-only API does not request history")
 
-    def append_transition(self, order: ChangeOrder, expected_revision: int) -> StoredChangeOrder:
+    def append_transition(
+        self, order: ChangeOrder, expected_revision: int, *, commit: bool = True
+    ) -> StoredChangeOrder:
         self.append_calls += 1
         current = self.records.get(order.change_id)
         if current is None:
@@ -145,7 +150,7 @@ class FakeAuthStore:
         self.users = {
             "admin-1": ConsoleUser("admin-1", roles, True, _NOW, _NOW),
         }
-        self.sessions: dict[str, tuple[str, str, float, bool]] = {}
+        self.sessions: dict[str, tuple[str, str, float, float, bool]] = {}
         self.login_calls = 0
         self._session_number = 0
 
@@ -156,16 +161,16 @@ class FakeAuthStore:
             return None
         return Principal(user_id, user.roles)
 
-    def create_session(self, user_id: str, now: float) -> IssuedSession:
+    def create_session(self, user_id: str, now: float, *, commit: bool = True) -> IssuedSession:
         self._session_number += 1
         token = f"{self._session_number:043d}"
         csrf = f"{self._session_number + 100:043d}"
-        self.sessions[token] = (csrf, user_id, now + 28_800, False)
+        self.sessions[token] = (csrf, user_id, now, now + 28_800, False)
         return IssuedSession(token, csrf, now, now + 28_800)
 
     def resolve_session(self, token: str, now: float) -> Principal | None:
         session = self.sessions.get(token)
-        if session is None or session[3] or session[2] <= now:
+        if session is None or session[4] or session[3] <= now:
             return None
         user = self.users.get(session[1])
         if user is None or not user.enabled:
@@ -180,15 +185,29 @@ class FakeAuthStore:
             and cookie == header == session[0]
         )
 
-    def revoke_session(self, token: str, now: float) -> bool:
+    def revoke_session(
+        self, token: str, now: float, *, commit: bool = True
+    ) -> RevokedSession | None:
         session = self.sessions.get(token)
-        if session is None or session[3]:
-            return False
-        self.sessions[token] = (session[0], session[1], session[2], True)
-        return True
+        if session is None or session[4]:
+            return None
+        self.sessions[token] = (session[0], session[1], session[2], session[3], True)
+        return RevokedSession(session[1], session[2], session[3], now)
 
     def list_users(self) -> tuple[ConsoleUser, ...]:
         return tuple(self.users[key] for key in sorted(self.users))
+
+
+class FakeAuditStore:
+    def __init__(self) -> None:
+        self.records: list[AuditRecord] = []
+        self.fail_append = False
+
+    def append(self, record: AuditRecord, *, commit: bool = True) -> AuditRecord:
+        if self.fail_append:
+            raise RuntimeError("audit append failed")
+        self.records.append(record)
+        return record
 
 
 def _rule(rule_id: str = "rule@region-1") -> ManagedRule:
@@ -271,7 +290,9 @@ def _client(
     change_order_store: FakeChangeOrderStore | None = None,
     managed_rule_store: FakeManagedRuleStore | None = None,
     auth_store: FakeAuthStore | None = None,
+    audit_store: FakeAuditStore | None = None,
     base_url: str = "http://testserver",
+    audit_resource_hmac_key: bytes | None = _AUDIT_RESOURCE_HMAC_KEY,
 ) -> TestClient:
     live_rule = _stored_rule("rule@region-1", _rule(), 2)
     tombstone = _stored_rule("rule-deleted", None, 4)
@@ -301,8 +322,26 @@ def _client(
         now=now or (lambda: _NOW),
         new_change_id=change_id or (lambda: "new-change@region-1"),
         auth_store=auth_store,
+        audit_store=(audit_store or (FakeAuditStore() if auth_store is not None else None)),
+        allow_unaudited_callback_mode=auth_store is None,
+        audit_resource_hmac_key=audit_resource_hmac_key,
     )
     return TestClient(app, base_url=base_url)
+
+
+def test_console_assets_are_served_from_app_root() -> None:
+    client = _client()
+
+    html = client.get("/")
+    javascript = client.get("/console.js")
+    stylesheet = client.get("/console.css")
+
+    assert html.status_code == 200
+    assert "<title>Rule registry | AS Operations</title>" in html.text
+    assert javascript.status_code == 200
+    assert javascript.text
+    assert stylesheet.status_code == 200
+    assert stylesheet.text
 
 
 def _proposed_rule_response(rule_id: str = "rule-1") -> dict[str, object]:
@@ -434,6 +473,8 @@ def test_session_mode_never_falls_back_to_callback_identity() -> None:
         resolve_identity=resolve_identity,
         can_read_config=lambda _: True,
         auth_store=FakeAuthStore(),
+        audit_store=FakeAuditStore(),
+        audit_resource_hmac_key=_AUDIT_RESOURCE_HMAC_KEY,
     )
     client = TestClient(app)
 
@@ -442,9 +483,59 @@ def test_session_mode_never_falls_back_to_callback_identity() -> None:
         "/internal/v1/managed-rules",
         cookies={"__Host-as_console_session": "not-a-session"},
     )
+    unmatched = client.get("/internal/v1/unknown/resource")
 
-    assert missing.status_code == invalid.status_code == 401
+    assert missing.status_code == invalid.status_code == unmatched.status_code == 401
     assert callback_calls == 0
+
+
+def test_unknown_internal_path_audit_resource_hashes_catchall_path_parameter() -> None:
+    token_like_id = "A" * 43
+    unmatched_path = f"config/export/{token_like_id}/unknown"
+    path = f"/internal/v1/{unmatched_path}"
+    audit_store = FakeAuditStore()
+    client = _client(identity=Identity("ops-alice"), audit_store=audit_store)
+
+    response = client.get(path)
+
+    assert response.status_code == 404
+    assert len(audit_store.records) == 1
+    record = audit_store.records[0]
+    expected_digest = hmac.new(
+        _AUDIT_RESOURCE_HMAC_KEY, unmatched_path.encode(), hashlib.sha256
+    ).hexdigest()
+    assert record.outcome is AuditOutcome.DENIED
+    assert record.action == "GET /internal/v1/{unmatched_path:path}"
+    assert record.resource == (
+        f"/internal/v1/{{unmatched_path:path}} unmatched_path#{expected_digest}"
+    )
+    assert token_like_id not in record.resource
+    assert path not in record.resource
+
+
+@pytest.mark.parametrize("method", ("OPTIONS", "TRACE", "CONNECT"))
+def test_unknown_internal_standard_probe_methods_are_audited(method: str) -> None:
+    token_like_id = "B" * 43
+    unmatched_path = f"config/export/{token_like_id}/unknown"
+    path = f"/internal/v1/{unmatched_path}"
+    audit_store = FakeAuditStore()
+    client = _client(identity=Identity("ops-alice"), audit_store=audit_store)
+
+    response = client.request(method, path)
+
+    assert response.status_code == 404
+    assert len(audit_store.records) == 1
+    record = audit_store.records[0]
+    expected_digest = hmac.new(
+        _AUDIT_RESOURCE_HMAC_KEY, unmatched_path.encode(), hashlib.sha256
+    ).hexdigest()
+    assert record.outcome is AuditOutcome.DENIED
+    assert record.action == f"{method} /internal/v1/{{unmatched_path:path}}"
+    assert record.resource == (
+        f"/internal/v1/{{unmatched_path:path}} unmatched_path#{expected_digest}"
+    )
+    assert token_like_id not in record.resource
+    assert path not in record.resource
 
 
 def test_password_login_requires_https_and_sets_host_only_cookies() -> None:
@@ -477,9 +568,78 @@ def test_password_login_requires_https_and_sets_host_only_cookies() -> None:
     assert "Domain=" not in session_cookie + csrf_cookie
 
 
+def test_successful_session_lifecycle_audits_safe_snapshots() -> None:
+    auth_store = FakeAuthStore()
+    audit_store = FakeAuditStore()
+    client = _client(
+        auth_store=auth_store,
+        audit_store=audit_store,
+        base_url="https://testserver",
+    )
+
+    login = client.post(
+        "/internal/v1/auth/login",
+        json={"user_id": "admin-1", "password": "admin-password-long"},
+    )
+    session_token = client.cookies.get("__Host-as_console_session")
+    csrf_token = client.cookies.get("__Host-as_console_csrf")
+    assert login.status_code == 200
+    assert session_token is not None and csrf_token is not None
+    assert audit_store.records[0].actor == "admin-1"
+    assert audit_store.records[0].before_value is None
+    assert audit_store.records[0].after_value == {
+        "user_id": "admin-1",
+        "created_at": _NOW,
+        "expires_at": _NOW + 28_800,
+    }
+
+    logout = client.post(
+        "/internal/v1/auth/logout",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert logout.status_code == 204
+    assert audit_store.records[1].actor == "admin-1"
+    assert audit_store.records[1].before_value == {
+        "user_id": "admin-1",
+        "created_at": _NOW,
+        "expires_at": _NOW + 28_800,
+        "revoked_at": None,
+    }
+    assert audit_store.records[1].after_value == {
+        "user_id": "admin-1",
+        "created_at": _NOW,
+        "expires_at": _NOW + 28_800,
+        "revoked_at": _NOW,
+    }
+
+    client.cookies.set("__Host-as_console_session", session_token)
+    client.cookies.set("__Host-as_console_csrf", csrf_token)
+    replayed_logout = client.post(
+        "/internal/v1/auth/logout",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert replayed_logout.status_code == 401
+    assert audit_store.records[2].outcome is AuditOutcome.DENIED
+    assert audit_store.records[2].before_value is audit_store.records[2].after_value is None
+
+    serialized_records = json.dumps(
+        [
+            (record.actor, record.action, record.resource, record.before_value, record.after_value)
+            for record in audit_store.records
+        ]
+    )
+    assert session_token not in serialized_records
+    assert csrf_token not in serialized_records
+
+
 def test_invalid_login_is_generic_and_does_not_create_a_session() -> None:
     auth_store = FakeAuthStore()
-    response = _client(auth_store=auth_store, base_url="https://testserver").post(
+    audit_store = FakeAuditStore()
+    response = _client(
+        auth_store=auth_store,
+        audit_store=audit_store,
+        base_url="https://testserver",
+    ).post(
         "/internal/v1/auth/login",
         json={"user_id": "admin-1", "password": "incorrect-password"},
     )
@@ -488,6 +648,17 @@ def test_invalid_login_is_generic_and_does_not_create_a_session() -> None:
     assert response.json() == {"detail": "invalid credentials"}
     assert "incorrect-password" not in response.text
     assert auth_store.sessions == {}
+    assert len(audit_store.records) == 1
+    assert audit_store.records[0].actor == "anonymous"
+    assert audit_store.records[0].outcome is AuditOutcome.DENIED
+    assert audit_store.records[0].before_value is audit_store.records[0].after_value is None
+    assert "incorrect-password" not in json.dumps(
+        (
+            audit_store.records[0].actor,
+            audit_store.records[0].action,
+            audit_store.records[0].resource,
+        )
+    )
 
 
 def test_app_requires_an_identity_source_and_missing_auth_store_is_unavailable() -> None:
@@ -505,10 +676,184 @@ def test_app_requires_an_identity_source_and_missing_auth_store_is_unavailable()
         resolve_identity=lambda _: Identity("admin-1"),
         can_read_config=lambda _: True,
         can_manage_users=lambda _: True,
+        allow_unaudited_callback_mode=True,
     )
     response = TestClient(app).get("/internal/v1/auth/users")
 
     assert response.status_code == 503
+
+
+def test_session_authentication_requires_audit_store_at_construction() -> None:
+    with pytest.raises(ValueError, match="audit_store is required"):
+        create_app(
+            managed_rule_store=FakeManagedRuleStore(()),
+            change_order_store=FakeChangeOrderStore(),
+            resolve_identity=None,
+            can_read_config=lambda _: True,
+            auth_store=FakeAuthStore(),
+        )
+
+
+def test_callback_authentication_requires_explicit_unaudited_test_mode() -> None:
+    arguments = {
+        "managed_rule_store": FakeManagedRuleStore(()),
+        "change_order_store": FakeChangeOrderStore(),
+        "resolve_identity": lambda _: Identity("admin-1"),
+        "can_read_config": lambda _: True,
+    }
+    with pytest.raises(ValueError, match="audit_store is required"):
+        create_app(**arguments)
+
+    app = create_app(**arguments, allow_unaudited_callback_mode=True)
+    assert app is not None
+
+
+@pytest.mark.parametrize("key", [None, b"short-key"])
+def test_audited_app_requires_a_32_byte_resource_hmac_key(key: bytes | None) -> None:
+    arguments = {
+        "managed_rule_store": FakeManagedRuleStore(()),
+        "change_order_store": FakeChangeOrderStore(),
+        "resolve_identity": lambda _: Identity("admin-1"),
+        "can_read_config": lambda _: True,
+        "audit_store": FakeAuditStore(),
+    }
+    if key is not None:
+        arguments["audit_resource_hmac_key"] = key
+
+    with pytest.raises(ValueError, match="audit_resource_hmac_key must be exactly 32 bytes"):
+        create_app(**arguments)
+
+
+def test_path_parameter_audit_resource_uses_full_keyed_hmac() -> None:
+    token_like_id = "A" * 43
+    path = f"/internal/v1/change-orders/{token_like_id}"
+    first_key = b"a" * 32
+    second_key = b"b" * 32
+    first_audit_store = FakeAuditStore()
+    second_audit_store = FakeAuditStore()
+    first_client = _client(
+        identity=Identity("ops-alice"),
+        audit_store=first_audit_store,
+        audit_resource_hmac_key=first_key,
+    )
+    second_client = _client(
+        identity=Identity("ops-alice"),
+        audit_store=second_audit_store,
+        audit_resource_hmac_key=second_key,
+    )
+
+    assert first_client.get(path).status_code == 404
+    assert first_client.get(path).status_code == 404
+    assert second_client.get(path).status_code == 404
+
+    expected_digest = hmac.new(first_key, token_like_id.encode(), hashlib.sha256).hexdigest()
+    expected_resource = f"/internal/v1/change-orders/{{change_id}} change_id#{expected_digest}"
+    first_resources = [record.resource for record in first_audit_store.records]
+    second_resource = second_audit_store.records[0].resource
+    assert first_resources == [expected_resource, expected_resource]
+    assert token_like_id not in expected_resource
+    assert second_resource != expected_resource
+
+
+def test_unaudited_callback_mode_cannot_be_combined_with_session_authentication() -> None:
+    with pytest.raises(ValueError, match="requires callback authentication"):
+        create_app(
+            managed_rule_store=FakeManagedRuleStore(()),
+            change_order_store=FakeChangeOrderStore(),
+            resolve_identity=None,
+            can_read_config=lambda _: True,
+            auth_store=FakeAuthStore(),
+            audit_store=FakeAuditStore(),
+            audit_resource_hmac_key=_AUDIT_RESOURCE_HMAC_KEY,
+            allow_unaudited_callback_mode=True,
+        )
+
+
+def test_callback_audit_records_allowed_reads_and_change_order_writes() -> None:
+    audit_store = FakeAuditStore()
+    journal = FakeChangeOrderStore()
+    client = _client(
+        identity=Identity("ops-alice"),
+        submit_allowed=True,
+        change_order_store=journal,
+        audit_store=audit_store,
+    )
+
+    read = client.get("/internal/v1/managed-rules?ignored=not-a-resource")
+    created = client.post("/internal/v1/change-orders", json=_draft_payload())
+
+    assert read.status_code == 200
+    assert created.status_code == 201
+    assert [record.outcome for record in audit_store.records] == [
+        AuditOutcome.ALLOWED,
+        AuditOutcome.ALLOWED,
+    ]
+    assert audit_store.records[0].actor == "ops-alice"
+    assert audit_store.records[0].action == "GET /internal/v1/managed-rules"
+    assert audit_store.records[0].resource == "/internal/v1/managed-rules"
+    assert audit_store.records[0].before_value is audit_store.records[0].after_value is None
+    assert audit_store.records[1].before_value is None
+    assert audit_store.records[1].after_value == {
+        "revision": 1,
+        "record": json.loads(serialize_order(journal.records["new-change@region-1"].order)),
+    }
+    assert "password" not in json.dumps(
+        [(record.before_value, record.after_value) for record in audit_store.records]
+    )
+
+
+def test_audited_request_validation_failure_is_denied_with_null_snapshots() -> None:
+    audit_store = FakeAuditStore()
+    response = _client(
+        identity=Identity("ops-alice"),
+        audit_store=audit_store,
+    ).post("/internal/v1/change-orders", json={"bundle": {}})
+
+    assert response.status_code == 422
+    assert len(audit_store.records) == 1
+    assert audit_store.records[0].outcome is AuditOutcome.DENIED
+    assert audit_store.records[0].before_value is audit_store.records[0].after_value is None
+
+
+def test_audited_session_denials_and_reads_use_authenticated_actor_only() -> None:
+    audit_store = FakeAuditStore()
+    auth_store = FakeAuthStore(frozenset({Role.VIEWER}))
+    issued = auth_store.create_session("admin-1", _NOW)
+    client = _client(auth_store=auth_store, audit_store=audit_store)
+
+    invalid = client.get(
+        "/internal/v1/managed-rules",
+        cookies={"__Host-as_console_session": "invalid-token-value"},
+    )
+    allowed = client.get(
+        "/internal/v1/managed-rules",
+        cookies={"__Host-as_console_session": issued.token},
+    )
+    denied = client.post(
+        "/internal/v1/change-orders",
+        json=_draft_payload(),
+        cookies={
+            "__Host-as_console_session": issued.token,
+            "__Host-as_console_csrf": issued.csrf_token,
+        },
+        headers={"X-CSRF-Token": issued.csrf_token},
+    )
+
+    assert invalid.status_code == 401
+    assert allowed.status_code == 200
+    assert denied.status_code == 403
+    assert [(event.actor, event.outcome) for event in audit_store.records] == [
+        ("anonymous", AuditOutcome.DENIED),
+        ("admin-1", AuditOutcome.ALLOWED),
+        ("admin-1", AuditOutcome.DENIED),
+    ]
+    assert all(event.before_value is event.after_value is None for event in audit_store.records)
+    assert "invalid-token-value" not in json.dumps(
+        [
+            (record.actor, record.action, record.resource, record.before_value, record.after_value)
+            for record in audit_store.records
+        ]
+    )
 
 
 def test_session_writes_require_exact_double_submit_csrf_and_submit_permission() -> None:
@@ -808,6 +1153,21 @@ def test_creator_cannot_approve_own_change_order() -> None:
     ).post("/internal/v1/change-orders/change@region-1/approve")
 
     assert response.status_code == 403
+    assert journal.append_calls == 0
+
+
+def test_creator_cannot_reject_own_change_order() -> None:
+    journal = FakeChangeOrderStore((_stored_order(),))
+    response = _client(
+        identity=Identity("ops-alice"), approve_allowed=True, change_order_store=journal
+    ).post(
+        "/internal/v1/change-orders/change@region-1/reject",
+        json={"reason": "not allowed"},
+    )
+
+    assert response.status_code == 403
+    order = journal.records["change@region-1"].order
+    assert order.state is ChangeState.SUBMITTED
     assert journal.append_calls == 0
 
 

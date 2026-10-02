@@ -171,6 +171,28 @@
 - [ ] 运维能手动触发回滚
 - [ ] 全流程有审计日志
 
+### M4b-8 浏览器验收执行程序（从属于上述 REQ；依赖就绪后执行）
+
+本程序是 REQ-F-12/13/14/15 与 REQ-S-4 的执行步骤，不新增或替代其验收标准。开始前须具备：same-origin HTTPS console/API serving；已配置 PostgreSQL、audit 与 auth；两个不同账号及权限明确的 operator、approver；已知且有预期 SIP 事件的 Call-ID；以及可安全操作的测试 AS instances。当前缺少已配置的 HTTPS serving/proxy、lossless runtime rule mapping、live trace source/API、AS instance inventory、notification transport 与 health source；受这些后端阻塞的步骤标记 **BLOCKED**，不得记作通过。
+
+**M4b-7.2d ingress/TLS preflight (BLOCKED)**：在开始任何 login/browser workflow 前，对实际客户/测试部署完成并记录以下检查：
+
+- 保留默认 ingress-nginx annotation prefix `nginx.ingress.kubernetes.io`；确认没有自定义 prefix 令 chart 注解失效。
+- 检查外部 ingress-nginx controller 配置，确认 `no-tls-redirect-locations` 不包含 `/`，不会豁免 console/API 路由的 HTTPS redirect。
+- 确认 Ingress 使用为实际 hostname 配置的客户 TLS Secret。
+- 从外部客户端请求 HTTP `/` 与 `/internal/v1`，确认请求被重定向到 HTTPS 或被拒绝；在真实浏览器检查 network/request evidence，确认 credentials 从未通过 HTTP 提交。
+- 验证 forwarded scheme 仅在请求来源属于显式配置的 ingress proxy IP/CIDRs 时才被信任。
+
+chart 固定的 redirect annotations 只作用于 chart Ingress 对象，不能配置或证明外部 controller 的行为。以上真实 controller/deployment/browser evidence 全部具备之前，此 preflight 与 7.2d 保持 **BLOCKED**；模板渲染或 route mocks 不可替代。
+
+1. 以 operator 登录浏览器，逐项创建、编辑、禁用并删除测试规则；每项变更提交为审批请求。刷新后确认 live 状态与审批队列一致，且页面无 fixture fallback。
+2. 以不同的 approver 处理请求：批准至少一个有效变更，拒绝至少一个并填写理由；验证缺少拒绝理由会被拒绝，creator/submitter 不能批准或拒绝自己的 order（分别尝试后确认状态未变化），且另一 approver 的批准/拒绝成功。检查批准/拒绝后的规则与请求状态。
+3. 按已知 Call-ID 查询 live trace，核对每条预期消息的方向、时间戳、方法、响应码、Call-ID、From/To，并核对适用的规则命中信息。
+4. 对测试实例执行分批 distribution；核验每批实例通知、加载版本与 active_calls/进程健康结果。注入一批健康失败，核验自动回滚到上一版本；再执行并核验一次手动回滚。
+5. 按 §3 验证每项允许、拒绝及失败操作的 audit actor、时间、action、resource、outcome 与适用的 before/after snapshots；确认 password、verifier、session/CSRF token、cookie/request headers 已脱敏。检查 append-only trigger/constraints 与 runtime DB grants，并实际验证显式 id INSERT、UPDATE、DELETE、TRUNCATE 均被拒绝；触发 audit unavailable/authorization/stale-revision 等失败路径，确认 fail-closed 行为及相应审计记录。
+
+记录每步的结果与环境/版本，保存脱敏后的浏览器截图、HTTP 请求/响应及 console/network 错误记录、trace 查询结果、distribution/health/rollback reports、对应 audit snapshots，以及数据库 grants 和拒绝写入的验证输出。不得保存密码、token、cookie 或其他 secret。缺少任一真实后端时，标注该步骤 **BLOCKED: missing backend**，不得以 route mock、fixture 或静态页面结果替代 REQ acceptance。
+
 ---
 
 ## §1.5 业务决策链（REQ-F-16）
@@ -298,7 +320,7 @@
 - [ ] 控制台每项操作均必须校验操作者授权；规则 CRUD、审批、回滚等写操作明确包含在内
 - [ ] 鉴权方式：RBAC 角色 + 密码或客户端证书
 - [ ] 所有操作生成审计日志，包含：操作者、时间戳、操作类型、资源；变更须记录变更前后值，读取或拒绝的尝试应在适用时记录空快照；密码、密码验证器、会话/CSRF 令牌、Cookie/请求头必须脱敏
-- [ ] 审计日志不可篡改：运行时 API 数据库角色对审计行/表无 UPDATE、DELETE、TRUNCATE 权限；测试验证其有效权限并证明上述操作被拒绝，且追加写入触发器/约束阻止修改与截断；运行时 API 角色仍可 INSERT 和 SELECT（迁移/owner 角色另行处理）
+- [ ] 审计日志不可篡改：运行时 API 数据库角色有审计表 SELECT 和仅限非 id 字段（actor、action、resource、outcome、occurred_at、before_json、after_json）的列级 INSERT，表级 INSERT 及 id 列 INSERT 均无权限，由序列分配 id；无 UPDATE、DELETE、TRUNCATE 权限。测试验证有效权限并证明显式 id INSERT 及上述修改/截断操作被拒绝，且追加写入触发器/约束阻止修改与截断（迁移/owner 角色另行处理）
 
 ---
 

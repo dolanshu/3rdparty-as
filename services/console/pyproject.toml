@@ -23,3 +23,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/as_console"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"web/index.html" = "as_console/web/index.html"
+"web/console.js" = "as_console/web/console.js"
+"web/console.css" = "as_console/web/console.css"

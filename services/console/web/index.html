@@ -9,7 +9,7 @@
     <script src="console.js" defer></script>
   </head>
   <body>
-    <div class="preview-banner" role="status" aria-label="Preview, local data, not connected">
+    <div class="preview-banner" id="preview-banner" role="status" aria-label="Preview, local data, not connected" hidden>
       <span class="preview-mark" aria-hidden="true"></span>
       <strong>PREVIEW · LOCAL DATA · NOT CONNECTED</strong>
       <span class="preview-explainer">Changes stay in this browser tab.</span>
@@ -47,8 +47,8 @@
           <span class="identity-mark" aria-hidden="true">ID</span>
           <div>
             <span class="sidebar-label">Identity</span>
-            <strong>Not connected</strong>
-            <span class="identity-note">Read-only placeholder</span>
+            <strong id="identity-user">Checking session</strong>
+            <span class="identity-note" id="identity-roles">Live session</span>
           </div>
         </div>
       </aside>
@@ -61,21 +61,28 @@
             <p class="page-description" id="page-description">Review rule state and submit changes for approval.</p>
           </div>
           <div class="topbar-actions">
-            <span class="environment-label"><span aria-hidden="true"></span> Local preview</span>
+            <span class="environment-label" id="environment-label"><span aria-hidden="true"></span> Live console</span>
+            <button class="button button-secondary" id="login-button" type="button">Sign in</button>
+            <button class="button button-secondary" id="logout-button" type="button" hidden>Sign out</button>
             <button class="button button-primary" id="create-rule-button" type="button">New rule</button>
           </div>
         </header>
+
+        <div class="live-status" id="live-status" role="status" aria-live="polite" hidden>
+          <span id="live-status-message"></span>
+          <button class="button button-secondary" id="reload-data-button" type="button" hidden>Retry</button>
+        </div>
 
         <section class="view is-active" id="rules-view" data-view-section="rules" aria-labelledby="rules-heading">
           <div class="section-toolbar">
             <div>
               <p class="eyebrow">CONFIGURATION</p>
               <h2 id="rules-heading">Traffic rules</h2>
-              <p class="section-description">Approval updates local preview state only; no routing backend is connected. New or edited values wait for a change-order decision.</p>
+              <p class="section-description" id="rules-description">Managed rules reflect the current API records. Change-order approval does not activate a rule until distribution is applied.</p>
             </div>
             <div class="summary-inline" aria-label="Rule summary">
-              <span><strong id="rule-total">0</strong> rules</span>
-              <span><strong id="rule-pending-total">0</strong> pending requests</span>
+              <span><strong id="rule-total">0</strong> <span id="rule-total-label">rules</span></span>
+              <span><strong id="rule-pending-total">0</strong> <span id="rule-pending-label">pending requests</span></span>
             </div>
           </div>
 
@@ -110,7 +117,7 @@
                     <th scope="col">Match</th>
                     <th scope="col">Service / destination</th>
                     <th scope="col">State</th>
-                    <th scope="col">Version / updated</th>
+                    <th scope="col" id="rule-revision-heading">Revision</th>
                     <th scope="col"><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
@@ -125,10 +132,10 @@
             <div>
               <p class="eyebrow">GOVERNANCE</p>
               <h2 id="orders-heading">Change orders</h2>
-              <p class="section-description">Review proposed rule changes. Local approval only updates this preview.</p>
+              <p class="section-description" id="orders-description">Track change-order state through approval and distribution. Approval alone does not activate a rule.</p>
             </div>
             <div class="summary-inline" aria-label="Change-order summary">
-              <span><strong id="orders-pending-total">0</strong> awaiting review</span>
+              <span><strong id="orders-pending-total">0</strong> <span id="orders-pending-label">awaiting review</span></span>
               <span><strong id="orders-result-count">0</strong> shown</span>
             </div>
           </div>
@@ -147,7 +154,7 @@
                 <label class="field-compact" for="order-state-filter">
                   <span>Decision</span>
                   <select id="order-state-filter">
-                    <option value="all">All decisions</option>
+                    <option value="all">All states</option>
                     <option value="Pending">Awaiting review</option>
                     <option value="Approved">Approved</option>
                     <option value="Rejected">Rejected</option>
@@ -163,8 +170,8 @@
                     <th scope="col">Change order</th>
                     <th scope="col">Rule</th>
                     <th scope="col">Requested by</th>
-                    <th scope="col">Submitted</th>
-                    <th scope="col">Decision</th>
+                    <th scope="col" id="order-created-heading">Submitted</th>
+                    <th scope="col" id="order-state-heading">Decision</th>
                     <th scope="col"><span class="sr-only">Review action</span></th>
                   </tr>
                 </thead>
@@ -179,11 +186,16 @@
             <div>
               <p class="eyebrow">CALL INVESTIGATION</p>
               <h2 id="traces-heading">Call traces</h2>
-              <p class="section-description">Search fixture traces by Call-ID and inspect their message sequence.</p>
+              <p class="section-description" id="traces-description">Search fixture traces by Call-ID and inspect their message sequence.</p>
             </div>
           </div>
 
-          <form class="trace-search panel" id="trace-search-form">
+          <div class="unavailable-panel" id="traces-unavailable" data-live-only hidden>
+            <h3>Call traces unavailable</h3>
+            <p>No live Call-ID trace query is available in this console integration.</p>
+          </div>
+
+          <form class="trace-search panel" id="trace-search-form" data-preview-only>
             <label class="field-compact trace-query" for="trace-search">
               <span>Call-ID</span>
               <input id="trace-search" name="call-id" type="search" placeholder="Enter a full or partial Call-ID" autocomplete="off" />
@@ -195,7 +207,7 @@
             <p class="search-result-note" id="trace-result-summary" role="status" aria-live="polite"></p>
           </form>
 
-          <div class="trace-layout">
+          <div class="trace-layout" data-preview-only>
             <section class="panel trace-list-panel" aria-labelledby="trace-list-heading">
               <div class="panel-heading">
                 <div>
@@ -237,12 +249,17 @@
             <div>
               <p class="eyebrow">SERVICE HEALTH</p>
               <h2 id="operations-heading">Operations</h2>
-              <p class="section-description">A fixed fixture snapshot for layout preview; no telemetry is connected.</p>
+              <p class="section-description" id="operations-description">A fixed fixture snapshot for layout preview; no telemetry is connected.</p>
             </div>
-            <span class="snapshot-label"><span aria-hidden="true"></span> Fixture snapshot · 2026-10-01 10:42 UTC</span>
+            <span class="snapshot-label" data-preview-only><span aria-hidden="true"></span> Fixture snapshot · 2026-10-01 10:42 UTC</span>
           </div>
 
-          <dl class="metric-strip" aria-label="Fixture metric summary">
+          <div class="unavailable-panel" id="operations-unavailable" data-live-only hidden>
+            <h3>Live operations data unavailable</h3>
+            <p>This console has no live telemetry endpoint. Fixture metrics and service events are shown only in preview mode.</p>
+          </div>
+
+          <dl class="metric-strip" aria-label="Fixture metric summary" data-preview-only>
             <div class="metric-item metric-green">
               <dt>AS instances</dt>
               <dd>4 <span>/ 4 healthy</span></dd>
@@ -265,7 +282,7 @@
             </div>
           </dl>
 
-          <div class="operations-grid">
+          <div class="operations-grid" data-preview-only>
             <section class="panel table-panel" aria-labelledby="instance-heading">
               <div class="panel-heading">
                 <div>
@@ -310,12 +327,39 @@
             </section>
           </div>
 
-          <p class="integrity-note"><strong>No live telemetry or audit sink.</strong> Metrics and events above are representative fixture data. Preview actions are not persisted or attributed to an authenticated operator.</p>
+          <p class="integrity-note" data-preview-only><strong>No live telemetry or audit sink.</strong> Metrics and events above are representative fixture data. Preview actions are not persisted or attributed to an authenticated operator.</p>
         </section>
       </main>
     </div>
 
     <div class="toast-region" id="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <dialog class="modal login-modal" id="login-dialog" aria-labelledby="login-title">
+      <form class="modal-form" id="login-form">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">OPERATOR SESSION</p>
+            <h2 id="login-title">Sign in</h2>
+          </div>
+          <button class="button button-secondary" type="button" data-close-dialog>Close</button>
+        </header>
+        <div class="form-grid">
+          <label class="form-field form-span-two" for="login-user-id">
+            <span>User ID</span>
+            <input id="login-user-id" name="user_id" type="text" autocomplete="username" required />
+          </label>
+          <label class="form-field form-span-two" for="login-password">
+            <span>Password</span>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+          </label>
+        </div>
+        <p class="form-note" id="login-error" role="status" aria-live="polite" hidden></p>
+        <footer class="modal-actions">
+          <button class="button button-secondary" type="button" data-close-dialog>Cancel</button>
+          <button class="button button-primary" id="login-submit" type="submit">Sign in</button>
+        </footer>
+      </form>
+    </dialog>
 
     <dialog class="modal" id="rule-dialog" aria-labelledby="rule-dialog-title">
       <form id="rule-form" class="modal-form">

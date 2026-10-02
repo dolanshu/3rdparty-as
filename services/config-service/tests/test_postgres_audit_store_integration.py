@@ -151,13 +151,15 @@ def pg() -> Iterator[PgHarness]:
             except BaseException as exc:
                 cleanup_errors.append(exc)
         if cleanup_errors:
-            details = "; ".join(f"{type(exc).__name__}: {exc}" for exc in cleanup_errors)
-            message = f"PostgreSQL fixture cleanup failed: {details}"
+            error_types = ", ".join(type(exc).__name__ for exc in cleanup_errors)
+            message = (
+                f"PostgreSQL fixture cleanup failed ({len(cleanup_errors)} error(s)): {error_types}"
+            )
             if primary_exception is not None:
                 with suppress(BaseException):
                     warnings.warn(message, RuntimeWarning, stacklevel=2)
             else:
-                raise RuntimeError(message) from cleanup_errors[0]
+                raise RuntimeError(message) from None
 
 
 def test_runtime_role_can_append_and_read_only_with_effective_grants(pg: PgHarness) -> None:
@@ -209,9 +211,30 @@ def test_runtime_role_can_append_and_read_only_with_effective_grants(pg: PgHarne
     ) = cursor.fetchone()
     assert is_superuser is False
     assert table_owner != pg.runtime_role
-    assert (can_select, can_insert) == (True, True)
+    assert (can_select, can_insert) == (True, False)
     assert (can_update, can_delete, can_truncate) == (False, False, False)
     assert (can_use_sequence, can_select_sequence, can_update_sequence) == (True, True, False)
+
+    cursor.execute(
+        "SELECT a.attname, "
+        "pg_catalog.has_column_privilege(%s, c.oid, a.attname, 'INSERT') "
+        "FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid "
+        "WHERE n.nspname = %s AND c.relname = %s "
+        "AND a.attnum > 0 AND NOT a.attisdropped",
+        (pg.runtime_role, pg.schema, pg.store.table),
+    )
+    assert dict(cursor.fetchall()) == {
+        "id": False,
+        "actor": True,
+        "action": True,
+        "resource": True,
+        "outcome": True,
+        "occurred_at": True,
+        "before_json": True,
+        "after_json": True,
+    }
 
     cursor.execute(
         "SELECT pg_catalog.pg_get_userbyid(n.nspowner), "
@@ -239,6 +262,16 @@ def test_runtime_role_can_append_and_read_only_with_effective_grants(pg: PgHarne
         (pg.schema, pg.store.table, pg.store.sequence),
     )
     assert cursor.fetchall() == []
+
+    with pytest.raises(pg.driver.errors.InsufficientPrivilege):
+        pg.runtime_connection.cursor().execute(
+            sql.SQL(
+                "INSERT INTO {} "
+                "(id, actor, action, resource, outcome, occurred_at, before_json, after_json) "
+                "VALUES (9000, 'forged', 'rule.update', 'rule:forged', 'allowed', 1.0, NULL, NULL)"
+            ).format(table)
+        )
+    pg.runtime_connection.rollback()
 
     first = pg.store.append(
         _record(
@@ -311,6 +344,116 @@ def test_runtime_role_can_append_and_read_only_with_effective_grants(pg: PgHarne
         with pytest.raises(pg.driver.errors.CheckViolation):
             pg.owner_connection.cursor().execute(statement)
         pg.owner_connection.rollback()
+
+
+def test_login_role_can_set_runtime_role_and_append(pg: PgHarness) -> None:
+    from psycopg import sql
+    from psycopg.conninfo import conninfo_to_dict
+
+    login_role = f"audit_login_{uuid.uuid4().hex[:12]}"
+    login_connection = None
+    role_created = False
+    cursor = pg.owner_connection.cursor()
+    try:
+        cursor.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(login_role)))
+        cursor.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(pg.runtime_role), sql.Identifier(login_role)
+            )
+        )
+        pg.owner_connection.commit()
+        role_created = True
+
+        connection_params = conninfo_to_dict(TEST_DSN)
+        connection_params.pop("password", None)
+        connection_params.pop("passfile", None)
+        connection_params.update(
+            user=login_role,
+            password="",
+            connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+        )
+        login_connection = pg.driver.connect(**connection_params)
+        cursor = login_connection.cursor()
+        cursor.execute("SELECT current_user")
+        assert cursor.fetchone()[0] == login_role
+
+        cursor.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(pg.runtime_role)))
+        cursor.execute("SELECT current_user")
+        assert cursor.fetchone()[0] == pg.runtime_role
+        login_connection.commit()
+
+        action = "login-role-path"
+        store = PostgresAuditStore(login_connection, prefix="console_audit", schema=pg.schema)
+        store.validate_runtime_connection()
+        stored = store.append(_record(action))
+        assert stored.record.action == action
+        login_connection.commit()
+        assert [event.record.action for event in pg.owner_store.list_events()] == [action]
+
+        cursor.execute("SELECT current_user")
+        assert cursor.fetchone()[0] == pg.runtime_role
+    finally:
+        primary_exception = sys.exc_info()[1]
+        cleanup_errors: list[tuple[str, BaseException]] = []
+
+        def attempt_cleanup(step: str, action: Any) -> bool:
+            try:
+                action()
+            except BaseException as exc:
+                cleanup_errors.append((step, exc))
+                return False
+            return True
+
+        if login_connection is not None:
+            attempt_cleanup("login connection rollback", login_connection.rollback)
+            attempt_cleanup("login connection close", login_connection.close)
+
+        attempt_cleanup("owner connection rollback", pg.owner_connection.rollback)
+        if role_created:
+            cleanup_cursor = None
+            try:
+                cleanup_cursor = pg.owner_connection.cursor()
+            except BaseException as exc:
+                cleanup_errors.append(("owner cleanup cursor creation", exc))
+
+            if cleanup_cursor is not None:
+                revoked = attempt_cleanup(
+                    "runtime membership revoke",
+                    lambda: cleanup_cursor.execute(
+                        sql.SQL("REVOKE {} FROM {}").format(
+                            sql.Identifier(pg.runtime_role), sql.Identifier(login_role)
+                        )
+                    ),
+                )
+                if not revoked:
+                    attempt_cleanup(
+                        "owner connection rollback after revoke failure",
+                        pg.owner_connection.rollback,
+                    )
+
+                dropped = attempt_cleanup(
+                    "temporary login role drop",
+                    lambda: cleanup_cursor.execute(
+                        sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(login_role))
+                    ),
+                )
+                if not dropped:
+                    attempt_cleanup(
+                        "owner connection rollback after drop failure",
+                        pg.owner_connection.rollback,
+                    )
+
+                attempt_cleanup("owner cleanup cursor close", cleanup_cursor.close)
+
+        attempt_cleanup("owner connection commit", pg.owner_connection.commit)
+        if cleanup_errors:
+            details = "; ".join(f"{step} ({type(exc).__name__})" for step, exc in cleanup_errors)
+            message = f"Login-role test cleanup failed: {details}"
+            if primary_exception is not None:
+                with suppress(BaseException):
+                    warnings.warn(message, RuntimeWarning, stacklevel=2)
+            else:
+                raise RuntimeError(message) from None
 
 
 def test_commit_false_rolls_back_and_failed_append_rolls_back_staged_events(
@@ -415,6 +558,240 @@ def test_schema_setup_rejects_createrole_before_creating_schema(pg: PgHarness) -
         pg.owner_connection.commit()
 
 
+def test_schema_setup_rejects_superuser_before_creating_schema_or_grants(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    privileged_role = f"audit_superuser_{uuid.uuid4().hex[:12]}"
+    schema = f"audit_superuser_schema_{uuid.uuid4().hex[:8]}"
+    store = PostgresAuditStore(pg.owner_connection, schema=schema)
+    role_created = False
+    try:
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            sql.SQL("CREATE ROLE {} NOLOGIN SUPERUSER").format(sql.Identifier(privileged_role))
+        )
+        pg.owner_connection.commit()
+        role_created = True
+
+        with pytest.raises(ValueError, match="runtime_role must not be a superuser"):
+            store.ensure_schema(runtime_role=privileged_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            "SELECT pg_catalog.to_regnamespace(%s), pg_catalog.to_regclass(%s), "
+            "pg_catalog.to_regclass(%s)",
+            (schema, f"{schema}.{store.table}", f"{schema}.{store.sequence}"),
+        )
+        assert cursor.fetchone() == (None, None, None)
+    finally:
+        pg.owner_connection.rollback()
+        if role_created:
+            cursor = pg.owner_connection.cursor()
+            cursor.execute(
+                sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(privileged_role))
+            )
+            pg.owner_connection.commit()
+
+
+@pytest.mark.parametrize(
+    ("attribute", "error_message"),
+    [
+        ("CREATEDB", "must not have CREATEDB"),
+        ("REPLICATION", "must not have REPLICATION"),
+        ("BYPASSRLS", "must not have BYPASSRLS"),
+    ],
+)
+def test_schema_setup_rejects_elevated_runtime_role_attributes_before_schema_or_grants(
+    pg: PgHarness, attribute: str, error_message: str
+) -> None:
+    from psycopg import sql
+
+    privileged_role = f"audit_{attribute.lower()}_{uuid.uuid4().hex[:12]}"
+    schema = f"audit_{attribute.lower()}_schema_{uuid.uuid4().hex[:8]}"
+    store = PostgresAuditStore(pg.owner_connection, schema=schema)
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(
+        sql.SQL(f"CREATE ROLE {{}} NOLOGIN {attribute}").format(sql.Identifier(privileged_role))
+    )
+    pg.owner_connection.commit()
+
+    try:
+        with pytest.raises(ValueError, match=error_message):
+            store.ensure_schema(runtime_role=privileged_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute("SELECT pg_catalog.to_regnamespace(%s)", (schema,))
+        assert cursor.fetchone()[0] is None
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(privileged_role)))
+        pg.owner_connection.commit()
+
+
+def test_schema_setup_rejects_incoming_admin_option_before_creating_schema(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    runtime_role = f"audit_runtime_admin_{uuid.uuid4().hex[:10]}"
+    member_role = f"audit_member_admin_{uuid.uuid4().hex[:10]}"
+    schema = f"audit_admin_schema_{uuid.uuid4().hex[:8]}"
+    store = PostgresAuditStore(pg.owner_connection, schema=schema)
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime_role)))
+    cursor.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(member_role)))
+    cursor.execute(
+        sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+            sql.Identifier(runtime_role), sql.Identifier(member_role)
+        )
+    )
+    pg.owner_connection.commit()
+
+    try:
+        with pytest.raises(ValueError, match="member of another database role"):
+            store.ensure_schema(runtime_role=runtime_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute("SELECT pg_catalog.to_regnamespace(%s)", (schema,))
+        assert cursor.fetchone()[0] is None
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(member_role)))
+        cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime_role)))
+        pg.owner_connection.commit()
+
+
+def test_runtime_validation_rejects_altered_role_attributes(pg: PgHarness) -> None:
+    from psycopg import sql
+    from psycopg.pq import TransactionStatus
+
+    attributes = (
+        ("LOGIN", "NOLOGIN"),
+        ("SUPERUSER", "NOSUPERUSER"),
+        ("CREATEROLE", "NOCREATEROLE"),
+        ("CREATEDB", "NOCREATEDB"),
+        ("REPLICATION", "NOREPLICATION"),
+        ("BYPASSRLS", "NOBYPASSRLS"),
+    )
+    for enable_sql, disable_sql in attributes:
+        try:
+            cursor = pg.owner_connection.cursor()
+            cursor.execute(
+                sql.SQL(f"ALTER ROLE {{}} {enable_sql}").format(sql.Identifier(pg.runtime_role))
+            )
+            pg.owner_connection.commit()
+
+            assert pg.runtime_connection.info.transaction_status is TransactionStatus.IDLE
+            cursor = pg.runtime_connection.cursor()
+            cursor.execute("SELECT current_user")
+            assert cursor.fetchone()[0] == pg.runtime_role
+            pg.runtime_connection.rollback()
+
+            with pytest.raises(
+                RuntimeError, match="invalid audit runtime connection configuration"
+            ):
+                pg.store.validate_runtime_connection()
+        finally:
+            pg.runtime_connection.rollback()
+            pg.owner_connection.rollback()
+            cursor = pg.owner_connection.cursor()
+            cursor.execute(
+                sql.SQL(f"ALTER ROLE {{}} {disable_sql}").format(sql.Identifier(pg.runtime_role))
+            )
+            pg.owner_connection.commit()
+
+        assert pg.runtime_connection.info.transaction_status is TransactionStatus.IDLE
+
+
+def test_runtime_validation_rejects_incoming_admin_option(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    member_role = f"audit_member_admin_{uuid.uuid4().hex[:10]}"
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(member_role)))
+    cursor.execute(
+        sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+            sql.Identifier(pg.runtime_role), sql.Identifier(member_role)
+        )
+    )
+    pg.owner_connection.commit()
+
+    try:
+        with pytest.raises(RuntimeError, match="invalid audit runtime connection configuration"):
+            pg.store.validate_runtime_connection()
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(member_role)))
+        pg.owner_connection.commit()
+
+
+def test_runtime_validation_rejects_outgoing_role_membership(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    helper_role = f"audit_helper_{uuid.uuid4().hex[:12]}"
+    role_created = False
+    try:
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(helper_role)))
+        cursor.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(helper_role), sql.Identifier(pg.runtime_role)
+            )
+        )
+        pg.owner_connection.commit()
+        role_created = True
+
+        with pytest.raises(RuntimeError, match="invalid audit runtime connection configuration"):
+            pg.store.validate_runtime_connection()
+    finally:
+        pg.runtime_connection.rollback()
+        pg.owner_connection.rollback()
+        if role_created:
+            cursor = pg.owner_connection.cursor()
+            cursor.execute(
+                sql.SQL("REVOKE {} FROM {}").format(
+                    sql.Identifier(helper_role), sql.Identifier(pg.runtime_role)
+                )
+            )
+            cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(helper_role)))
+            pg.owner_connection.commit()
+
+
+def test_schema_setup_rejects_login_capable_runtime_role_before_grants(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    login_role = f"audit_login_{uuid.uuid4().hex[:12]}"
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(login_role)))
+    pg.owner_connection.commit()
+
+    try:
+        with pytest.raises(ValueError, match="runtime_role must be NOLOGIN"):
+            pg.owner_store.ensure_schema(runtime_role=login_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            "SELECT pg_catalog.has_schema_privilege(%s, %s, 'USAGE'), "
+            "pg_catalog.has_table_privilege(%s, %s, 'INSERT'), "
+            "pg_catalog.has_sequence_privilege(%s, %s, 'USAGE')",
+            (
+                login_role,
+                pg.schema,
+                login_role,
+                f"{pg.schema}.{pg.store.table}",
+                login_role,
+                f"{pg.schema}.{pg.store.sequence}",
+            ),
+        )
+        assert cursor.fetchone() == (False, False, False)
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(login_role)))
+        pg.owner_connection.commit()
+
+
 def test_schema_setup_rejects_unexpected_trigger_without_granting_insert(pg: PgHarness) -> None:
     from psycopg import sql
 
@@ -453,6 +830,244 @@ def test_schema_setup_rejects_unexpected_trigger_without_granting_insert(pg: PgH
     assert cursor.fetchone()[0] is False
 
 
+def test_schema_setup_rejects_trigger_predicate_without_granting_insert(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    table = _relation(pg.schema, pg.store.table)
+    row_guard = sql.SQL("{}.{}").format(
+        sql.Identifier(pg.schema), sql.Identifier(pg.store._row_guard)
+    )
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON TABLE {} FROM {}").format(
+            table, sql.Identifier(pg.runtime_role)
+        )
+    )
+    cursor.execute(sql.SQL("DROP TRIGGER audit_row_immutable ON {}").format(table))
+    cursor.execute(
+        sql.SQL(
+            "CREATE TRIGGER audit_row_immutable BEFORE UPDATE OR DELETE ON {} "
+            "FOR EACH ROW WHEN (false) EXECUTE FUNCTION {}()"
+        ).format(table, row_guard)
+    )
+    pg.owner_connection.commit()
+
+    with pytest.raises(RuntimeError, match="unexpected or incompatible trigger"):
+        pg.owner_store.ensure_schema(runtime_role=pg.runtime_role)
+
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(
+        "SELECT pg_catalog.has_table_privilege(%s, %s, 'INSERT')",
+        (pg.runtime_role, f"{pg.schema}.{pg.store.table}"),
+    )
+    assert cursor.fetchone()[0] is False
+
+
+def test_schema_setup_rejects_publication_before_granting_insert(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    publication = f"audit_pub_{uuid.uuid4().hex[:12]}"
+    cursor = pg.owner_connection.cursor()
+    cursor.execute("SHOW wal_level")
+    wal_level = str(cursor.fetchone()[0])
+    if wal_level != "logical":
+        pytest.skip(
+            f"CREATE PUBLICATION requires wal_level=logical (current wal_level={wal_level})"
+        )
+
+    table = _relation(pg.schema, pg.store.table)
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON TABLE {} FROM {}").format(
+            table, sql.Identifier(pg.runtime_role)
+        )
+    )
+    pg.owner_connection.commit()
+
+    try:
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            sql.SQL("CREATE PUBLICATION {} FOR TABLE {}").format(sql.Identifier(publication), table)
+        )
+        pg.owner_connection.commit()
+
+        with pytest.raises(RuntimeError, match="included in a PostgreSQL publication"):
+            pg.owner_store.ensure_schema(runtime_role=pg.runtime_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            "SELECT pg_catalog.has_table_privilege(%s, %s, 'INSERT')",
+            (pg.runtime_role, f"{pg.schema}.{pg.store.table}"),
+        )
+        assert cursor.fetchone()[0] is False
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("DROP PUBLICATION IF EXISTS {}").format(sql.Identifier(publication)))
+        pg.owner_connection.commit()
+
+
+@pytest.mark.parametrize(
+    ("publication_kind", "minimum_version"),
+    [("all_tables", 120000), ("schema", 150000)],
+)
+def test_schema_setup_rejects_broad_publication_before_runtime_grants(
+    pg: PgHarness, publication_kind: str, minimum_version: int
+) -> None:
+    from psycopg import sql
+
+    publication = f"audit_pub_{uuid.uuid4().hex[:12]}"
+    cursor = pg.owner_connection.cursor()
+    cursor.execute("SHOW wal_level")
+    wal_level = str(cursor.fetchone()[0])
+    if wal_level != "logical":
+        pytest.skip(
+            f"CREATE PUBLICATION requires wal_level=logical (current wal_level={wal_level})"
+        )
+
+    cursor.execute("SHOW server_version_num")
+    server_version_num = int(cursor.fetchone()[0])
+    if server_version_num < minimum_version:
+        required_version = (
+            "PostgreSQL 15 or newer" if minimum_version >= 150000 else "PostgreSQL 12 or newer"
+        )
+        pytest.skip(
+            f"{publication_kind} publication coverage requires {required_version} "
+            f"(current server_version_num={server_version_num})"
+        )
+
+    table = _relation(pg.schema, pg.store.table)
+    sequence = _relation(pg.schema, pg.store.sequence)
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON SCHEMA {} FROM {}").format(
+            sql.Identifier(pg.schema), sql.Identifier(pg.runtime_role)
+        )
+    )
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON TABLE {} FROM {}").format(
+            table, sql.Identifier(pg.runtime_role)
+        )
+    )
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON SEQUENCE {} FROM {}").format(
+            sequence, sql.Identifier(pg.runtime_role)
+        )
+    )
+    pg.owner_connection.commit()
+
+    try:
+        cursor = pg.owner_connection.cursor()
+        if publication_kind == "all_tables":
+            cursor.execute(
+                sql.SQL("CREATE PUBLICATION {} FOR ALL TABLES").format(sql.Identifier(publication))
+            )
+        else:
+            cursor.execute(
+                sql.SQL("CREATE PUBLICATION {} FOR TABLES IN SCHEMA {}").format(
+                    sql.Identifier(publication), sql.Identifier(pg.schema)
+                )
+            )
+        pg.owner_connection.commit()
+
+        with pytest.raises(RuntimeError, match="included in a PostgreSQL publication"):
+            pg.owner_store.ensure_schema(runtime_role=pg.runtime_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            "SELECT pg_catalog.has_schema_privilege(%s, %s, 'USAGE'), "
+            "pg_catalog.has_table_privilege(%s, %s, 'INSERT'), "
+            "pg_catalog.has_sequence_privilege(%s, %s, 'USAGE')",
+            (
+                pg.runtime_role,
+                pg.schema,
+                pg.runtime_role,
+                f"{pg.schema}.{pg.store.table}",
+                pg.runtime_role,
+                f"{pg.schema}.{pg.store.sequence}",
+            ),
+        )
+        assert cursor.fetchone() == (False, False, False)
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("DROP PUBLICATION IF EXISTS {}").format(sql.Identifier(publication)))
+        pg.owner_connection.commit()
+
+
+def test_schema_setup_rejects_partition_tree_before_runtime_grants(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    parent_schema = f"audit_parent_{uuid.uuid4().hex[:12]}"
+    parent_table_name = f"{pg.store.prefix}_parent"
+    table = _relation(pg.schema, pg.store.table)
+    parent_table = _relation(parent_schema, parent_table_name)
+    sequence = _relation(pg.schema, pg.store.sequence)
+    partition_attached = False
+    pg.store.append(_record("partition-boundary-baseline"))
+    pg.runtime_connection.commit()
+
+    try:
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(parent_schema)))
+        cursor.execute(
+            sql.SQL("CREATE TABLE {} (LIKE {} INCLUDING ALL) PARTITION BY RANGE (id)").format(
+                parent_table, table
+            )
+        )
+        cursor.execute(
+            sql.SQL(
+                "ALTER TABLE {} ATTACH PARTITION {} FOR VALUES FROM (MINVALUE) TO (MAXVALUE)"
+            ).format(parent_table, table)
+        )
+        cursor.execute(
+            sql.SQL("REVOKE ALL PRIVILEGES ON SCHEMA {} FROM {}").format(
+                sql.Identifier(pg.schema), sql.Identifier(pg.runtime_role)
+            )
+        )
+        cursor.execute(
+            sql.SQL("REVOKE ALL PRIVILEGES ON TABLE {} FROM {}").format(
+                table, sql.Identifier(pg.runtime_role)
+            )
+        )
+        cursor.execute(
+            sql.SQL("REVOKE ALL PRIVILEGES ON SEQUENCE {} FROM {}").format(
+                sequence, sql.Identifier(pg.runtime_role)
+            )
+        )
+        pg.owner_connection.commit()
+        partition_attached = True
+
+        with pytest.raises(RuntimeError, match="must not participate in a partition tree"):
+            pg.owner_store.ensure_schema(runtime_role=pg.runtime_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            "SELECT pg_catalog.has_schema_privilege(%s, %s, 'USAGE'), "
+            "pg_catalog.has_table_privilege(%s, %s, 'INSERT'), "
+            "pg_catalog.has_sequence_privilege(%s, %s, 'USAGE')",
+            (
+                pg.runtime_role,
+                pg.schema,
+                pg.runtime_role,
+                f"{pg.schema}.{pg.store.table}",
+                pg.runtime_role,
+                f"{pg.schema}.{pg.store.sequence}",
+            ),
+        )
+        assert cursor.fetchone() == (False, False, False)
+        cursor.execute(sql.SQL("SELECT action FROM {} ORDER BY id").format(table))
+        assert cursor.fetchall() == [("partition-boundary-baseline",)]
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        if partition_attached:
+            cursor.execute(
+                sql.SQL("ALTER TABLE {} DETACH PARTITION {}").format(parent_table, table)
+            )
+        cursor.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(parent_table))
+        cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {}").format(sql.Identifier(parent_schema)))
+        pg.owner_connection.commit()
+
+
 def test_schema_setup_allows_only_its_objects_and_is_idempotent(pg: PgHarness) -> None:
     from psycopg import sql
 
@@ -478,6 +1093,15 @@ def test_schema_setup_allows_only_its_objects_and_is_idempotent(pg: PgHarness) -
                 ("audit_event_id_pkey", "i"),
             ]
         )
+
+        cursor.execute(
+            "SELECT s.seqcache FROM pg_catalog.pg_sequence s "
+            "JOIN pg_catalog.pg_class c ON c.oid = s.seqrelid "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relname = %s",
+            (schema, store.sequence),
+        )
+        assert cursor.fetchone() == (1,)
 
         cursor.execute(
             "SELECT t.typname, t.typtype FROM pg_catalog.pg_type t "
@@ -507,6 +1131,121 @@ def test_schema_setup_allows_only_its_objects_and_is_idempotent(pg: PgHarness) -
         cursor = pg.owner_connection.cursor()
         cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
         pg.owner_connection.commit()
+
+
+def test_schema_setup_rejects_operator_before_granting_access(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    schema = f"AuditOperator{uuid.uuid4().hex[:8]}"
+    prefix = f"ConsoleAudit{uuid.uuid4().hex[:8]}"
+    function_name = f"audit_operator_target_{uuid.uuid4().hex[:12]}"
+    store = PostgresAuditStore(pg.owner_connection, prefix=prefix, schema=schema)
+    table = _relation(schema, store.table)
+    function = sql.SQL("{}.{}").format(sql.Identifier("public"), sql.Identifier(function_name))
+
+    try:
+        store.ensure_schema(runtime_role=pg.runtime_role)
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            sql.SQL(
+                "CREATE FUNCTION {}(integer, integer) RETURNS boolean "
+                "LANGUAGE sql IMMUTABLE AS 'SELECT $1 = $2'"
+            ).format(function)
+        )
+        cursor.execute(
+            sql.SQL(
+                "CREATE OPERATOR {}.=== (LEFTARG = integer, RIGHTARG = integer, FUNCTION = {})"
+            ).format(sql.Identifier(schema), function)
+        )
+        cursor.execute(
+            sql.SQL("REVOKE ALL PRIVILEGES ON SCHEMA {} FROM {}").format(
+                sql.Identifier(schema), sql.Identifier(pg.runtime_role)
+            )
+        )
+        cursor.execute(
+            sql.SQL("REVOKE ALL PRIVILEGES ON TABLE {} FROM {}").format(
+                table, sql.Identifier(pg.runtime_role)
+            )
+        )
+        pg.owner_connection.commit()
+
+        with pytest.raises(RuntimeError, match="unexpected object in pg_operator"):
+            store.ensure_schema(runtime_role=pg.runtime_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            "SELECT pg_catalog.has_schema_privilege(%s, %s, 'USAGE'), "
+            "pg_catalog.has_table_privilege(%s, pg_catalog.to_regclass(%s), 'INSERT')",
+            (pg.runtime_role, schema, pg.runtime_role, f'"{schema}"."{store.table}"'),
+        )
+        assert cursor.fetchone() == (False, False)
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
+        cursor.execute(sql.SQL("DROP FUNCTION IF EXISTS {}(integer, integer)").format(function))
+        pg.owner_connection.commit()
+
+
+@pytest.mark.parametrize(
+    ("feature", "expected_error"),
+    [
+        ("default", "incompatible column defaults"),
+        ("rls", "incompatible row security"),
+        ("policy", "unexpected policy"),
+        ("rule", "unexpected rewrite rule"),
+    ],
+)
+def test_schema_setup_rejects_table_execution_features_before_grants(
+    pg: PgHarness, feature: str, expected_error: str
+) -> None:
+    from psycopg import sql
+
+    table = _relation(pg.schema, pg.store.table)
+    cursor = pg.owner_connection.cursor()
+    if feature == "default":
+        cursor.execute(
+            sql.SQL("ALTER TABLE {} ALTER COLUMN actor SET DEFAULT 'changed'").format(table)
+        )
+    elif feature == "rls":
+        cursor.execute(sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY").format(table))
+    elif feature == "policy":
+        cursor.execute(
+            sql.SQL("CREATE POLICY audit_unexpected_policy ON {} USING (true)").format(table)
+        )
+    elif feature == "rule":
+        cursor.execute(
+            sql.SQL(
+                "CREATE RULE audit_unexpected_rule AS ON INSERT TO {} DO INSTEAD NOTHING"
+            ).format(table)
+        )
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON SCHEMA {} FROM {}").format(
+            sql.Identifier(pg.schema), sql.Identifier(pg.runtime_role)
+        )
+    )
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON TABLE {} FROM {}").format(
+            table, sql.Identifier(pg.runtime_role)
+        )
+    )
+    pg.owner_connection.commit()
+
+    with pytest.raises(RuntimeError, match=expected_error):
+        pg.owner_store.ensure_schema(runtime_role=pg.runtime_role)
+
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(
+        "SELECT pg_catalog.has_schema_privilege(%s, %s, 'USAGE'), "
+        "pg_catalog.has_table_privilege(%s, pg_catalog.to_regclass(%s), 'INSERT')",
+        (
+            pg.runtime_role,
+            pg.schema,
+            pg.runtime_role,
+            f'"{pg.schema}"."{pg.store.table}"',
+        ),
+    )
+    assert cursor.fetchone() == (False, False)
 
 
 def test_schema_setup_rejects_public_security_definer_function_before_grants(
@@ -671,6 +1410,112 @@ def test_schema_setup_rejects_descending_cycling_sequence_before_grants(
         cursor = pg.owner_connection.cursor()
         cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
         pg.owner_connection.commit()
+
+
+def test_schema_setup_rejects_cached_sequence_before_runtime_grants(pg: PgHarness) -> None:
+    from psycopg import sql
+
+    schema = f"AuditCache{uuid.uuid4().hex[:8]}"
+    prefix = f"ConsoleAudit{uuid.uuid4().hex[:8]}"
+    store = PostgresAuditStore(pg.owner_connection, prefix=prefix, schema=schema)
+
+    try:
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+        cursor.execute(
+            sql.SQL(
+                "CREATE SEQUENCE {}.{} AS bigint START WITH 1 MINVALUE 1 "
+                "MAXVALUE 9223372036854775807 INCREMENT BY 1 NO CYCLE CACHE 10"
+            ).format(sql.Identifier(schema), sql.Identifier(store.sequence))
+        )
+        pg.owner_connection.commit()
+
+        with pytest.raises(RuntimeError, match="sequence settings are incompatible"):
+            store.ensure_schema(runtime_role=pg.runtime_role)
+
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(
+            "SELECT pg_catalog.has_schema_privilege(%s, pg_catalog.to_regnamespace(%s), 'USAGE'), "
+            "pg_catalog.has_table_privilege(%s, pg_catalog.to_regclass(%s), 'INSERT'), "
+            "pg_catalog.has_sequence_privilege(%s, pg_catalog.to_regclass(%s), 'USAGE'), "
+            "pg_catalog.to_regclass(%s)",
+            (
+                pg.runtime_role,
+                f'"{schema}"',
+                pg.runtime_role,
+                f'"{schema}"."{store.table}"',
+                pg.runtime_role,
+                f'"{schema}"."{store.sequence}"',
+                f'"{schema}"."{store.table}"',
+            ),
+        )
+        assert cursor.fetchone() == (False, None, False, None)
+    finally:
+        pg.owner_connection.rollback()
+        cursor = pg.owner_connection.cursor()
+        cursor.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
+        pg.owner_connection.commit()
+
+
+def test_schema_setup_rejects_sequence_behind_retained_audit_ids_before_grants(
+    pg: PgHarness,
+) -> None:
+    from psycopg import sql
+
+    table = _relation(pg.schema, pg.store.table)
+    sequence_name = f"{pg.schema}.{pg.store.sequence}"
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(
+        sql.SQL(
+            "INSERT INTO {} (id, actor, action, resource, outcome, occurred_at) "
+            "VALUES (500, 'ops-owner', 'owner.insert', 'audit-test', 'allowed', 1.0)"
+        ).format(table)
+    )
+    cursor.execute("SELECT pg_catalog.setval(%s::regclass, 1, true)", (sequence_name,))
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON SCHEMA {} FROM {}").format(
+            sql.Identifier(pg.schema), sql.Identifier(pg.runtime_role)
+        )
+    )
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON TABLE {} FROM {}").format(
+            table, sql.Identifier(pg.runtime_role)
+        )
+    )
+    cursor.execute(
+        sql.SQL("REVOKE ALL PRIVILEGES ON SEQUENCE {} FROM {}").format(
+            _relation(pg.schema, pg.store.sequence), sql.Identifier(pg.runtime_role)
+        )
+    )
+    pg.owner_connection.commit()
+
+    with pytest.raises(RuntimeError, match="sequence position.*retained audit history"):
+        pg.owner_store.ensure_schema(runtime_role=pg.runtime_role)
+
+    cursor = pg.owner_connection.cursor()
+    cursor.execute(sql.SQL("SELECT id, action FROM {} ORDER BY id").format(table))
+    assert cursor.fetchall() == [(500, "owner.insert")]
+    cursor.execute(
+        sql.SQL("SELECT last_value, is_called FROM {}").format(
+            _relation(pg.schema, pg.store.sequence)
+        )
+    )
+    assert cursor.fetchone() == (1, True)
+    cursor.execute(
+        "SELECT pg_catalog.has_schema_privilege(%s, %s, 'USAGE'), "
+        "pg_catalog.has_table_privilege(%s, %s, 'INSERT'), "
+        "pg_catalog.has_sequence_privilege(%s, %s, 'USAGE')",
+        (
+            pg.runtime_role,
+            pg.schema,
+            pg.runtime_role,
+            f"{pg.schema}.{pg.store.table}",
+            pg.runtime_role,
+            sequence_name,
+        ),
+    )
+    assert cursor.fetchone() == (False, False, False)
+    pg.owner_connection.rollback()
 
 
 def test_schema_setup_rejects_membership_with_effective_sequence_update_privilege(

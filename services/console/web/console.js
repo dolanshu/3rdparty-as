@@ -1,4 +1,7 @@
 (() => {
+  const isPreview = new URLSearchParams(window.location.search).get("preview") === "1";
+  const API_BASE = "/internal/v1";
+
   const rules = [
     {
       id: "R-104",
@@ -189,16 +192,26 @@
     ],
   };
 
+  if (!isPreview) {
+    state.rules = [];
+    state.changeOrders = [];
+    state.traces = [];
+  }
+
   let nextRuleNumber = 132;
   let nextOrderNumber = 2420;
   let editingRuleId = null;
   let selectedOrderId = null;
-  let selectedTraceId = state.traces[0].callId;
+  let selectedTraceId = state.traces[0]?.callId || null;
   let traceQuery = "";
+  const liveData = { rules: "loading", orders: "loading" };
+  let authenticated = false;
+  let sessionUserId = null;
+  let sessionRoles = [];
 
   const viewCopy = {
-    rules: { title: "Rule registry", description: "Review rule state and submit changes for approval." },
-    "change-orders": { title: "Change orders", description: "Review proposed changes; decisions here affect local preview data only." },
+    rules: { title: "Rule registry", description: isPreview ? "Review rule state and submit changes for approval." : "Review current managed-rule records and their revisions." },
+    "change-orders": { title: "Change orders", description: isPreview ? "Review proposed changes; decisions here affect local preview data only." : "Track change-order state through approval and distribution." },
     "call-traces": { title: "Call traces", description: "Search fixture message traces by Call-ID." },
     operations: { title: "Operations", description: "Inspect representative fixture metrics and instance state." },
   };
@@ -207,6 +220,21 @@
     pageTitle: document.querySelector("#page-title"),
     pageDescription: document.querySelector("#page-description"),
     createRuleButton: document.querySelector("#create-rule-button"),
+    previewBanner: document.querySelector("#preview-banner"),
+    environmentLabel: document.querySelector("#environment-label"),
+    loginButton: document.querySelector("#login-button"),
+    logoutButton: document.querySelector("#logout-button"),
+    identityUser: document.querySelector("#identity-user"),
+    identityRoles: document.querySelector("#identity-roles"),
+    liveStatus: document.querySelector("#live-status"),
+    liveStatusMessage: document.querySelector("#live-status-message"),
+    reloadDataButton: document.querySelector("#reload-data-button"),
+    loginDialog: document.querySelector("#login-dialog"),
+    loginForm: document.querySelector("#login-form"),
+    loginUserId: document.querySelector("#login-user-id"),
+    loginPassword: document.querySelector("#login-password"),
+    loginError: document.querySelector("#login-error"),
+    loginSubmit: document.querySelector("#login-submit"),
     rulesTable: document.querySelector("#rules-table-body"),
     ruleSearch: document.querySelector("#rule-search"),
     ruleStateFilter: document.querySelector("#rule-state-filter"),
@@ -214,12 +242,24 @@
     rulePendingTotal: document.querySelector("#rule-pending-total"),
     ruleResultCount: document.querySelector("#rule-result-count"),
     rulesNavCount: document.querySelector("#rules-nav-count"),
+    ruleRevisionHeading: document.querySelector("#rule-revision-heading"),
+    ruleTotalLabel: document.querySelector("#rule-total-label"),
+    rulePendingLabel: document.querySelector("#rule-pending-label"),
+    rulesDescription: document.querySelector("#rules-description"),
     ordersTable: document.querySelector("#orders-table-body"),
     orderSearch: document.querySelector("#order-search"),
     orderStateFilter: document.querySelector("#order-state-filter"),
     ordersPendingTotal: document.querySelector("#orders-pending-total"),
     ordersResultCount: document.querySelector("#orders-result-count"),
     ordersNavCount: document.querySelector("#orders-nav-count"),
+    ordersDescription: document.querySelector("#orders-description"),
+    ordersPendingLabel: document.querySelector("#orders-pending-label"),
+    orderCreatedHeading: document.querySelector("#order-created-heading"),
+    orderStateHeading: document.querySelector("#order-state-heading"),
+    tracesDescription: document.querySelector("#traces-description"),
+    tracesUnavailable: document.querySelector("#traces-unavailable"),
+    operationsDescription: document.querySelector("#operations-description"),
+    operationsUnavailable: document.querySelector("#operations-unavailable"),
     operationsPendingTotal: document.querySelector("#operations-pending-total"),
     traceSearchForm: document.querySelector("#trace-search-form"),
     traceSearch: document.querySelector("#trace-search"),
@@ -265,19 +305,44 @@
       Approved: "status-approved",
       Rejected: "status-rejected",
       Healthy: "status-healthy",
+      Tombstone: "status-neutral",
+      draft: "status-pending",
+      submitted: "status-pending",
+      approved: "status-approved",
+      distributing: "status-info",
+      applied: "status-enabled",
+      rejected: "status-rejected",
+      rolled_back: "status-neutral",
     };
     return `<span class="status-badge ${classes[status] || "status-neutral"}">${escapeHtml(label)}</span>`;
   }
 
+  function liveStatusLabel(status) {
+    return ({ rolled_back: "Rolled back" })[status] || status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  function isAwaitingDecision(order) {
+    return isPreview ? order.status === "Pending" : order.status === "draft" || order.status === "submitted";
+  }
+
+  function liveOrderAction(order) {
+    const roles = new Set(sessionRoles.map((role) => String(role).toLowerCase()));
+    const canSubmit = ["operator", "approver", "admin"].some((role) => roles.has(role));
+    const canApprove = ["approver", "admin"].some((role) => roles.has(role));
+    if (order.status === "draft" && order.createdBy === sessionUserId && canSubmit) return "submit";
+    if (order.status === "submitted" && order.createdBy && order.createdBy !== sessionUserId && canApprove) return "review";
+    return "details";
+  }
+
   function pendingOrderFor(ruleId) {
-    return state.changeOrders.find((order) => order.ruleId === ruleId && order.status === "Pending") || null;
+    return state.changeOrders.find((order) => order.ruleId === ruleId && isAwaitingDecision(order)) || null;
   }
 
   function visibleRuleRows() {
     const rows = state.rules.map((rule) => ({ ...rule, pendingOrder: pendingOrderFor(rule.id) }));
     const liveIds = new Set(state.rules.map((rule) => rule.id));
     const pendingCreates = state.changeOrders
-      .filter((order) => order.status === "Pending" && order.action === "Create" && !liveIds.has(order.ruleId))
+      .filter((order) => isAwaitingDecision(order) && order.action === "Create" && !liveIds.has(order.ruleId))
       .map((order) => ({ ...order.payload, pendingOrder: order }));
     return [...rows, ...pendingCreates];
   }
@@ -288,10 +353,14 @@
 
   function renderRuleRow(rule) {
     const pending = rule.pendingOrder;
-    const status = pending?.action === "Create"
-      ? `<span class="status-badge status-pending">Pending creation</span>`
-      : `<div class="status-stack">${statusBadge(rule.enabled ? "Enabled" : "Disabled")}${pending ? `<span class="status-badge status-pending">Pending ${escapeHtml(pending.action.toLowerCase())}</span>` : ""}</div>`;
-    const actions = pending
+    const status = rule.isTombstone
+      ? statusBadge("Tombstone", "Deleted record")
+      : pending?.action === "Create"
+        ? `<span class="status-badge status-pending">Pending creation</span>`
+        : `<div class="status-stack">${statusBadge(rule.enabled ? "Enabled" : "Disabled")}${pending ? `<span class="status-badge status-pending">Pending ${escapeHtml(pending.action.toLowerCase())}</span>` : ""}</div>`;
+    const actions = !isPreview
+      ? ""
+      : pending
       ? `<button class="button-link" type="button" data-open-order="${escapeHtml(pending.id)}">Review request</button>`
       : `<div class="row-actions">
           <button class="button-link" type="button" data-rule-action="edit" data-rule-id="${escapeHtml(rule.id)}">Edit</button>
@@ -304,7 +373,7 @@
       <td class="match-cell"><span>${escapeHtml(formatMatch(rule))}</span><small><code>${escapeHtml(rule.matchValue)}</code></small></td>
       <td class="secondary-cell"><strong>${escapeHtml(rule.target)}</strong><small>${escapeHtml(rule.targetDetail)}</small></td>
       <td>${status}</td>
-      <td class="secondary-cell"><strong class="mono">${escapeHtml(rule.version)}</strong><small>${escapeHtml(rule.updatedAt)}</small></td>
+      <td class="secondary-cell"><strong class="mono">${isPreview ? escapeHtml(rule.version) : `rev ${escapeHtml(rule.revision)}`}</strong><small>${escapeHtml(isPreview ? rule.updatedAt : "Managed record")}</small></td>
       <td>${actions}</td>
     </tr>`;
   }
@@ -312,21 +381,30 @@
   function renderRules() {
     const query = elements.ruleSearch.value.trim().toLowerCase();
     const stateFilter = elements.ruleStateFilter.value;
-    const rows = visibleRuleRows().filter((rule) => {
+    const allRows = visibleRuleRows();
+    const rows = allRows.filter((rule) => {
       const searchable = [rule.id, rule.name, rule.matchField, rule.matchType, rule.matchValue, rule.target, rule.targetDetail].join(" ").toLowerCase();
       const matchesQuery = !query || searchable.includes(query);
+      const hasPendingChange = isPreview
+        ? Boolean(rule.pendingOrder)
+        : state.changeOrders.some((order) => isAwaitingDecision(order) && order.ruleId === rule.id);
       const matchesState = stateFilter === "all"
-        || (stateFilter === "pending" && Boolean(rule.pendingOrder))
+        || (stateFilter === "pending" && hasPendingChange)
         || (stateFilter === "enabled" && rule.enabled && rule.pendingOrder?.action !== "Create")
         || (stateFilter === "disabled" && !rule.enabled && rule.pendingOrder?.action !== "Create");
       return matchesQuery && matchesState;
     });
 
-    elements.rulesTable.innerHTML = rows.length
+    const ruleState = !isPreview && liveData.rules !== "ready"
+      ? liveData.rules === "loading" ? "Loading managed rules…" : liveData.rules === "unauthenticated" ? "Sign in to load managed rules." : "Managed rules could not be loaded. Retry the request."
+      : null;
+    elements.rulesTable.innerHTML = ruleState
+      ? `<tr class="row-empty"><td colspan="6">${escapeHtml(ruleState)}</td></tr>`
+      : rows.length
       ? rows.map(renderRuleRow).join("")
-      : `<tr class="row-empty"><td colspan="6">No rules match these filters.</td></tr>`;
-    elements.ruleTotal.textContent = String(visibleRuleRows().length);
-    elements.rulePendingTotal.textContent = String(state.changeOrders.filter((order) => order.status === "Pending").length);
+      : `<tr class="row-empty"><td colspan="6">${isPreview ? "No rules match these filters." : allRows.length ? "No rules match these filters." : "No managed-rule records returned."}</td></tr>`;
+    elements.ruleTotal.textContent = String(allRows.length);
+    elements.rulePendingTotal.textContent = String(state.changeOrders.filter(isAwaitingDecision).length);
     elements.ruleResultCount.textContent = `${rows.length} ${rows.length === 1 ? "entry" : "entries"}`;
     elements.rulesNavCount.textContent = String(visibleRuleRows().length);
   }
@@ -339,20 +417,32 @@
       return (!query || searchable.includes(query)) && (decision === "all" || order.status === decision);
     });
 
-    elements.ordersTable.innerHTML = rows.length
-      ? rows.map((order) => `<tr>
+    const ordersState = !isPreview && liveData.orders !== "ready"
+      ? liveData.orders === "loading" ? "Loading change orders…" : liveData.orders === "unauthenticated" ? "Sign in to load change orders." : "Change orders could not be loaded. Retry the request."
+      : null;
+    elements.ordersTable.innerHTML = ordersState
+      ? `<tr class="row-empty"><td colspan="6">${escapeHtml(ordersState)}</td></tr>`
+      : rows.length
+      ? rows.map((order) => isPreview ? `<tr>
           <td class="primary-cell"><button class="button-link mono" type="button" data-open-order="${escapeHtml(order.id)}" aria-label="Review change order ${escapeHtml(order.id)}">${escapeHtml(order.id)}</button><small>${escapeHtml(order.action)} rule</small></td>
           <td class="secondary-cell"><strong>${escapeHtml(order.ruleName)}</strong><small class="mono">${escapeHtml(order.ruleId)}</small></td>
           <td>${escapeHtml(order.requestedBy)}</td>
           <td class="mono">${escapeHtml(order.submittedAt)}</td>
           <td>${statusBadge(order.status)}</td>
           <td><button class="button-link" type="button" data-open-order="${escapeHtml(order.id)}">${order.status === "Pending" ? "Review" : "Details"}</button></td>
+        </tr>` : `<tr>
+          <td class="primary-cell"><strong class="mono">${escapeHtml(order.id)}</strong><small>Revision ${escapeHtml(order.revision)} · ${escapeHtml(order.action)}</small></td>
+          <td class="secondary-cell"><strong>${escapeHtml(order.ruleName)}</strong><small class="mono">${escapeHtml(order.ruleId)}</small></td>
+          <td>${escapeHtml(order.requestedBy)}</td>
+          <td class="mono">${escapeHtml(order.createdAt)}</td>
+          <td>${statusBadge(order.status, liveStatusLabel(order.status))}</td>
+          <td><button class="button-link" type="button" data-open-order="${escapeHtml(order.id)}">${liveOrderAction(order) === "submit" ? "Submit" : liveOrderAction(order) === "review" ? "Review" : "Details"}</button></td>
         </tr>`).join("")
-      : `<tr class="row-empty"><td colspan="6">No change orders match these filters.</td></tr>`;
+      : `<tr class="row-empty"><td colspan="6">${isPreview ? "No change orders match these filters." : "No change orders returned."}</td></tr>`;
 
-    const pendingCount = state.changeOrders.filter((order) => order.status === "Pending").length;
+    const pendingCount = state.changeOrders.filter(isAwaitingDecision).length;
     elements.ordersPendingTotal.textContent = String(pendingCount);
-    elements.operationsPendingTotal.textContent = String(pendingCount);
+    if (isPreview) elements.operationsPendingTotal.textContent = String(pendingCount);
     elements.ordersResultCount.textContent = String(rows.length);
     elements.ordersNavCount.textContent = String(pendingCount);
   }
@@ -421,7 +511,7 @@
   function renderAll() {
     renderRules();
     renderChangeOrders();
-    renderTraces();
+    if (isPreview) renderTraces();
   }
 
   function showView(name) {
@@ -443,7 +533,7 @@
     });
     elements.pageTitle.textContent = viewCopy[name].title;
     elements.pageDescription.textContent = viewCopy[name].description;
-    elements.createRuleButton.hidden = name !== "rules";
+    elements.createRuleButton.hidden = !isPreview || name !== "rules";
     document.title = `${viewCopy[name].title} | AS Operations`;
   }
 
@@ -455,6 +545,286 @@
     window.setTimeout(() => {
       if (toast.isConnected) toast.remove();
     }, 4200);
+  }
+
+  function setLiveStatus(message, { error = false, retry = false } = {}) {
+    elements.liveStatus.hidden = isPreview || !message;
+    elements.liveStatus.classList.toggle("is-error", error);
+    elements.liveStatusMessage.textContent = message;
+    elements.reloadDataButton.hidden = !retry;
+  }
+
+  function configureMode() {
+    document.querySelectorAll("[data-preview-only]").forEach((element) => {
+      element.hidden = !isPreview;
+    });
+    document.querySelectorAll("[data-live-only]").forEach((element) => {
+      element.hidden = isPreview;
+    });
+    elements.previewBanner.hidden = !isPreview;
+    elements.loginButton.hidden = isPreview;
+    elements.logoutButton.hidden = true;
+    elements.createRuleButton.hidden = !isPreview;
+    elements.liveStatus.hidden = true;
+    elements.environmentLabel.textContent = isPreview ? "Local preview" : "Live console";
+    elements.identityUser.textContent = isPreview ? "Not connected" : "Checking session";
+    elements.identityRoles.textContent = isPreview ? "Read-only placeholder" : "Live session";
+    elements.rulesDescription.textContent = isPreview
+      ? "Approval updates local preview state only; no routing backend is connected. New or edited values wait for a change-order decision."
+      : "Managed rules reflect the current API records. Change-order approval does not activate a rule until distribution is applied.";
+    elements.ordersDescription.textContent = isPreview
+      ? "Review proposed rule changes. Local approval only updates this preview."
+      : "Track change-order state through approval and distribution. Approval alone does not activate a rule.";
+    elements.tracesDescription.textContent = isPreview
+      ? "Search fixture traces by Call-ID and inspect their message sequence."
+      : "Live Call-ID trace search is not available in this integration.";
+    elements.operationsDescription.textContent = isPreview
+      ? "A fixed fixture snapshot for layout preview; no telemetry is connected."
+      : "Live service telemetry is not available in this integration.";
+    elements.ruleRevisionHeading.textContent = isPreview ? "Version / updated" : "Revision";
+    if (!isPreview) {
+      elements.pageDescription.textContent = viewCopy.rules.description;
+      elements.ruleTotalLabel.textContent = "records";
+      elements.rulePendingLabel.textContent = "draft / submitted";
+      elements.ordersPendingLabel.textContent = "draft / submitted";
+      elements.orderCreatedHeading.textContent = "Created";
+      elements.orderStateHeading.textContent = "State";
+      elements.ruleStateFilter.options[3].textContent = "Draft / submitted";
+      elements.orderStateFilter.replaceChildren(
+        new Option("All states", "all"),
+        ...["draft", "submitted", "approved", "distributing", "applied", "rejected", "rolled_back"]
+          .map((status) => new Option(liveStatusLabel(status), status)),
+      );
+    }
+  }
+
+  function formatTimestamp(timestamp) {
+    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return "Time unavailable";
+    return new Date(timestamp * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+  }
+
+  function mapManagedRule(item) {
+    const record = item.record?.rule;
+    if (!record) {
+      return {
+        id: `tombstone-revision-${item.revision}`,
+        name: "Deleted rule (tombstone)",
+        matchField: "—",
+        matchType: "—",
+        matchValue: "—",
+        target: "—",
+        targetDetail: "—",
+        enabled: false,
+        revision: item.revision,
+        version: String(item.revision),
+        updatedAt: "",
+        isTombstone: true,
+      };
+    }
+
+    return mapRuleRecord(record, item.revision);
+  }
+
+  function mapRuleRecord(record, revision) {
+    const targets = {
+      translation: "Translation",
+      "anti-fraud": "Anti-fraud",
+      routing: "Routing",
+      block: "Block",
+      default: "Default",
+    };
+    return {
+      id: record.rule_id,
+      name: record.name,
+      matchField: record.match_field === "calling" ? "Calling party" : "Called party",
+      matchType: record.match_mode === "regex" ? "Regex" : "Prefix",
+      matchValue: record.match_value,
+      target: targets[record.target_service] || record.target_service,
+      targetDetail: record.target_detail || "—",
+      enabled: record.enabled,
+      revision,
+      version: String(revision),
+      updatedAt: "",
+      isTombstone: false,
+    };
+  }
+
+  function mapChangeOrder(item) {
+    const order = item.record?.order;
+    const change = order?.managed_rule_change;
+    const ruleId = change?.rule_id || "—";
+    const proposedRule = change?.proposed_rule;
+    const currentRule = state.rules.find((rule) => rule.id === ruleId);
+    return {
+      id: order?.change_id || "Unknown change order",
+      revision: item.revision,
+      action: change?.action ? `${change.action.charAt(0).toUpperCase()}${change.action.slice(1)}` : "Bundle",
+      ruleId,
+      ruleName: proposedRule?.name || currentRule?.name || "Configuration bundle",
+      payload: proposedRule ? mapRuleRecord(proposedRule, "—") : null,
+      requestedBy: order?.created_by || "Unknown",
+      createdBy: order?.created_by || null,
+      createdAt: formatTimestamp(order?.created_at),
+      status: order?.state || "unknown",
+      record: order || null,
+    };
+  }
+
+  async function apiRequest(path, { method = "GET", body, csrf = false } = {}) {
+    const headers = { Accept: "application/json" };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (csrf) {
+      const token = document.cookie.split(";").map((cookie) => cookie.trim())
+        .find((cookie) => cookie.startsWith("__Host-as_console_csrf="))
+        ?.slice("__Host-as_console_csrf=".length);
+      if (!token) throw new Error("CSRF cookie is unavailable; sign in again.");
+      headers["X-CSRF-Token"] = decodeURIComponent(token);
+    }
+    const response = await fetch(`${API_BASE}${path}`, {
+      method,
+      credentials: "same-origin",
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
+    return response.status === 204 ? null : response.json();
+  }
+
+  function applySession(session) {
+    authenticated = true;
+    sessionUserId = session.user_id || null;
+    sessionRoles = Array.isArray(session.roles) ? session.roles : [];
+    elements.identityUser.textContent = sessionUserId || "Signed in";
+    elements.identityRoles.textContent = Array.isArray(session.roles) && session.roles.length
+      ? session.roles.join(" · ")
+      : "No roles assigned";
+    elements.loginButton.hidden = true;
+    elements.logoutButton.hidden = false;
+    elements.createRuleButton.hidden = true;
+  }
+
+  function clearSession() {
+    authenticated = false;
+    sessionUserId = null;
+    sessionRoles = [];
+    elements.identityUser.textContent = "Not signed in";
+    elements.identityRoles.textContent = "Sign in to read configuration";
+    elements.loginButton.hidden = false;
+    elements.logoutButton.hidden = true;
+    state.rules = [];
+    state.changeOrders = [];
+  }
+
+  async function loadLiveData() {
+    if (!authenticated) return;
+    state.rules = [];
+    state.changeOrders = [];
+    liveData.rules = "loading";
+    liveData.orders = "loading";
+    setLiveStatus("Loading managed rules and change orders…");
+    renderAll();
+
+    const results = await Promise.allSettled([
+      apiRequest("/managed-rules"),
+      apiRequest("/change-orders"),
+    ]);
+    const expired = results.some((result) => result.status === "rejected" && result.reason.status === 401);
+    if (expired) {
+      clearSession();
+      liveData.rules = "unauthenticated";
+      liveData.orders = "unauthenticated";
+      setLiveStatus("Your session expired. Sign in again.", { error: true });
+      renderAll();
+      return;
+    }
+
+    const errors = [];
+    if (results[0].status === "fulfilled" && Array.isArray(results[0].value)) {
+      state.rules = results[0].value.map(mapManagedRule);
+      liveData.rules = "ready";
+    } else {
+      liveData.rules = "error";
+      errors.push(`managed rules (${results[0].status === "rejected" ? results[0].reason.message : "invalid response"})`);
+    }
+    if (results[1].status === "fulfilled" && Array.isArray(results[1].value)) {
+      state.changeOrders = results[1].value.map(mapChangeOrder);
+      liveData.orders = "ready";
+    } else {
+      liveData.orders = "error";
+      errors.push(`change orders (${results[1].status === "rejected" ? results[1].reason.message : "invalid response"})`);
+    }
+    renderAll();
+    setLiveStatus(errors.length ? `Could not load ${errors.join("; ")}.` : "Live configuration loaded.", {
+      error: errors.length > 0,
+      retry: errors.length > 0,
+    });
+  }
+
+  async function restoreSession() {
+    setLiveStatus("Checking operator session…");
+    try {
+      const session = await apiRequest("/auth/session");
+      applySession(session);
+      await loadLiveData();
+    } catch (error) {
+      clearSession();
+      liveData.rules = error.status === 401 || error.status === 403 ? "unauthenticated" : "error";
+      liveData.orders = liveData.rules;
+      renderAll();
+      if (error.status === 401 || error.status === 403) {
+        setLiveStatus("Sign in to load managed rules and change orders.");
+      } else {
+        setLiveStatus("Could not restore the operator session. Check the live API connection and retry.", { error: true, retry: true });
+      }
+    }
+  }
+
+  async function submitLogin(event) {
+    event.preventDefault();
+    if (isPreview) return;
+    elements.loginError.hidden = true;
+    elements.loginError.textContent = "";
+    if (window.location.protocol !== "https:") {
+      elements.loginError.textContent = "HTTPS is required for sign in.";
+      elements.loginError.hidden = false;
+      return;
+    }
+    elements.loginSubmit.disabled = true;
+    try {
+      await apiRequest("/auth/login", {
+        method: "POST",
+        body: { user_id: elements.loginUserId.value, password: elements.loginPassword.value },
+      });
+      const session = await apiRequest("/auth/session");
+      applySession(session);
+      elements.loginDialog.close();
+      await loadLiveData();
+    } catch (error) {
+      elements.loginError.textContent = error.status === 401
+        ? "Sign in failed. Check the user ID and password."
+        : "Sign in failed. Check the HTTPS API connection and try again.";
+      elements.loginError.hidden = false;
+    } finally {
+      elements.loginPassword.value = "";
+      elements.loginSubmit.disabled = false;
+    }
+  }
+
+  async function logout() {
+    try {
+      await apiRequest("/auth/logout", { method: "POST", csrf: true });
+      clearSession();
+      liveData.rules = "unauthenticated";
+      liveData.orders = "unauthenticated";
+      setLiveStatus("Signed out. Sign in to load configuration.");
+      renderAll();
+    } catch {
+      setLiveStatus("Sign out failed. The session may still be active; retry.", { error: true });
+    }
   }
 
   function localTimestamp() {
@@ -519,6 +889,40 @@
     const order = state.changeOrders.find((item) => item.id === orderId);
     if (!order) return;
     selectedOrderId = order.id;
+    if (!isPreview) {
+      const storedOrder = order.record;
+      const change = storedOrder?.managed_rule_change;
+      const currentRule = state.rules.find((rule) => rule.id === change?.rule_id) || null;
+      const proposedRule = change?.proposed_rule
+        ? mapRuleRecord(change.proposed_rule, "—")
+        : null;
+      const action = liveOrderAction(order);
+      elements.reviewTitle.textContent = `${order.id} · ${order.action} rule`;
+      elements.reviewMeta.innerHTML = `<span>Rule<strong>${escapeHtml(order.ruleName)} (${escapeHtml(order.ruleId)})</strong></span>
+        <span>State<strong>${escapeHtml(liveStatusLabel(order.status))}</strong></span>
+        <span>Created by<strong>${escapeHtml(order.createdBy || "Unavailable")}</strong></span>
+        <span>Created<strong>${escapeHtml(order.createdAt)}</strong></span>
+        <span>Revision<strong>${escapeHtml(order.revision ?? "Unavailable")}</strong></span>`;
+      elements.reviewCurrent.innerHTML = currentRule
+        ? ruleDetailMarkup(currentRule)
+        : `<p>Current managed rule unavailable.</p>`;
+      elements.reviewProposed.innerHTML = proposedRule
+        ? ruleDetailMarkup(proposedRule)
+        : `<p>Proposed rule unavailable in this change order.</p>`;
+      const audit = storedOrder?.audit;
+      const auditText = audit === undefined || audit === null
+        ? "Unavailable"
+        : typeof audit === "string" ? audit : JSON.stringify(audit);
+      elements.reviewStatus.textContent = `${liveStatusLabel(order.status)} · Audit: ${auditText}. Approval does not mean the change has been applied.`;
+      elements.reviewActions.hidden = action !== "submit" && action !== "review";
+      const approveButton = document.querySelector("#approve-change");
+      approveButton.textContent = action === "submit" ? "Submit change" : "Approve change";
+      document.querySelector("#show-reject-form").hidden = action !== "review";
+      elements.rejectForm.hidden = true;
+      elements.rejectForm.reset();
+      elements.reviewDialog.showModal();
+      return;
+    }
     elements.reviewTitle.textContent = `${order.id} · ${order.action} rule`;
     elements.reviewMeta.innerHTML = `<span>Rule<strong>${escapeHtml(order.ruleName)} (${escapeHtml(order.ruleId)})</strong></span>
       <span>Requested by<strong>${escapeHtml(order.requestedBy)}</strong></span>
@@ -558,17 +962,82 @@
     order.decidedBy = "Preview action";
   }
 
+  async function performLiveOrderAction(action, reason) {
+    const order = state.changeOrders.find((item) => item.id === selectedOrderId);
+    if (!order) return;
+    const actionButton = document.querySelector("#approve-change");
+    const rejectButton = elements.rejectForm.querySelector('[type="submit"]');
+    actionButton.disabled = true;
+    rejectButton.disabled = true;
+    elements.reviewStatus.textContent = "Sending change-order decision…";
+    const endpoint = action === "submit" ? "submit" : action === "approve" ? "approve" : "reject";
+    try {
+      await apiRequest(`/change-orders/${encodeURIComponent(order.id)}/${endpoint}`, {
+        method: "POST",
+        ...(action === "reject" ? { body: { reason } } : {}),
+        csrf: true,
+      });
+      elements.reviewDialog.close();
+      await loadLiveData();
+      const refreshedOrder = state.changeOrders.find((item) => item.id === order.id);
+      if (liveData.orders === "ready" && refreshedOrder) {
+        showToast(`${order.id} is now ${liveStatusLabel(refreshedOrder.status)}.`);
+      } else if (liveData.orders === "ready") {
+        showToast(`${order.id} was updated and is no longer in the returned change-order list.`);
+      } else {
+        showToast(`${order.id} action succeeded, but its resulting state could not be reloaded.`, true);
+      }
+    } catch (error) {
+      if (error.status === 401) {
+        clearSession();
+        liveData.rules = "unauthenticated";
+        liveData.orders = "unauthenticated";
+        renderAll();
+        elements.reviewActions.hidden = true;
+        elements.rejectForm.hidden = true;
+        elements.reviewStatus.textContent = "Your session expired. Sign in again; the change order was not confirmed.";
+      } else if (error.status === 403) {
+        elements.reviewStatus.textContent = "This action is not permitted for your session. The change order was not changed.";
+      } else if (error.status === 409) {
+        elements.reviewStatus.textContent = "The change order state has changed. Reload the live data before trying again.";
+      } else if (error.status >= 500) {
+        elements.reviewStatus.textContent = "The service could not complete this action. The change order was not confirmed.";
+      } else {
+        elements.reviewStatus.textContent = "The request failed. The change order was not confirmed.";
+      }
+    } finally {
+      actionButton.disabled = false;
+      rejectButton.disabled = false;
+    }
+  }
+
   document.querySelectorAll("[data-nav-target]").forEach((button) => {
     button.addEventListener("click", () => showView(button.dataset.navTarget));
   });
 
-  elements.createRuleButton.addEventListener("click", () => openRuleDialog());
+  elements.loginButton.addEventListener("click", () => {
+    if (isPreview) return;
+    elements.loginError.hidden = true;
+    elements.loginDialog.showModal();
+    elements.loginUserId.focus();
+  });
+  elements.logoutButton.addEventListener("click", logout);
+  elements.loginForm.addEventListener("submit", submitLogin);
+  elements.reloadDataButton.addEventListener("click", () => {
+    if (authenticated) loadLiveData();
+    else restoreSession();
+  });
+
+  elements.createRuleButton.addEventListener("click", () => {
+    if (isPreview) openRuleDialog();
+  });
   elements.ruleSearch.addEventListener("input", renderRules);
   elements.ruleStateFilter.addEventListener("change", renderRules);
   elements.orderSearch.addEventListener("input", renderChangeOrders);
   elements.orderStateFilter.addEventListener("change", renderChangeOrders);
 
   elements.rulesTable.addEventListener("click", (event) => {
+    if (!isPreview) return;
     const button = event.target.closest("button");
     if (!button) return;
     if (button.dataset.openOrder) {
@@ -589,12 +1058,19 @@
   });
 
   elements.ordersTable.addEventListener("click", (event) => {
+    if (!isPreview) {
+      const button = event.target.closest("[data-open-order]");
+      if (button) openChangeOrder(button.dataset.openOrder);
+      return;
+    }
+    if (!isPreview) return;
     const button = event.target.closest("[data-open-order]");
     if (button) openChangeOrder(button.dataset.openOrder);
   });
 
   elements.ruleForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (!isPreview) return;
     const name = elements.ruleName.value.trim();
     const matchValue = elements.ruleMatchValue.value.trim();
     const targetDetail = elements.ruleTargetDetail.value.trim();
@@ -650,6 +1126,13 @@
   });
 
   document.querySelector("#approve-change").addEventListener("click", () => {
+    if (!isPreview) {
+      const order = state.changeOrders.find((item) => item.id === selectedOrderId);
+      const action = order && liveOrderAction(order);
+      if (action === "submit") performLiveOrderAction("submit");
+      else if (action === "review") performLiveOrderAction("approve");
+      return;
+    }
     const order = state.changeOrders.find((item) => item.id === selectedOrderId);
     if (!order || order.status !== "Pending") return;
     applyApprovedChange(order);
@@ -680,7 +1163,13 @@
       return;
     }
     const order = state.changeOrders.find((item) => item.id === selectedOrderId);
-    if (!order || order.status !== "Pending") return;
+    if (!order) return;
+    if (!isPreview) {
+      if (liveOrderAction(order) !== "review") return;
+      performLiveOrderAction("reject", reason);
+      return;
+    }
+    if (order.status !== "Pending") return;
     order.status = "Rejected";
     order.reason = reason;
     order.decidedAt = `${localTimestamp()} · local`;
@@ -722,5 +1211,7 @@
     selectedButton?.focus();
   });
 
+  configureMode();
   renderAll();
+  if (!isPreview) restoreSession();
 })();

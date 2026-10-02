@@ -33,3 +33,16 @@ To verify that the installed package is importable without starting the long-run
 ```sh
 docker run --rm --entrypoint python as-platform:dev -c "import as_platform; print(as_platform.__name__)"
 ```
+
+## Config-service Container Image
+
+Build the control-plane image from the repository root:
+
+```sh
+docker build -t as-config-service:dev -f deploy/docker/config-service.Dockerfile .
+```
+
+The image installs `as-config-service` and its workspace dependencies, including
+`as-platform` and the packaged console assets. It runs as UID/GID `10001`, starts
+with `as-config-service`, and exposes HTTP port `8000` only. TLS terminates at
+the customer-managed ingress; this image is not a standalone HTTPS endpoint.

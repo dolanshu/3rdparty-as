@@ -49,6 +49,11 @@ _SENSITIVE_VALUE_PATTERN = re.compile(
     r"|(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-]))",
     re.IGNORECASE,
 )
+_PEM_PRIVATE_KEY_MARKER = re.compile(
+    r"-----\s*(?:BEGIN|END)\s+(?:(?:RSA|EC|DSA|OPENSSH|ENCRYPTED)\s+)?"
+    r"PRIVATE KEY\s*-----",
+    re.IGNORECASE,
+)
 _AUDIT_CONSTRAINTS = {
     "audit_event_id_pkey": ("p", "PRIMARY KEY (id)"),
     "audit_event_outcome_check": (
@@ -84,12 +89,35 @@ _AUDIT_COLUMNS = {
     "before_json": ("text", False),
     "after_json": ("text", False),
 }
+_AUDIT_INSERT_COLUMNS = (
+    "actor",
+    "action",
+    "resource",
+    "outcome",
+    "occurred_at",
+    "before_json",
+    "after_json",
+)
 _AUDIT_GUARD_FUNCTION_BODIES = {
     "row": ("BEGIN RAISE EXCEPTION 'audit rows are immutable' USING ERRCODE = '23514'; END;"),
     "truncate": (
         "BEGIN RAISE EXCEPTION 'audit table is append-only' USING ERRCODE = '23514'; END;"
     ),
 }
+_AUDIT_NAMESPACE_CATALOGS = (
+    ("pg_operator", "oprnamespace", "oprname"),
+    ("pg_opclass", "opcnamespace", "opcname"),
+    ("pg_opfamily", "opfnamespace", "opfname"),
+    ("pg_collation", "collnamespace", "collname"),
+    ("pg_conversion", "connamespace", "conname"),
+    ("pg_statistic_ext", "stxnamespace", "stxname"),
+    ("pg_ts_config", "cfgnamespace", "cfgname"),
+    ("pg_ts_dict", "dictnamespace", "dictname"),
+    ("pg_ts_parser", "prsnamespace", "prsname"),
+    ("pg_ts_template", "tmplnamespace", "tmplname"),
+    ("pg_extension", "extnamespace", "extname"),
+    ("pg_default_acl", "defaclnamespace", "defaclobjtype || ':' || defaclrole::text"),
+)
 
 
 class _Cursor(Protocol):
@@ -147,6 +175,55 @@ def _normalize_constraint_definition(definition: str) -> str:
 
 def _normalize_function_source(source: str) -> str:
     return re.sub(r"\s+", " ", source).strip()
+
+
+def _validate_publication_catalog(server_version_num: int, catalog_present: bool) -> None:
+    if server_version_num >= 150000 and not catalog_present:
+        raise RuntimeError("PostgreSQL publication namespace catalog is missing")
+
+
+def _validate_publication_membership(cursor: _Cursor, *, schema: str, table: str) -> None:
+    cursor.execute("SHOW server_version_num")
+    version_row = cursor.fetchone()
+    if version_row is None:
+        raise RuntimeError("could not determine PostgreSQL server version")
+    server_version_num = int(version_row[0])
+
+    cursor.execute("SELECT pg_catalog.to_regclass('pg_catalog.pg_publication_namespace')")
+    catalog = cursor.fetchone()
+    catalog_present = catalog is not None and catalog[0] is not None
+    _validate_publication_catalog(server_version_num, catalog_present)
+
+    cursor.execute(
+        "SELECT pubname FROM pg_catalog.pg_publication WHERE puballtables ORDER BY pubname LIMIT 1"
+    )
+    publication = cursor.fetchone()
+    if publication is not None:
+        raise RuntimeError("audit schema is included in a PostgreSQL publication")
+
+    cursor.execute(
+        "SELECT p.pubname FROM pg_catalog.pg_publication p "
+        "JOIN pg_catalog.pg_publication_rel pr ON pr.prpubid = p.oid "
+        "JOIN pg_catalog.pg_class c ON c.oid = pr.prrelid "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relname = %s ORDER BY p.pubname LIMIT 1",
+        (schema, table),
+    )
+    publication = cursor.fetchone()
+    if publication is not None:
+        raise RuntimeError("audit table is included in a PostgreSQL publication")
+
+    if catalog_present:
+        cursor.execute(
+            "SELECT p.pubname FROM pg_catalog.pg_publication p "
+            "JOIN pg_catalog.pg_publication_namespace pn ON pn.pnpubid = p.oid "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = pn.pnnspid "
+            "WHERE n.nspname = %s ORDER BY p.pubname LIMIT 1",
+            (schema,),
+        )
+        publication = cursor.fetchone()
+        if publication is not None:
+            raise RuntimeError("audit schema is included in a PostgreSQL publication")
 
 
 def _validate_schema_objects(
@@ -266,6 +343,24 @@ def _validate_schema_objects(
         functions.add(function_name)
     if require_complete and functions != set(function_expectations):
         raise RuntimeError("audit schema is missing a required function")
+
+    for catalog, namespace_column, object_name in _AUDIT_NAMESPACE_CATALOGS:
+        cursor.execute("SELECT pg_catalog.to_regclass(%s)", (f"pg_catalog.{catalog}",))
+        catalog_oid = cursor.fetchone()
+        if catalog_oid is None or catalog_oid[0] is None:
+            continue
+        cursor.execute(
+            f"SELECT {object_name} FROM pg_catalog.{catalog} "
+            f"WHERE {namespace_column} = ("
+            "SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = %s) "
+            "ORDER BY 1 LIMIT 1",
+            (schema,),
+        )
+        unexpected_object = cursor.fetchone()
+        if unexpected_object is not None:
+            raise RuntimeError(
+                f"audit schema contains unexpected object in {catalog}: {unexpected_object[0]}"
+            )
     return functions
 
 
@@ -280,7 +375,7 @@ def _contains_forbidden_key(key: str) -> bool:
 
 def _validate_json_value(value: object, ancestors: set[int]) -> None:
     if type(value) is str:
-        if _SENSITIVE_VALUE_PATTERN.search(value):
+        if _SENSITIVE_VALUE_PATTERN.search(value) or _PEM_PRIVATE_KEY_MARKER.search(value):
             raise ValueError("audit snapshots must not contain credential values")
         return
     if value is None or type(value) in (bool, int):
@@ -413,6 +508,11 @@ class PostgresAuditStore:
         self._truncate_guard = f"as_audit_truncate_guard_{digest}"
 
     @property
+    def connection(self) -> _Connection:
+        """The caller-owned connection used by this store."""
+        return self._connection
+
+    @property
     def qualified_table(self) -> str:
         """The fully qualified, safely quoted audit table name."""
         return _qualified(self.schema, self.table)
@@ -421,6 +521,147 @@ class PostgresAuditStore:
     def qualified_sequence(self) -> str:
         """The fully qualified, safely quoted audit sequence name."""
         return _qualified(self.schema, self.sequence)
+
+    def validate_runtime_connection(self) -> None:
+        """Require this connection to be idle and operating as the least-privilege role."""
+        from psycopg.pq import TransactionStatus
+
+        error_message = "invalid audit runtime connection configuration"
+        info = getattr(self._connection, "info", None)
+        if info is None or info.transaction_status is not TransactionStatus.IDLE:
+            raise RuntimeError(error_message)
+
+        try:
+            cursor = self._connection.cursor()
+            cursor.execute(
+                "SELECT current_user, r.rolsuper, r.rolcreaterole, r.rolcreatedb, "
+                "r.rolcanlogin, r.rolreplication, r.rolbypassrls "
+                "FROM pg_catalog.pg_roles r WHERE r.rolname = current_user"
+            )
+            role_row = cursor.fetchone()
+            if role_row is None or any(bool(value) for value in role_row[1:]):
+                raise RuntimeError(error_message)
+            runtime_role = str(role_row[0])
+
+            cursor.execute(
+                "WITH RECURSIVE granted_roles(role_oid) AS ("
+                "SELECT m.roleid FROM pg_catalog.pg_auth_members m "
+                "JOIN pg_catalog.pg_roles runtime ON runtime.oid = m.member "
+                "WHERE runtime.rolname = current_user UNION "
+                "SELECT m.roleid FROM pg_catalog.pg_auth_members m "
+                "JOIN granted_roles granted ON m.member = granted.role_oid) "
+                "SELECT EXISTS (SELECT 1 FROM granted_roles) OR EXISTS ("
+                "SELECT 1 FROM pg_catalog.pg_auth_members m "
+                "JOIN pg_catalog.pg_roles runtime ON runtime.oid = m.roleid "
+                "WHERE runtime.rolname = current_user AND m.admin_option) OR EXISTS ("
+                "SELECT 1 FROM pg_catalog.pg_database d "
+                "JOIN pg_catalog.pg_roles owner_role ON owner_role.oid = d.datdba "
+                "WHERE d.datname = current_database() AND owner_role.rolname = current_user)"
+            )
+            membership_row = cursor.fetchone()
+            if membership_row is None or bool(membership_row[0]):
+                raise RuntimeError(error_message)
+
+            cursor.execute(
+                "SELECT pg_catalog.pg_get_userbyid(n.nspowner), "
+                "pg_catalog.has_schema_privilege(current_user, n.oid, 'USAGE'), "
+                "pg_catalog.has_schema_privilege(current_user, n.oid, 'CREATE') "
+                "FROM pg_catalog.pg_namespace n WHERE n.nspname = %s",
+                (self.schema,),
+            )
+            schema_row = cursor.fetchone()
+            if (
+                schema_row is None
+                or str(schema_row[0]) == runtime_role
+                or not bool(schema_row[1])
+                or bool(schema_row[2])
+            ):
+                raise RuntimeError(error_message)
+
+            cursor.execute(
+                "SELECT c.relkind, pg_catalog.pg_get_userbyid(c.relowner), "
+                "pg_catalog.has_table_privilege(current_user, c.oid, 'SELECT'), "
+                "pg_catalog.has_table_privilege(current_user, c.oid, 'INSERT'), "
+                "pg_catalog.has_table_privilege(current_user, c.oid, 'UPDATE'), "
+                "pg_catalog.has_table_privilege(current_user, c.oid, 'DELETE'), "
+                "pg_catalog.has_table_privilege(current_user, c.oid, 'TRUNCATE') "
+                "FROM pg_catalog.pg_class c "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = %s AND c.relname = %s",
+                (self.schema, self.table),
+            )
+            table_row = cursor.fetchone()
+            if (
+                table_row is None
+                or str(table_row[0]) != "r"
+                or str(table_row[1]) == runtime_role
+                or not bool(table_row[2])
+                or any(bool(value) for value in table_row[3:])
+            ):
+                raise RuntimeError(error_message)
+
+            cursor.execute(
+                "SELECT a.attname, "
+                "pg_catalog.has_column_privilege(current_user, c.oid, a.attname, 'INSERT'), "
+                "pg_catalog.has_column_privilege(current_user, c.oid, a.attname, 'UPDATE') "
+                "FROM pg_catalog.pg_class c "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid "
+                "WHERE n.nspname = %s AND c.relname = %s "
+                "AND a.attnum > 0 AND NOT a.attisdropped",
+                (self.schema, self.table),
+            )
+            column_privileges = {
+                str(name): (bool(can_insert), bool(can_update))
+                for name, can_insert, can_update in cursor.fetchall()
+            }
+            expected_insert_columns = set(_AUDIT_INSERT_COLUMNS)
+            if (
+                set(column_privileges) != set(_AUDIT_COLUMNS)
+                or {name for name, privileges in column_privileges.items() if privileges[0]}
+                != expected_insert_columns
+                or any(update for _, update in column_privileges.values())
+            ):
+                raise RuntimeError(error_message)
+
+            cursor.execute(
+                "SELECT s.relkind, pg_catalog.pg_get_userbyid(s.relowner), "
+                "pg_catalog.format_type(q.seqtypid, NULL), q.seqstart, q.seqmin, "
+                "q.seqincrement, q.seqmax, q.seqcycle, q.seqcache, "
+                "pg_catalog.has_sequence_privilege(current_user, s.oid, 'USAGE'), "
+                "pg_catalog.has_sequence_privilege(current_user, s.oid, 'SELECT'), "
+                "pg_catalog.has_sequence_privilege(current_user, s.oid, 'UPDATE') "
+                "FROM pg_catalog.pg_class s "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = s.relnamespace "
+                "JOIN pg_catalog.pg_sequence q ON q.seqrelid = s.oid "
+                "WHERE n.nspname = %s AND s.relname = %s",
+                (self.schema, self.sequence),
+            )
+            sequence_row = cursor.fetchone()
+            if (
+                sequence_row is None
+                or str(sequence_row[0]) != "S"
+                or str(sequence_row[1]) == runtime_role
+                or str(sequence_row[2]) != "bigint"
+                or int(sequence_row[3]) != 1
+                or int(sequence_row[4]) != 1
+                or int(sequence_row[5]) != 1
+                or int(sequence_row[6]) != 9_223_372_036_854_775_807
+                or bool(sequence_row[7])
+                or int(sequence_row[8]) != 1
+                or not bool(sequence_row[9])
+                or not bool(sequence_row[10])
+                or bool(sequence_row[11])
+            ):
+                raise RuntimeError(error_message)
+
+            self._connection.rollback()
+        except BaseException as exc:
+            with suppress(BaseException):
+                self._connection.rollback()
+            if isinstance(exc, RuntimeError) and str(exc) == error_message:
+                raise
+            raise RuntimeError(error_message) from None
 
     def ensure_schema(self, runtime_role: str) -> None:
         """Create the audit objects and least-privilege grants as their owner.
@@ -434,7 +675,9 @@ class PostgresAuditStore:
 
             cursor = self._connection.cursor()
             cursor.execute(
-                "SELECT rolsuper, rolcreaterole FROM pg_catalog.pg_roles WHERE rolname = %s",
+                "SELECT rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, "
+                "rolreplication, rolbypassrls "
+                "FROM pg_catalog.pg_roles WHERE rolname = %s",
                 (role,),
             )
             role_row = cursor.fetchone()
@@ -444,6 +687,14 @@ class PostgresAuditStore:
                 raise ValueError("runtime_role must not be a superuser")
             if bool(role_row[1]):
                 raise ValueError("runtime_role must not have CREATEROLE")
+            if bool(role_row[2]):
+                raise ValueError("runtime_role must not have CREATEDB")
+            if bool(role_row[3]):
+                raise ValueError("runtime_role must be NOLOGIN")
+            if bool(role_row[4]):
+                raise ValueError("runtime_role must not have REPLICATION")
+            if bool(role_row[5]):
+                raise ValueError("runtime_role must not have BYPASSRLS")
             cursor.execute("SELECT current_user")
             current_user_row = cursor.fetchone()
             if current_user_row is None:
@@ -460,8 +711,11 @@ class PostgresAuditStore:
                 "UNION "
                 "SELECT m.roleid FROM pg_catalog.pg_auth_members m "
                 "JOIN member_roles granted_role ON m.member = granted_role.role_oid) "
-                "SELECT EXISTS (SELECT 1 FROM member_roles)",
-                (role,),
+                "SELECT EXISTS (SELECT 1 FROM member_roles) OR EXISTS ("
+                "SELECT 1 FROM pg_catalog.pg_auth_members m "
+                "JOIN pg_catalog.pg_roles runtime ON runtime.oid = m.roleid "
+                "WHERE runtime.rolname = %s AND m.admin_option)",
+                (role, role),
             )
             membership_row = cursor.fetchone()
             if membership_row is None:
@@ -512,11 +766,12 @@ class PostgresAuditStore:
             if existing_table_row is not None and str(existing_table_row[0]) != "r":
                 raise RuntimeError("audit table name is occupied by an incompatible object")
             table_existed = existing_table_row is not None
+            _validate_publication_membership(cursor, schema=self.schema, table=self.table)
 
             cursor.execute(f"CREATE SEQUENCE IF NOT EXISTS {sequence}")
             cursor.execute(
                 "SELECT pg_catalog.format_type(s.seqtypid, NULL), s.seqstart, s.seqmin, "
-                "s.seqincrement, s.seqmax, s.seqcycle "
+                "s.seqincrement, s.seqmax, s.seqcycle, s.seqcache "
                 "FROM pg_catalog.pg_class c "
                 "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
                 "JOIN pg_catalog.pg_sequence s ON s.seqrelid = c.oid "
@@ -532,6 +787,7 @@ class PostgresAuditStore:
                 or int(sequence_settings[3]) != 1
                 or int(sequence_settings[4]) != 9_223_372_036_854_775_807
                 or bool(sequence_settings[5])
+                or int(sequence_settings[6]) != 1
             ):
                 raise RuntimeError("audit id sequence settings are incompatible")
             cursor.execute(
@@ -548,42 +804,96 @@ class PostgresAuditStore:
                 f"CONSTRAINT audit_event_metadata_safe_check "
                 f"{_AUDIT_CONSTRAINTS['audit_event_metadata_safe_check'][1]})"
             )
+            cursor.execute(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM pg_catalog.pg_inherits i "
+                "JOIN pg_catalog.pg_class c "
+                "ON c.oid = i.inhrelid OR c.oid = i.inhparent "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = %s AND c.relname = %s)",
+                (self.schema, self.table),
+            )
+            partition_tree_membership = cursor.fetchone()
+            if partition_tree_membership is None:
+                raise RuntimeError("could not determine audit table partition membership")
+            if bool(partition_tree_membership[0]):
+                raise RuntimeError("audit table must not participate in a partition tree")
             if not table_existed:
                 cursor.execute(f"ALTER SEQUENCE {sequence} OWNED BY {table}.id")
 
             cursor.execute(
+                "SELECT c.relrowsecurity, c.relforcerowsecurity, "
+                "EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid), "
+                "EXISTS (SELECT 1 FROM pg_catalog.pg_rewrite r "
+                "WHERE r.ev_class = c.oid AND r.rulename <> '_RETURN') "
+                "FROM pg_catalog.pg_class c "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = %s AND c.relname = %s",
+                (self.schema, self.table),
+            )
+            table_security_features = cursor.fetchone()
+            if table_security_features is None:
+                raise RuntimeError("audit table was not created")
+            row_security, force_row_security, has_policies, has_rules = table_security_features
+            if bool(row_security) or bool(force_row_security):
+                raise RuntimeError("audit table has incompatible row security")
+            if bool(has_policies):
+                raise RuntimeError("audit table has an unexpected policy")
+            if bool(has_rules):
+                raise RuntimeError("audit table has an unexpected rewrite rule")
+
+            cursor.execute(
                 "SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod), "
-                "a.attnotnull FROM pg_catalog.pg_attribute a "
+                "a.attnotnull, a.attgenerated, a.attidentity, d.oid IS NOT NULL, "
+                "pg_catalog.pg_get_expr(d.adbin, d.adrelid) "
+                "FROM pg_catalog.pg_attribute a "
                 "JOIN pg_catalog.pg_class c ON c.oid = a.attrelid "
                 "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "LEFT JOIN pg_catalog.pg_attrdef d "
+                "ON d.adrelid = c.oid AND d.adnum = a.attnum "
                 "WHERE n.nspname = %s AND c.relname = %s "
                 "AND a.attnum > 0 AND NOT a.attisdropped",
                 (self.schema, self.table),
             )
-            columns = {
-                str(name): (str(data_type), bool(not_null))
-                for name, data_type, not_null in cursor.fetchall()
-            }
+            attribute_rows = cursor.fetchall()
+            columns = {}
+            column_features = {}
+            for (
+                name,
+                data_type,
+                not_null,
+                generated,
+                identity,
+                has_default,
+                default_expression,
+            ) in attribute_rows:
+                column_name = str(name)
+                columns[column_name] = (str(data_type), bool(not_null))
+                column_features[column_name] = (
+                    str(generated),
+                    str(identity),
+                    bool(has_default),
+                    None if default_expression is None else str(default_expression),
+                )
             if columns != _AUDIT_COLUMNS:
                 raise RuntimeError("audit table has incompatible columns")
+            if any(generated or identity for generated, identity, _, _ in column_features.values()):
+                raise RuntimeError("audit table has a generated or identity column")
+            defaults = {
+                name: default_expression
+                for name, (_, _, has_default, default_expression) in column_features.items()
+                if has_default
+            }
+            expected_default = f"nextval('{regclass_input}'::regclass)"
+            if set(defaults) != {"id"} or defaults["id"] != expected_default:
+                raise RuntimeError("audit table has incompatible column defaults")
 
             cursor.execute(
-                "SELECT pg_catalog.pg_get_expr(d.adbin, d.adrelid), "
-                "pg_catalog.pg_get_serial_sequence(%s, 'id') "
-                "FROM pg_catalog.pg_class c "
-                "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-                "JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attname = 'id' "
-                "LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum "
-                "WHERE n.nspname = %s AND c.relname = %s",
-                (table, self.schema, self.table),
+                "SELECT pg_catalog.pg_get_serial_sequence(%s, 'id')",
+                (table,),
             )
-            default_row = cursor.fetchone()
-            expected_default = f"nextval('{regclass_input}'::regclass)"
-            if default_row is None or str(default_row[0]) != expected_default:
-                actual_default = None if default_row is None else default_row[0]
-                raise RuntimeError(
-                    f"audit id default does not target the required sequence: {actual_default!r}"
-                )
+            default_sequence_row = cursor.fetchone()
+            default_sequence = None if default_sequence_row is None else default_sequence_row[0]
             cursor.execute(
                 "SELECT pg_catalog.to_regclass(%s) = pg_catalog.to_regclass(%s), "
                 "c.relkind, pg_catalog.format_type(s.seqtypid, NULL) "
@@ -591,7 +901,7 @@ class PostgresAuditStore:
                 "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
                 "LEFT JOIN pg_catalog.pg_sequence s ON s.seqrelid = c.oid "
                 "WHERE n.nspname = %s AND c.relname = %s",
-                (default_row[1], sequence, self.schema, self.sequence),
+                (default_sequence, sequence, self.schema, self.sequence),
             )
             sequence_row = cursor.fetchone()
             if (
@@ -664,7 +974,8 @@ class PostgresAuditStore:
                     raise RuntimeError(f"audit constraint {constraint_name} is not validated")
 
             cursor.execute(
-                "SELECT t.tgname, t.tgtype, t.tgenabled, fn_ns.nspname, fn.proname "
+                "SELECT t.tgname, t.tgtype, t.tgenabled, fn_ns.nspname, fn.proname, "
+                "t.tgqual IS NULL, pg_catalog.cardinality(t.tgattr) = 0 "
                 "FROM pg_catalog.pg_trigger t "
                 "JOIN pg_catalog.pg_proc fn ON fn.oid = t.tgfoid "
                 "JOIN pg_catalog.pg_namespace fn_ns ON fn_ns.oid = fn.pronamespace "
@@ -672,8 +983,8 @@ class PostgresAuditStore:
                 (table,),
             )
             expected_triggers = {
-                "audit_row_immutable": (27, "O", self.schema, self._row_guard),
-                "audit_table_immutable": (34, "O", self.schema, self._truncate_guard),
+                "audit_row_immutable": (27, "O", self.schema, self._row_guard, True, True),
+                "audit_table_immutable": (34, "O", self.schema, self._truncate_guard, True, True),
             }
             existing_triggers = {
                 str(name): (
@@ -681,8 +992,18 @@ class PostgresAuditStore:
                     str(enabled),
                     str(function_schema),
                     str(function_name),
+                    bool(qualifier_is_null),
+                    bool(attribute_list_is_empty),
                 )
-                for name, trigger_type, enabled, function_schema, function_name in cursor.fetchall()
+                for (
+                    name,
+                    trigger_type,
+                    enabled,
+                    function_schema,
+                    function_name,
+                    qualifier_is_null,
+                    attribute_list_is_empty,
+                ) in cursor.fetchall()
             }
             if any(
                 name not in expected_triggers or definition != expected_triggers[name]
@@ -724,6 +1045,21 @@ class PostgresAuditStore:
                 owner=owner,
                 require_complete=True,
             )
+            cursor.execute(f"LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE")
+            cursor.execute(f"SELECT MAX(id) FROM {table}")
+            maximum_id_row = cursor.fetchone()
+            if maximum_id_row is None:
+                raise RuntimeError("could not determine maximum retained audit id")
+            maximum_id = 0 if maximum_id_row[0] is None else int(maximum_id_row[0])
+            cursor.execute(f"SELECT last_value, is_called FROM {sequence}")
+            sequence_position = cursor.fetchone()
+            if sequence_position is None:
+                raise RuntimeError("could not determine audit sequence position")
+            next_id = int(sequence_position[0]) + int(bool(sequence_position[1]))
+            if next_id <= maximum_id or next_id > 9_223_372_036_854_775_807:
+                raise RuntimeError(
+                    "audit sequence position is incompatible with retained audit history"
+                )
             cursor.execute(
                 sql.SQL("REVOKE ALL PRIVILEGES ON SCHEMA {} FROM PUBLIC").format(
                     sql.Identifier(self.schema)
@@ -746,8 +1082,16 @@ class PostgresAuditStore:
                 )
             )
             cursor.execute(
-                sql.SQL("GRANT SELECT, INSERT ON TABLE {} TO {}").format(
+                sql.SQL("GRANT SELECT ON TABLE {} TO {}").format(
                     sql.SQL(table), sql.Identifier(role)
+                )
+            )
+            insert_columns = sql.SQL(", ").join(
+                sql.Identifier(column) for column in _AUDIT_INSERT_COLUMNS
+            )
+            cursor.execute(
+                sql.SQL("GRANT INSERT ({}) ON TABLE {} TO {}").format(
+                    insert_columns, sql.SQL(table), sql.Identifier(role)
                 )
             )
             cursor.execute(f"REVOKE ALL PRIVILEGES ON SEQUENCE {sequence} FROM PUBLIC")
@@ -791,10 +1135,32 @@ class PostgresAuditStore:
             object_owner, can_select, can_insert, can_update, can_delete, can_truncate = privileges
             if str(object_owner) == role:
                 raise ValueError("runtime_role must not own the audit table")
-            if not can_select or not can_insert:
-                raise RuntimeError("runtime_role must have effective SELECT and INSERT privileges")
+            if not can_select:
+                raise RuntimeError("runtime_role must have effective audit SELECT privileges")
+            if can_insert:
+                raise RuntimeError("runtime_role has effective table-level audit INSERT privileges")
             if can_update or can_delete or can_truncate:
                 raise RuntimeError("runtime_role has effective audit mutation privileges")
+
+            cursor.execute(
+                "SELECT a.attname, "
+                "pg_catalog.has_column_privilege(%s, c.oid, a.attname, 'INSERT') "
+                "FROM pg_catalog.pg_class c "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid "
+                "WHERE n.nspname = %s AND c.relname = %s "
+                "AND a.attnum > 0 AND NOT a.attisdropped",
+                (role, self.schema, self.table),
+            )
+            column_insert_privileges = {
+                str(column): bool(can_insert_column)
+                for column, can_insert_column in cursor.fetchall()
+            }
+            expected_column_insert_privileges = {
+                column: column in _AUDIT_INSERT_COLUMNS for column in _AUDIT_COLUMNS
+            }
+            if column_insert_privileges != expected_column_insert_privileges:
+                raise RuntimeError("runtime_role has incompatible audit column INSERT privileges")
 
             cursor.execute(
                 "SELECT pg_catalog.has_schema_privilege(%s, %s, 'CREATE'), "

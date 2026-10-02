@@ -70,6 +70,7 @@ version = "0.1.0"
 source = { editable = "services/config-service" }
 dependencies = [
     { name = "as-console" },
+    { name = "as-platform" },
     { name = "fastapi" },
     { name = "psycopg", extra = ["binary"] },
     { name = "uvicorn" },
@@ -83,6 +84,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "as-console", editable = "services/console" },
+    { name = "as-platform", editable = "platform" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
     { name = "uvicorn", specifier = ">=0.30" },

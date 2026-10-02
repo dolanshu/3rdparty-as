@@ -36,6 +36,8 @@ def apply_distributed_change(
     expected_change_order_revision: int,
     actor: str,
     now: float,
+    *,
+    commit: bool = True,
 ) -> StoredChangeOrder:
     """Apply a proposal and append APPLIED in one PostgreSQL transaction.
 
@@ -80,7 +82,8 @@ def apply_distributed_change(
             expected_revision=expected_change_order_revision,
             commit=False,
         )
-        connection.commit()
+        if commit:
+            connection.commit()
         return result
     except Exception:
         connection.rollback()

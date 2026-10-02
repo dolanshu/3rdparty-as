@@ -1,0 +1,56 @@
+{{- $config := .Values.services.configService -}}
+{{- $ingress := $config.ingress -}}
+{{- if $ingress.enabled -}}
+{{- if not $config.enabled -}}
+{{- fail "services.configService.enabled must be true when its Ingress is enabled" -}}
+{{- end -}}
+{{- if ne $ingress.className "nginx" -}}
+{{- fail "services.configService.ingress.className must be nginx; ingress-nginx is the only supported Ingress controller" -}}
+{{- end -}}
+{{- $host := required "services.configService.ingress.host is required when Ingress is enabled" $ingress.host -}}
+{{- $tlsSecret := required "services.configService.ingress.tlsSecretName is required when Ingress is enabled" $ingress.tlsSecretName -}}
+{{- if not $config.proxyHeaders -}}
+{{- fail "services.configService.proxyHeaders must be true when Ingress is enabled" -}}
+{{- end -}}
+{{- if not $config.trustedProxies -}}
+{{- fail "services.configService.trustedProxies must contain explicit proxy IPs/CIDRs when Ingress is enabled" -}}
+{{- end -}}
+{{- range $proxy := $config.trustedProxies -}}
+{{- $proxy = trim $proxy -}}
+{{- if not $proxy -}}
+{{- fail "services.configService.trustedProxies must not contain empty entries" -}}
+{{- end -}}
+{{- if or (eq $proxy "*") (hasSuffix "/0" $proxy) -}}
+{{- fail "services.configService.trustedProxies must not contain wildcard or default-route entries (* or /0)" -}}
+{{- end -}}
+{{- end -}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "as.fullname" . }}-config-service
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-service
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: {{ $ingress.className | quote }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $tlsSecret }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "as.fullname" . }}-config-service
+                port:
+                  name: http
+{{- end }}

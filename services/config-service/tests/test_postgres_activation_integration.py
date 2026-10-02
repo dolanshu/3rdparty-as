@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 import as_config_service.api as api_module
 from as_config_service.activation import apply_distributed_change
 from as_config_service.api import ApiIdentity, create_app
+from as_config_service.audit_store import PostgresAuditStore
 from as_config_service.change_order import (
     ChangeOrder,
     ChangeState,
@@ -38,6 +39,7 @@ from as_config_service.distribution_store import PostgresDistributionStore
 from as_config_service.distributor import DistributionState
 from as_config_service.managed_rule import ManagedRule, MatchField, MatchMode, TargetService
 from as_config_service.managed_rule_store import PostgresManagedRuleStore
+from as_console.access import AuditOutcome
 from as_platform.api.contract import ConfigBundle, RuleDTO, ToggleDTO
 
 pytestmark = pytest.mark.integration
@@ -47,6 +49,7 @@ TEST_DSN = os.environ.get(
 )
 _CONNECT_TIMEOUT_SECONDS = 3
 _NOW = 1_700_000_000.0
+_AUDIT_RESOURCE_HMAC_KEY = b"test-audit-resource-key-32-bytes"
 _NETWORK_UNAVAILABLE_MESSAGES = (
     "connection refused",
     "connection timed out",
@@ -62,8 +65,10 @@ class PgHarness:
     change_order_store: PostgresChangeOrderStore
     managed_rule_store: PostgresManagedRuleStore
     distribution_store: PostgresDistributionStore
+    audit_store: PostgresAuditStore
     connection: Any
     prefix: str
+    runtime_role: str
 
 
 def _is_network_unavailable(exc: BaseException, operational_error: type[BaseException]) -> bool:
@@ -76,12 +81,18 @@ def _is_network_unavailable(exc: BaseException, operational_error: type[BaseExce
 @pytest.fixture()
 def pg() -> Iterator[PgHarness]:
     psycopg = pytest.importorskip("psycopg")
+    from psycopg import sql
+
     parsed = urlparse(TEST_DSN)
     connection = None
     change_order_store = None
     managed_rule_store = None
     distribution_store = None
     prefix = f"activation_test_{uuid.uuid4().hex[:10]}"
+    audit_schema = f"{prefix}_audit"
+    runtime_role = f"{prefix}_runtime"
+    role_created = False
+    schema_created = False
     try:
         try:
             connection = psycopg.connect(TEST_DSN, connect_timeout=_CONNECT_TIMEOUT_SECONDS)
@@ -100,14 +111,69 @@ def pg() -> Iterator[PgHarness]:
             "PostgreSQL 12 or newer is required"
         )
 
-        change_order_store = PostgresChangeOrderStore(connection, prefix=f"{prefix}_orders")
-        managed_rule_store = PostgresManagedRuleStore(connection, prefix=f"{prefix}_rules")
-        distribution_store = PostgresDistributionStore(connection, prefix=f"{prefix}_distribution")
+        cursor.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(prefix)))
+        schema_created = True
+        cursor.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime_role)))
+        role_created = True
+        connection.commit()
+
+        change_order_store = PostgresChangeOrderStore(
+            connection, prefix=f"{prefix}_orders", schema=prefix
+        )
+        managed_rule_store = PostgresManagedRuleStore(
+            connection, prefix=f"{prefix}_rules", schema=prefix
+        )
+        distribution_store = PostgresDistributionStore(
+            connection, prefix=f"{prefix}_distribution", schema=prefix
+        )
         change_order_store.ensure_schema()
         managed_rule_store.ensure_schema()
         distribution_store.ensure_schema()
+        audit_store = PostgresAuditStore(connection, prefix=f"{prefix}_audit", schema=audit_schema)
+        audit_store.ensure_schema(runtime_role=runtime_role)
+
+        cursor.execute(
+            sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                sql.Identifier(prefix), sql.Identifier(runtime_role)
+            )
+        )
+        for table in (
+            change_order_store.heads_table,
+            change_order_store.events_table,
+            managed_rule_store.heads_table,
+            managed_rule_store.events_table,
+            distribution_store.heads_table,
+            distribution_store.events_table,
+        ):
+            cursor.execute(
+                sql.SQL("GRANT SELECT, INSERT, UPDATE ON TABLE {} TO {}").format(
+                    sql.SQL(table), sql.Identifier(runtime_role)
+                )
+            )
+        connection.commit()
+        cursor.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime_role)))
+        cursor.execute("SELECT current_user")
+        assert cursor.fetchone()[0] == runtime_role
+        connection.commit()
+
+        change_order_store = PostgresChangeOrderStore(
+            connection, prefix=f"{prefix}_orders", schema=prefix
+        )
+        managed_rule_store = PostgresManagedRuleStore(
+            connection, prefix=f"{prefix}_rules", schema=prefix
+        )
+        distribution_store = PostgresDistributionStore(
+            connection, prefix=f"{prefix}_distribution", schema=prefix
+        )
+        audit_store = PostgresAuditStore(connection, prefix=f"{prefix}_audit", schema=audit_schema)
         yield PgHarness(
-            change_order_store, managed_rule_store, distribution_store, connection, prefix
+            change_order_store,
+            managed_rule_store,
+            distribution_store,
+            audit_store,
+            connection,
+            prefix,
+            runtime_role,
         )
     finally:
         primary_exception = sys.exc_info()[1]
@@ -135,17 +201,23 @@ def pg() -> Iterator[PgHarness]:
             except BaseException as exc:
                 cleanup_errors.append(exc)
             if cursor is not None:
-                for store in (change_order_store, managed_rule_store, distribution_store):
-                    if store is None:
-                        continue
+                attempt_cleanup(connection.rollback)
+                try:
+                    cursor.execute("RESET ROLE")
+                    connection.commit()
+                except BaseException as exc:
+                    cleanup_errors.append(exc)
+                    attempt_cleanup(connection.rollback)
+                attempt_cleanup_statement(f'DROP SCHEMA IF EXISTS "{audit_schema}" CASCADE', cursor)
+                if schema_created:
                     attempt_cleanup_statement(
-                        f"DROP TABLE IF EXISTS {store.events_table} CASCADE", cursor
+                        sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(prefix)),
+                        cursor,
                     )
+                if role_created:
                     attempt_cleanup_statement(
-                        f"DROP TABLE IF EXISTS {store.heads_table} CASCADE", cursor
-                    )
-                    attempt_cleanup_statement(
-                        f"DROP FUNCTION IF EXISTS {store.guard_function}()", cursor
+                        sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime_role)),
+                        cursor,
                     )
                 attempt_cleanup(getattr(cursor, "close", lambda: None))
             attempt_cleanup(connection.close)
@@ -234,8 +306,16 @@ def _api_client(pg: PgHarness, *, now: float = _NOW + 10.0) -> TestClient:
             can_approve_change=lambda candidate: True,
             now=lambda: now,
             distribution_store=pg.distribution_store,
+            audit_store=pg.audit_store,
+            audit_resource_hmac_key=_AUDIT_RESOURCE_HMAC_KEY,
         )
     )
+
+
+def _audit_records(pg: PgHarness) -> tuple[Any, ...]:
+    events = pg.audit_store.list_events()
+    pg.connection.rollback()
+    return tuple(event.record for event in events)
 
 
 def _proposal_for_action(
@@ -368,6 +448,40 @@ def test_api_distribution_reports_activate_typed_rule_proposals_and_are_idempote
     )
     assert len(pg.change_order_store.history(approved_order.change_id)) == applied["revision"]
 
+    records = _audit_records(pg)
+    assert len(records) == 8
+    assert [record.outcome for record in records] == [
+        AuditOutcome.ALLOWED,
+        AuditOutcome.ALLOWED,
+        AuditOutcome.ALLOWED,
+        AuditOutcome.ALLOWED,
+        AuditOutcome.ALLOWED,
+        AuditOutcome.ALLOWED,
+        AuditOutcome.DENIED,
+        AuditOutcome.DENIED,
+    ]
+    assert records[1].before_value is records[1].after_value is None
+    assert all(records[index].before_value is not None for index in (0, 2, 3, 4, 5))
+    assert all(records[index].after_value is not None for index in (0, 2, 3, 4, 5))
+    assert records[3].after_value["distribution"]["distribution"]["state"] == "completed"
+    assert records[4].after_value["change_order"]["record"]["order"]["state"] == "applied"
+    activated_before_rule = records[4].before_value["managed_rule"]
+    activated_after_rule = records[4].after_value["managed_rule"]
+    if original is None:
+        assert activated_before_rule is None
+        assert activated_after_rule["revision"] == 1
+    else:
+        assert activated_before_rule["revision"] == 1
+        assert activated_before_rule["record"]["rule"]["name"] == original.name
+        assert activated_after_rule["revision"] == 2
+    if action is ManagedRuleChangeAction.DELETE:
+        assert activated_after_rule["record"]["rule"] is None
+    else:
+        assert activated_after_rule["record"]["rule"]["name"] == proposal.proposed_rule.name
+    assert records[5].before_value["managed_rule"] == records[5].after_value["managed_rule"]
+    assert records[6].before_value is records[6].after_value is None
+    assert records[7].before_value is records[7].after_value is None
+
 
 def test_distribution_status_missing_returns_404_and_releases_connection(pg: PgHarness) -> None:
     response = _api_client(pg).get("/internal/v1/change-orders/no-distribution/distribution")
@@ -402,8 +516,9 @@ def test_api_read_releases_connection_before_distribution_start(pg: PgHarness) -
 
 
 def test_api_request_scope_does_not_rollback_a_preexisting_transaction(pg: PgHarness) -> None:
+    client = _api_client(pg)
     pg.connection.execute("SELECT 1")
-    response = _api_client(pg).get("/internal/v1/change-orders")
+    response = client.get("/internal/v1/change-orders")
 
     assert response.status_code == 409
     assert pg.connection.info.transaction_status.name != "IDLE"
@@ -550,6 +665,11 @@ def test_unhealthy_report_rolls_back_distribution_and_order_atomically(pg: PgHar
     assert pg.distribution_store.history(approved_order.change_id)[-1].revision == 2
     assert pg.change_order_store.get(approved_order.change_id).revision == order_revision + 2
     assert pg.managed_rule_store.get(proposed.rule_id) is None
+    records = _audit_records(pg)
+    assert len(records) == 2
+    assert all(record.outcome is AuditOutcome.ALLOWED for record in records)
+    assert records[1].before_value["distribution"]["distribution"]["state"] == "in_progress"
+    assert records[1].after_value["distribution"]["distribution"]["state"] == "rolled_back"
 
 
 def test_manual_rollback_is_atomic_and_stale_report_is_rejected(pg: PgHarness) -> None:
@@ -584,6 +704,15 @@ def test_manual_rollback_is_atomic_and_stale_report_is_rejected(pg: PgHarness) -
     assert rolled_back.json()["change_order"]["record"]["order"]["state"] == "rolled_back"
     assert pg.managed_rule_store.list_latest() == ()
     assert len(pg.distribution_store.history(approved_order.change_id)) == 2
+    records = _audit_records(pg)
+    assert len(records) == 3
+    assert [record.outcome for record in records] == [
+        AuditOutcome.ALLOWED,
+        AuditOutcome.DENIED,
+        AuditOutcome.ALLOWED,
+    ]
+    assert records[2].before_value["distribution"]["distribution"]["state"] == "in_progress"
+    assert records[2].after_value["distribution"]["distribution"]["state"] == "rolled_back"
 
 
 def test_completed_distribution_survives_activation_failure_and_can_be_retried(
@@ -627,6 +756,15 @@ def test_completed_distribution_survives_activation_failure_and_can_be_retried(
     )
     assert pg.managed_rule_store.get(proposed.rule_id) is None
     pg.connection.commit()
+    records = _audit_records(pg)
+    assert len(records) == 3
+    assert [record.outcome for record in records] == [
+        AuditOutcome.ALLOWED,
+        AuditOutcome.ALLOWED,
+        AuditOutcome.DENIED,
+    ]
+    assert records[1].after_value["distribution"]["distribution"]["state"] == "completed"
+    assert records[2].before_value is records[2].after_value is None
 
     monkeypatch.setattr(api_module, "apply_distributed_change", coordinator)
     retried = client.post(
@@ -635,6 +773,10 @@ def test_completed_distribution_survives_activation_failure_and_can_be_retried(
     assert retried.status_code == 200, retried.text
     assert retried.json()["change_order"]["record"]["order"]["state"] == "applied"
     assert pg.managed_rule_store.get(proposed.rule_id).rule == proposed
+    records = _audit_records(pg)
+    assert len(records) == 4
+    assert records[3].outcome is AuditOutcome.ALLOWED
+    assert records[3].after_value["change_order"]["record"]["order"]["state"] == "applied"
 
 
 def test_create_proposal_and_applied_transition_share_one_transaction(pg: PgHarness) -> None:

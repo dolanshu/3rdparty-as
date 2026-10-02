@@ -1,0 +1,22 @@
+{{- if .Values.services.configService.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "as.fullname" . }}-config-service
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "as.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: config-service
+  ports:
+    - name: http
+      port: {{ .Values.services.configService.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

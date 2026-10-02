@@ -1,0 +1,93 @@
+{{- $config := .Values.services.configService -}}
+{{- if $config.enabled -}}
+{{- $secretName := required "services.configService.secretName is required when configService is enabled (external Secret with AS_CONFIG_DSN and AS_AUDIT_RESOURCE_HMAC_KEY_B64)" $config.secretName -}}
+{{- $runtimeRole := required "services.configService.runtimeRole is required when configService is enabled" $config.runtimeRole -}}
+{{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]{0,62}$" $runtimeRole) -}}
+{{- fail "services.configService.runtimeRole must be a PostgreSQL identifier" -}}
+{{- end -}}
+{{- $imageTag := default .Chart.AppVersion $config.image.tag -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "as.fullname" . }}-config-service
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-service
+spec:
+  replicas: {{ $config.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "as.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: config-service
+  template:
+    metadata:
+      labels:
+        {{- include "as.labels" . | nindent 8 }}
+        app.kubernetes.io/component: config-service
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: config-service
+          image: {{ printf "%s:%s" $config.image.repository $imageTag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $config.port }}
+              protocol: TCP
+          env:
+            - name: AS_CONFIG_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: AS_CONFIG_DSN
+            - name: AS_AUDIT_RESOURCE_HMAC_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: AS_AUDIT_RESOURCE_HMAC_KEY_B64
+            - name: AS_CONFIG_RUNTIME_ROLE
+              value: {{ $runtimeRole | quote }}
+            - name: AS_CONFIG_SCHEMA
+              value: {{ $config.configSchema | quote }}
+            - name: AS_AUDIT_SCHEMA
+              value: {{ $config.auditSchema | quote }}
+            - name: AS_CONFIG_HOST
+              value: {{ $config.host | quote }}
+            - name: AS_CONFIG_PORT
+              value: {{ $config.port | quote }}
+            - name: AS_CONFIG_PROXY_HEADERS
+              value: {{ $config.proxyHeaders | quote }}
+            {{- with $config.trustedProxies }}
+            - name: AS_CONFIG_TRUSTED_PROXIES
+              value: {{ join "," . | quote }}
+            {{- end }}
+          {{- with $config.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+{{- end }}

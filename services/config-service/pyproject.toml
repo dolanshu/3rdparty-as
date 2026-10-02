@@ -20,6 +20,7 @@ classifiers = [
 # wheel so a build host needs no libpq-dev; the driver is imported lazily, so
 # the package itself is importable without it. See ADR-0006, ADR-0007.
 dependencies = [
+  "as-platform",
     "as-console",
     "fastapi>=0.115",
     "psycopg[binary]>=3.1",
@@ -27,9 +28,12 @@ dependencies = [
 ]
 
 [project.scripts]
+as-config-migrate = "as_config_service.migrate:main"
 as-config-bootstrap-admin = "as_config_service.bootstrap_admin:main"
+as-config-service = "as_config_service.runtime:main"
 
 [tool.uv.sources]
+as-platform = { workspace = true }
 as-console = { workspace = true }
 
 [build-system]

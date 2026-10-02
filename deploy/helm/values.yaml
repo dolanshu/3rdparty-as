@@ -104,6 +104,35 @@ useCases:
     replicaCount: null
     resources: {}
 
+# Config-service control plane. Disabled by default so existing AS-only chart
+# installs do not acquire database credentials or an externally managed Secret.
+# Enabling it requires an external Secret and a pre-provisioned NOLOGIN runtime
+# role; the chart never creates or populates that Secret.
+services:
+  configService:
+    enabled: false
+    replicaCount: 1
+    image:
+      repository: "registry.example.com/3rdparty-as-config-service"
+      tag: ""
+    secretName: ""
+    runtimeRole: ""
+    configSchema: as_config
+    auditSchema: console_audit
+    host: "0.0.0.0"
+    port: 8000
+    proxyHeaders: false
+    trustedProxies: []
+    resources: {}
+    ingress:
+      enabled: false
+      # This chart's optional Ingress supports ingress-nginx only.
+      # It always redirects and forces HTTPS; other controllers need separately
+      # reviewed external configuration and must not use this template.
+      className: nginx
+      host: ""
+      tlsSecretName: ""
+
 # SIP listener settings. Ports are protocol constants (5060/5061), not capacity
 # figures.
 sip:

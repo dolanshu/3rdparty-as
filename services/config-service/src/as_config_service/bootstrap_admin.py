@@ -5,17 +5,25 @@ from __future__ import annotations
 import getpass
 import hmac
 import os
+import re
 import sys
 import time
 
 from as_config_service.auth import BootstrapAlreadyCompleteError, PostgresConsoleAuthStore
 
+_SAFE_SCHEMA = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
 
 def main() -> int:
     """Prompt for first-admin credentials and persist them using a temporary connection."""
-    dsn = os.environ.get("AS_CONFIG_DSN")
+    dsn = os.environ.get("AS_CONFIG_OWNER_DSN")
     if not dsn:
-        print("AS_CONFIG_DSN must be set.", file=sys.stderr)
+        print("AS_CONFIG_OWNER_DSN must be set.", file=sys.stderr)
+        return 1
+
+    schema = os.environ.get("AS_CONFIG_SCHEMA", "as_config")
+    if len(schema) > 63 or not _SAFE_SCHEMA.fullmatch(schema) or schema == "public":
+        print("First administrator bootstrap failed.", file=sys.stderr)
         return 1
 
     user_id = input("First administrator user ID: ")
@@ -30,7 +38,7 @@ def main() -> int:
         import psycopg
 
         connection = psycopg.connect(dsn)
-        store = PostgresConsoleAuthStore(connection)
+        store = PostgresConsoleAuthStore(connection, schema=schema)
         store.ensure_schema()
         store.bootstrap_admin(user_id, password, time.time())
     except BootstrapAlreadyCompleteError:

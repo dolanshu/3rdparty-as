@@ -317,6 +317,54 @@ h1 {
   gap: 14px;
 }
 
+.live-status {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 7px 11px;
+  border-left: 3px solid var(--blue);
+  background: var(--blue-soft);
+  color: #365a68;
+  font-size: 12px;
+}
+
+.live-status.is-error {
+  border-left-color: var(--coral);
+  background: var(--coral-soft);
+  color: #783a34;
+}
+
+.unavailable-panel {
+  padding: 22px 20px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--slate);
+  background: var(--surface);
+}
+
+.unavailable-panel h3 {
+  margin: 0 0 5px;
+  font-size: 14px;
+}
+
+.unavailable-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.login-modal {
+  width: min(460px, calc(100vw - 28px));
+}
+
+.login-modal .form-note {
+  border-left-color: var(--coral);
+  background: var(--coral-soft);
+  color: #783a34;
+}
+
 .environment-label,
 .snapshot-label {
   display: inline-flex;

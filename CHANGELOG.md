@@ -31,6 +31,8 @@
 - M4 配置治理内核（`services/config-service`）：变更单状态机（审批留痕、非法跳转拒绝）、不可变配置版本库、分批灰度分发与自动回滚。
 - 开关走变更流水线：`ConfigBundle` 新增 `ToggleDTO`（含强制的移除条件），与规则同属一个配置版本；开 / 关两态均有测试覆盖。
 - M4 控制台鉴权与审计（`services/console`）：角色 / 权限矩阵、提交者不得审批自己的变更、允许与拒绝均留痕、审计记录不可变。
+- M4b 控制面工程切片（2026-10-02/03）：持久化鉴权 / 审计集成、控制台实时读取 / 会话、复用 ChangeOrder 提交 / 批准 / 拒绝工作流、同源 ASGI 静态资源 / runtime factory / CLI，以及可选 Helm config-service 接线；仅为工程切片，不代表 REQ/M4b 验收。真实部署 HTTPS / ingress / proxy、无损规则编译、实时 trace、集群通知 / 健康、Helm 渲染与镜像构建仍未验证或待办。
+- 新增 owner-only PostgreSQL 设置命令 `as-config-migrate`：通过 store schema API 初始化专用 `as_config` 与 audit schema，仅向预配置 runtime role 授予所需的 config 表/列权限。数据库角色由 DBA 预先创建；owner DSN 仅供手动操作，绝不进入 web Pod。Runtime startup 仍无 DDL。Fake connection focused tests 通过；不声明 Helm render/deployment 或 M4b/M4/REQ acceptance。
 - 未决项 D7 裁决（ADR-0021）：运行态覆盖粒度为号段 + 稳定哈希百分比，判定幂等；`gating/overrides.py` 与其测试。
 - M5 部署产物：Helm 模板（每用例一 Deployment / Service、ConfigMap / Secret、HPA、PDB、SA、NOTES）与告警规则集（`deploy/alerts/`，8 条，只含比例 / 相对量 / 状态量阈值）。
 - 容量数字纪律：HPA 阈值与副本上下限留空并由 `required` 守卫，`deploy/` 全目录不含 CPS 或并发绝对值（O1 待 M6 实测）。

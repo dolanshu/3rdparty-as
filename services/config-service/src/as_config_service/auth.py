@@ -124,6 +124,16 @@ class IssuedSession:
     expires_at: float
 
 
+@dataclass(frozen=True)
+class RevokedSession:
+    """Audit-safe state for a revoked session; contains no token material."""
+
+    user_id: str
+    created_at: float
+    expires_at: float
+    revoked_at: float
+
+
 def _finite_time(value: object, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"{name} must be a finite number")
@@ -424,9 +434,7 @@ class PostgresConsoleAuthStore:
             raise TypeError("enabled must be a boolean")
         try:
             cursor = self._connection.cursor()
-            cursor.execute(
-                f"SELECT complete FROM {self.bootstrap_table} WHERE singleton = TRUE FOR UPDATE"
-            )
+            cursor.execute(f"SELECT complete FROM {self.bootstrap_table} WHERE singleton = TRUE")
             guard = cursor.fetchone()
             if guard is None:
                 raise RuntimeError("console auth schema is not initialized")
@@ -723,7 +731,9 @@ class PostgresConsoleAuthStore:
             raise
         return revoked
 
-    def revoke_session(self, token: str, now: float, *, commit: bool = True) -> bool:
+    def revoke_session(
+        self, token: str, now: float, *, commit: bool = True
+    ) -> RevokedSession | None:
         """Revoke only the session identified by ``token``.
 
         With ``commit=False``, success remains uncommitted; failures after
@@ -732,16 +742,24 @@ class PostgresConsoleAuthStore:
         timestamp = _finite_time(now, "now")
         digest = _token_digest(token)
         if digest is None:
-            return False
+            return None
+        revoked: RevokedSession | None = None
         try:
             cursor = self._connection.cursor()
             cursor.execute(
                 f"UPDATE {self.sessions_table} SET revoked_at = %s "
                 "WHERE token_digest = %s AND revoked_at IS NULL "
-                "RETURNING token_digest",
+                "RETURNING user_id, created_at, expires_at, revoked_at",
                 (timestamp, digest),
             )
-            revoked = cursor.fetchone() is not None
+            row = cursor.fetchone()
+            if row is not None:
+                revoked = RevokedSession(
+                    user_id=_user_id(row[0]),
+                    created_at=_finite_time(row[1], "created_at"),
+                    expires_at=_finite_time(row[2], "expires_at"),
+                    revoked_at=_finite_time(row[3], "revoked_at"),
+                )
             if commit:
                 self._connection.commit()
         except Exception:
