@@ -1,0 +1,7 @@
+{
+	auto_https off
+}
+
+:8080 {
+	respond /health 200 "{\"healthy\":true}"
+}

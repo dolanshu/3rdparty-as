@@ -37,7 +37,8 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | [0021](0021-runtime-override-granularity.md) | 运行态覆盖的判定粒度与 schema：号段 + 稳定哈希百分比，判定幂等（裁决未决项 D7） | — | accepted ✓ |
 | [0022](0022-resiprocate-b2bua-control.md) | reSIProcate DUM 协议机制之上的产品 `CallController`；语言桥接与状态恢复仍为阻塞项 | 8 | draft |
 | [0023](0023-redis-call-state-checkpoint.md) | 呼叫恢复方向：Redis 应用层必要状态 checkpoint；不序列化完整 DUM / `SipStack`（D10 仍未通过） | 2 | draft |
-| [0024](0024-console-password-sessions.md) | 控制台角色 + 密码认证与可撤销会话方案；待维护者评审，审计持久化仍未交付 | 18 | draft |
+| [0024](0024-console-password-sessions.md) | 控制台角色 + 密码认证与可撤销会话；M4b-6a/6b 工程切片；2026-10-03 维护者签核 accepted | 18 | accepted ✓ |
+| [0025](0025-managed-rule-runtime-bundle.md) | 管理面 `ManagedRule` → 内部 API `ConfigBundle`/`RuleDTO` 无损编译契约（v1：被叫 + 前缀子集） | 13 | draft |
 
 ## 规则
 

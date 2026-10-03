@@ -1254,3 +1254,109 @@ def test_write_transition_missing_order_maps_to_not_found() -> None:
     )
 
     assert response.status_code == 404
+
+
+def _called_rule_payload(rule_id: str = "rule-new") -> dict[str, object]:
+    return {
+        "rule_id": rule_id,
+        "name": "Called prefix route",
+        "match_field": "called",
+        "match_mode": "prefix",
+        "match_value": "+86755",
+        "target_service": "translation",
+        "enabled": True,
+        "target_detail": "return-uas",
+    }
+
+
+def test_propose_managed_rule_create_returns_draft_change_order() -> None:
+    journal = FakeChangeOrderStore()
+    rules = FakeManagedRuleStore(())
+    client = _client(
+        identity=Identity("ops-alice"),
+        submit_allowed=True,
+        change_id=lambda: "co-managed-create",
+        change_order_store=journal,
+        managed_rule_store=rules,
+    )
+
+    response = client.post("/internal/v1/managed-rules", json=_called_rule_payload())
+
+    assert response.status_code == 201
+    stored = journal.records["co-managed-create"]
+    assert stored.order.state is ChangeState.DRAFT
+    assert stored.order.bundle.rules == ()
+    proposal = stored.order.managed_rule_change
+    assert proposal is not None
+    assert proposal.action is ManagedRuleChangeAction.CREATE
+    assert proposal.proposed_rule is not None
+    assert proposal.proposed_rule.match_field is MatchField.CALLED
+    assert rules.mutation_calls == 0
+
+
+def test_propose_managed_rule_create_requires_submit_permission() -> None:
+    response = _client(identity=Identity("ops-alice"), submit_allowed=False).post(
+        "/internal/v1/managed-rules", json=_called_rule_payload()
+    )
+
+    assert response.status_code == 403
+
+
+def test_propose_managed_rule_create_rejects_existing_rule_id() -> None:
+    rules = FakeManagedRuleStore((_stored_rule("rule-new", _rule("rule-new"), 1),))
+    response = _client(
+        identity=Identity("ops-alice"),
+        submit_allowed=True,
+        managed_rule_store=rules,
+    ).post("/internal/v1/managed-rules", json=_called_rule_payload())
+
+    assert response.status_code == 409
+
+
+def test_propose_managed_rule_update_returns_draft_with_expected_revision() -> None:
+    journal = FakeChangeOrderStore()
+    live = _stored_rule("rule@region-1", _rule(), 2)
+    rules = FakeManagedRuleStore((live,))
+    client = _client(
+        identity=Identity("ops-alice"),
+        submit_allowed=True,
+        change_id=lambda: "co-managed-update",
+        change_order_store=journal,
+        managed_rule_store=rules,
+    )
+    payload = _called_rule_payload("rule@region-1")
+    payload["expected_revision"] = 2
+
+    response = client.put("/internal/v1/managed-rules/rule@region-1", json=payload)
+
+    assert response.status_code == 200
+    proposal = journal.records["co-managed-update"].order.managed_rule_change
+    assert proposal is not None
+    assert proposal.action is ManagedRuleChangeAction.UPDATE
+    assert proposal.expected_revision == 2
+
+
+def test_propose_managed_rule_delete_returns_tombstone_proposal() -> None:
+    journal = FakeChangeOrderStore()
+    live = _stored_rule("rule@region-1", _rule(), 2)
+    rules = FakeManagedRuleStore((live,))
+    client = _client(
+        identity=Identity("ops-alice"),
+        submit_allowed=True,
+        change_id=lambda: "co-managed-delete",
+        change_order_store=journal,
+        managed_rule_store=rules,
+    )
+
+    response = client.request(
+        "DELETE",
+        "/internal/v1/managed-rules/rule@region-1",
+        json={"expected_revision": 2},
+    )
+
+    assert response.status_code == 200
+    proposal = journal.records["co-managed-delete"].order.managed_rule_change
+    assert proposal is not None
+    assert proposal.action is ManagedRuleChangeAction.DELETE
+    assert proposal.proposed_rule is None
+    assert proposal.expected_revision == 2

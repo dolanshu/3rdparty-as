@@ -51,10 +51,11 @@ class _Cursor:
         if "pg_attribute" in statement:
             if self.connection.column_rows is not None:
                 return self.connection.column_rows
-            if self.connection.ensured_stores >= 4:
+            if self.connection.ensured_stores >= 6:
+                column_map = migrate._config_table_column_map("as_config")
                 return [
                     (table, column, "config_owner")
-                    for table, columns in migrate._CONFIG_TABLE_COLUMNS
+                    for table, columns in column_map.items()
                     for column in columns
                 ]
             return []
@@ -68,10 +69,10 @@ class _Cursor:
         if "pg_class" in statement:
             if self.connection.relation_rows is not None:
                 return self.connection.relation_rows
-            if self.connection.ensured_stores >= 4:
+            if self.connection.ensured_stores >= 6:
                 return [
                     (table, "r", "config_owner")
-                    for table, _columns in migrate._CONFIG_TABLE_COLUMNS
+                    for table in migrate._config_table_column_map("as_config")
                 ]
         return []
 
@@ -169,6 +170,7 @@ def _install_fake_stores(
         "PostgresChangeOrderStore",
         "PostgresDistributionStore",
         "PostgresConsoleAuthStore",
+        "PostgresAsInstanceStore",
     ):
 
         def factory(
@@ -193,6 +195,20 @@ def _install_fake_stores(
             self._connection.commit()
             events.append(("PostgresAuditStore", runtime_role))
 
+    class _VersionStore:
+        def __init__(self, _connection: Any, *, table: str) -> None:
+            assert isinstance(_connection, migrate._OwnerMigrationConnection)
+            assert _connection._connection is connection
+            assert table == "as_config_config_versions"
+            self._connection = _connection
+
+        def ensure_schema(self) -> None:
+            assert connection.commits == 0
+            self._connection.commit()
+            connection.ensured_stores += 1
+            events.append(("PostgresVersionStore", None))
+
+    monkeypatch.setattr(migrate, "PostgresVersionStore", _VersionStore)
     monkeypatch.setattr(migrate, "PostgresAuditStore", _AuditStore)
     return events
 
@@ -259,6 +275,8 @@ def test_schema_ensure_order_and_exact_runtime_grants(
         ("PostgresChangeOrderStore", None),
         ("PostgresDistributionStore", None),
         ("PostgresConsoleAuthStore", None),
+        ("PostgresAsInstanceStore", None),
+        ("PostgresVersionStore", None),
         ("PostgresAuditStore", "as_config_runtime"),
     ]
     statements = [statement for statement, _params in connection.statements]
@@ -282,8 +300,12 @@ def test_schema_ensure_order_and_exact_runtime_grants(
                 "distributions_events",
                 "console_auth_users",
                 "console_auth_sessions",
+                "as_instances",
             )
         ),
+        'GRANT UPDATE, DELETE ON TABLE "as_config"."as_instances" TO "as_config_runtime"',
+        'GRANT SELECT, INSERT ON TABLE "as_config"."as_config_config_versions" '
+        'TO "as_config_runtime"',
         'GRANT UPDATE ("current_revision") ON TABLE "as_config"."managed_rules_heads" '
         'TO "as_config_runtime"',
         'GRANT UPDATE ("latest_revision") ON TABLE "as_config"."change_orders_heads" '
@@ -303,11 +325,15 @@ def test_schema_ensure_order_and_exact_runtime_grants(
     column_revokes = [
         statement for statement in statements if statement.startswith("REVOKE ALL PRIVILEGES (")
     ]
+    version_table = migrate._version_table_name("as_config")
     assert set(column_revokes) == {
         "REVOKE ALL PRIVILEGES ("
         + ", ".join(f'"{column}"' for column in columns)
         + f') ON TABLE "as_config"."{table}" FROM PUBLIC, "as_config_runtime"'
-        for table, columns in migrate._CONFIG_TABLE_COLUMNS
+        for table, columns in (
+            *migrate._CONFIG_TABLE_COLUMNS,
+            (version_table, migrate._VERSION_TABLE_COLUMNS),
+        )
     }
     assert (
         'REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA "as_config" '
@@ -320,6 +346,7 @@ def test_schema_ensure_order_and_exact_runtime_grants(
     assert all(
         not any(forbidden in statement.upper() for forbidden in ("DELETE", "TRUNCATE", "CREATE"))
         for statement in grants
+        if "as_instances" not in statement
     )
     assert not any(
         statement.startswith(("CREATE ROLE", "ALTER ROLE", "SET ROLE")) for statement in statements

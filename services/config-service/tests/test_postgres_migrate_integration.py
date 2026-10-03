@@ -61,6 +61,8 @@ def test_owner_migration_creates_isolated_least_privilege_runtime_role() -> None
     from as_config_service.distribution_store import PostgresDistributionStore
     from as_config_service.managed_rule_store import PostgresManagedRuleStore
     from as_config_service.migrate import MigrationConfig, migrate_database
+    from as_config_service.postgres_store import PostgresVersionStore
+    from as_platform.api.contract import ConfigBundle
 
     suffix = uuid.uuid4().hex[:12]
     config_schema = f"migrate_config_test_{suffix}"
@@ -208,6 +210,7 @@ def test_owner_migration_creates_isolated_least_privilege_runtime_role() -> None
             audit_schema: (True, False),
         }
 
+        version_table = f"{config_schema}_config_versions"
         expected_updates = {
             "managed_rules_heads": {"current_revision"},
             "managed_rules_events": set(),
@@ -218,6 +221,7 @@ def test_owner_migration_creates_isolated_least_privilege_runtime_role() -> None
             "console_auth_users": {"roles_json", "password_verifier", "enabled", "updated_at"},
             "console_auth_sessions": {"revoked_at"},
             "console_auth_bootstrap": set(),
+            version_table: set(),
         }
         for table_name, update_columns in expected_updates.items():
             owner_cursor.execute(
@@ -321,6 +325,18 @@ def test_owner_migration_creates_isolated_least_privilege_runtime_role() -> None
         owner_connection.commit()
         assert counts_after == counts_before
         owner_cursor.close()
+
+        runtime_cursor.execute(
+            sql.SQL("SET LOCAL search_path TO {}, pg_catalog").format(sql.Identifier(config_schema))
+        )
+        version_store = PostgresVersionStore(runtime_connection, table=version_table)
+        appended = version_store.append(
+            ConfigBundle(version="1", rules=(), toggles=()),
+            now=1.0,
+            change_id="migrate-integration-test",
+        )
+        assert appended.version == 1
+        runtime_connection.commit()
 
     finally:
         primary_exception = sys.exc_info()[1]

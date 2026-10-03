@@ -39,6 +39,8 @@ from as_config_service.distribution_store import PostgresDistributionStore
 from as_config_service.distributor import DistributionState
 from as_config_service.managed_rule import ManagedRule, MatchField, MatchMode, TargetService
 from as_config_service.managed_rule_store import PostgresManagedRuleStore
+from as_config_service.postgres_store import PostgresVersionStore
+from as_config_service.runtime_bundle import BundleCompileError, EmptyActiveBundleError
 from as_console.access import AuditOutcome
 from as_platform.api.contract import ConfigBundle, RuleDTO, ToggleDTO
 
@@ -65,10 +67,12 @@ class PgHarness:
     change_order_store: PostgresChangeOrderStore
     managed_rule_store: PostgresManagedRuleStore
     distribution_store: PostgresDistributionStore
+    version_store: PostgresVersionStore
     audit_store: PostgresAuditStore
     connection: Any
     prefix: str
     runtime_role: str
+    version_table: str
 
 
 def _is_network_unavailable(exc: BaseException, operational_error: type[BaseException]) -> bool:
@@ -129,6 +133,9 @@ def pg() -> Iterator[PgHarness]:
         change_order_store.ensure_schema()
         managed_rule_store.ensure_schema()
         distribution_store.ensure_schema()
+        version_table = f"{prefix}_config_versions"
+        version_store = PostgresVersionStore(connection, table=version_table)
+        version_store.ensure_schema()
         audit_store = PostgresAuditStore(connection, prefix=f"{prefix}_audit", schema=audit_schema)
         audit_store.ensure_schema(runtime_role=runtime_role)
 
@@ -150,6 +157,11 @@ def pg() -> Iterator[PgHarness]:
                     sql.SQL(table), sql.Identifier(runtime_role)
                 )
             )
+        cursor.execute(
+            sql.SQL("GRANT SELECT, INSERT ON TABLE {} TO {}").format(
+                sql.Identifier(version_table), sql.Identifier(runtime_role)
+            )
+        )
         connection.commit()
         cursor.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime_role)))
         cursor.execute("SELECT current_user")
@@ -166,14 +178,17 @@ def pg() -> Iterator[PgHarness]:
             connection, prefix=f"{prefix}_distribution", schema=prefix
         )
         audit_store = PostgresAuditStore(connection, prefix=f"{prefix}_audit", schema=audit_schema)
+        version_store = PostgresVersionStore(connection, table=version_table)
         yield PgHarness(
             change_order_store,
             managed_rule_store,
             distribution_store,
+            version_store,
             audit_store,
             connection,
             prefix,
             runtime_role,
+            version_table,
         )
     finally:
         primary_exception = sys.exc_info()[1]
@@ -214,6 +229,12 @@ def pg() -> Iterator[PgHarness]:
                         sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(prefix)),
                         cursor,
                     )
+                    attempt_cleanup_statement(
+                        sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                            sql.Identifier(f"{prefix}_config_versions")
+                        ),
+                        cursor,
+                    )
                 if role_created:
                     attempt_cleanup_statement(
                         sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime_role)),
@@ -236,12 +257,12 @@ def _rule(rule_id: str = "rule-1", **overrides: object) -> ManagedRule:
     values: dict[str, object] = {
         "rule_id": rule_id,
         "name": "International callers",
-        "match_field": MatchField.CALLING,
+        "match_field": MatchField.CALLED,
         "match_mode": MatchMode.PREFIX,
         "match_value": "+8613",
         "target_service": TargetService.TRANSLATION,
         "enabled": True,
-        "target_detail": None,
+        "target_detail": "return-uas",
     }
     values.update(overrides)
     return ManagedRule(**values)  # type: ignore[arg-type]
@@ -306,6 +327,7 @@ def _api_client(pg: PgHarness, *, now: float = _NOW + 10.0) -> TestClient:
             can_approve_change=lambda candidate: True,
             now=lambda: now,
             distribution_store=pg.distribution_store,
+            version_store=pg.version_store,
             audit_store=pg.audit_store,
             audit_resource_hmac_key=_AUDIT_RESOURCE_HMAC_KEY,
         )
@@ -338,7 +360,6 @@ def _proposal_for_action(
     [
         ManagedRuleChangeAction.CREATE,
         ManagedRuleChangeAction.UPDATE,
-        ManagedRuleChangeAction.DELETE,
     ],
 )
 def test_api_distribution_reports_activate_typed_rule_proposals_and_are_idempotent(
@@ -934,6 +955,89 @@ def test_legacy_order_without_proposal_can_be_marked_applied(pg: PgHarness) -> N
     assert applied.order.state is ChangeState.APPLIED
     assert pg.managed_rule_store.list_latest() == ()
     assert pg.managed_rule_store.history("rule-1") == ()
+
+
+def test_apply_create_called_rule_appends_compiled_bundle_to_version_store(pg: PgHarness) -> None:
+    proposed = _rule(
+        match_field=MatchField.CALLED,
+        target_detail="return-uas",
+    )
+    distributing, revision = _distributing_order(
+        pg,
+        ManagedRuleChange(ManagedRuleChangeAction.CREATE, proposed.rule_id, proposed, None),
+        "co-version-create",
+    )
+
+    applied = apply_distributed_change(
+        pg.change_order_store,
+        pg.managed_rule_store,
+        distributing.change_id,
+        revision,
+        "ops-alice",
+        _NOW + 4.0,
+        version_store=pg.version_store,
+        bundle_version="7",
+    )
+
+    assert applied.order.state is ChangeState.APPLIED
+    stored_version = pg.version_store.latest()
+    assert stored_version is not None
+    assert stored_version.change_id == distributing.change_id
+    assert stored_version.bundle.version == "7"
+    assert stored_version.bundle.rules == (
+        RuleDTO(proposed.rule_id, "+8613", "translate", "return-uas"),
+    )
+
+
+def test_apply_calling_rule_proposal_fails_bundle_compile_with_version_store(pg: PgHarness) -> None:
+    proposed = _rule(match_field=MatchField.CALLING)
+    distributing, revision = _distributing_order(
+        pg,
+        ManagedRuleChange(ManagedRuleChangeAction.CREATE, proposed.rule_id, proposed, None),
+        "co-version-calling",
+    )
+
+    with pytest.raises(BundleCompileError):
+        apply_distributed_change(
+            pg.change_order_store,
+            pg.managed_rule_store,
+            distributing.change_id,
+            revision,
+            "ops-alice",
+            _NOW + 4.0,
+            version_store=pg.version_store,
+            bundle_version="8",
+        )
+
+    assert pg.managed_rule_store.get(proposed.rule_id) is None
+    assert pg.version_store.latest() is None
+
+
+def test_apply_delete_last_rule_rejects_empty_fleet_bundle(pg: PgHarness) -> None:
+    original = _rule(match_field=MatchField.CALLED, target_detail="return-uas")
+    initial = pg.managed_rule_store.create(original, "seed", "ops-alice", _NOW)
+    proposal = ManagedRuleChange(
+        ManagedRuleChangeAction.DELETE,
+        original.rule_id,
+        None,
+        initial.revision,
+    )
+    distributing, revision = _distributing_order(pg, proposal, "co-version-empty")
+
+    with pytest.raises(EmptyActiveBundleError):
+        apply_distributed_change(
+            pg.change_order_store,
+            pg.managed_rule_store,
+            distributing.change_id,
+            revision,
+            "ops-alice",
+            _NOW + 4.0,
+            version_store=pg.version_store,
+            bundle_version="9",
+        )
+
+    assert pg.managed_rule_store.get(original.rule_id) == initial
+    assert pg.version_store.latest() is None
 
 
 def test_different_connection_objects_are_rejected_before_state_changes(pg: PgHarness) -> None:

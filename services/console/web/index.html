@@ -65,6 +65,7 @@
             <button class="button button-secondary" id="login-button" type="button">Sign in</button>
             <button class="button button-secondary" id="logout-button" type="button" hidden>Sign out</button>
             <button class="button button-primary" id="create-rule-button" type="button">New rule</button>
+            <button class="button button-primary" id="create-instance-button" type="button" hidden>New instance</button>
           </div>
         </header>
 
@@ -255,8 +256,49 @@
           </div>
 
           <div class="unavailable-panel" id="operations-unavailable" data-live-only hidden>
-            <h3>Live operations data unavailable</h3>
-            <p>This console has no live telemetry endpoint. Fixture metrics and service events are shown only in preview mode.</p>
+            <h3>Live telemetry unavailable</h3>
+            <p>Call metrics and service events are not connected. Fleet instance inventory is maintained below when signed in.</p>
+          </div>
+
+          <div class="panel table-panel" id="fleet-live-panel" data-live-only hidden>
+            <div class="table-toolbar">
+              <div class="table-heading">
+                <h3>Fleet inventory</h3>
+                <span class="table-count" id="fleet-result-count">0 entries</span>
+              </div>
+              <div class="filter-group">
+                <label class="field-compact" for="fleet-search">
+                  <span>Filter instances</span>
+                  <input id="fleet-search" type="search" placeholder="Instance ID, notify URL, health URL" autocomplete="off" />
+                </label>
+                <label class="field-compact" for="fleet-state-filter">
+                  <span>State</span>
+                  <select id="fleet-state-filter">
+                    <option value="all">All states</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="table-scroll" tabindex="0" aria-label="Fleet instance inventory; scroll horizontally if needed">
+              <table>
+                <caption class="sr-only">Registered AS fleet instances</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Instance</th>
+                    <th scope="col">Use case</th>
+                    <th scope="col">Notify URL</th>
+                    <th scope="col">Health URL</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Revision</th>
+                    <th scope="col"><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody id="fleet-table-body"></tbody>
+              </table>
+            </div>
+            <p class="form-note" id="fleet-live-note">Changes write directly to fleet inventory. Approver or admin role required.</p>
           </div>
 
           <dl class="metric-strip" aria-label="Fixture metric summary" data-preview-only>
@@ -371,6 +413,10 @@
           <button class="button button-secondary" type="button" data-close-dialog>Close</button>
         </header>
         <div class="form-grid">
+          <label class="form-field form-span-two" for="rule-id" id="rule-id-field" hidden>
+            <span>Rule ID</span>
+            <input id="rule-id" name="ruleId" type="text" maxlength="256" autocomplete="off" />
+          </label>
           <label class="form-field form-span-two" for="rule-name">
             <span>Name</span>
             <input id="rule-name" name="name" type="text" maxlength="80" required />
@@ -389,6 +435,12 @@
               <option value="Regex">Regular expression</option>
             </select>
           </label>
+          <p id="rule-m4-scope-hint" class="form-hint form-span-two" hidden>
+            Live console (M4): rules match the <strong>called</strong> number using a <strong>prefix</strong> only (REQ-F-6/F-7). Calling-party and regex modes are planned for v1.1.
+          </p>
+          <p id="rule-legacy-scope-note" class="form-hint form-span-two" hidden>
+            This rule uses calling-party or regex matching, which is outside the M4 live console scope. Propose changes via API in v1.1.
+          </p>
           <label class="form-field form-span-two" for="rule-match-value">
             <span>Match value</span>
             <input id="rule-match-value" name="matchValue" type="text" maxlength="160" required />
@@ -412,10 +464,53 @@
             <span>Enabled when approved</span>
           </label>
         </div>
-        <p class="form-note">Submitting creates a local change order. The active rule changes only after approval in this preview.</p>
+        <p class="form-note" data-preview-only>Submitting creates a local change order. The active rule changes only after approval in this preview.</p>
+        <p class="form-note" data-live-only hidden>Submitting proposes a draft change order on the server. Only called-party prefix rules are guaranteed to compile at activation today; other combinations may draft but fail later.</p>
         <footer class="modal-actions">
           <button class="button button-secondary" type="button" data-close-dialog>Cancel</button>
-          <button class="button button-primary" type="submit">Queue for approval</button>
+          <button class="button button-primary" id="rule-form-submit" type="submit">Queue for approval</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="instance-dialog" aria-labelledby="instance-dialog-title">
+      <form id="instance-form" class="modal-form">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">FLEET INVENTORY</p>
+            <h2 id="instance-dialog-title">New instance</h2>
+          </div>
+          <button class="button button-secondary" type="button" data-close-dialog>Close</button>
+        </header>
+        <div class="form-grid">
+          <label class="form-field form-span-two" for="instance-id-field" id="instance-id-row" hidden>
+            <span>Instance ID</span>
+            <input id="instance-id-field" name="instanceId" type="text" maxlength="256" autocomplete="off" />
+          </label>
+          <label class="form-field" for="instance-use-case">
+            <span>Use case</span>
+            <select id="instance-use-case" name="useCase" required>
+              <option value="translation">Translation</option>
+              <option value="anti-fraud">Anti-fraud</option>
+            </select>
+          </label>
+          <label class="check-field" for="instance-enabled">
+            <input id="instance-enabled" name="enabled" type="checkbox" checked />
+            <span>Enabled for distribution</span>
+          </label>
+          <label class="form-field form-span-two" for="instance-notify-url">
+            <span>Notify URL</span>
+            <input id="instance-notify-url" name="notifyUrl" type="url" maxlength="2048" placeholder="https://as.example/notify" />
+          </label>
+          <label class="form-field form-span-two" for="instance-health-url">
+            <span>Health URL</span>
+            <input id="instance-health-url" name="healthUrl" type="url" maxlength="2048" placeholder="https://as.example/health" />
+          </label>
+        </div>
+        <p class="form-note" data-live-only hidden>Leave URL fields empty when an instance has no endpoint yet.</p>
+        <footer class="modal-actions">
+          <button class="button button-secondary" type="button" data-close-dialog>Cancel</button>
+          <button class="button button-primary" id="instance-form-submit" type="submit">Save instance</button>
         </footer>
       </form>
     </dialog>
@@ -441,6 +536,44 @@
           </section>
         </div>
         <p class="review-status" id="review-status" role="status"></p>
+        <section class="review-distribution panel" id="review-distribution" data-live-only hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">DISTRIBUTION</p>
+              <h3>Fleet rollout</h3>
+            </div>
+          </div>
+          <p class="form-hint" id="distribution-hint">Approved changes activate only after distribution completes and health checks pass.</p>
+          <div id="distribution-start-panel">
+            <label class="form-field" for="distribution-version">
+              <span>Plan version (integer)</span>
+              <input id="distribution-version" type="number" min="1" step="1" value="1" required />
+            </label>
+            <label class="form-field" for="distribution-batch-mode">
+              <span>Batch layout</span>
+              <select id="distribution-batch-mode">
+                <option value="single">All enabled instances in one batch</option>
+                <option value="per-instance">One instance per batch</option>
+              </select>
+            </label>
+            <button class="button button-primary" type="button" id="distribution-start">Start distribution</button>
+          </div>
+          <div id="distribution-active-panel" hidden>
+            <dl class="distribution-summary" id="distribution-summary"></dl>
+            <div class="modal-actions">
+              <button class="button button-primary" type="button" id="distribution-report-batch">Report current batch healthy</button>
+              <button class="button button-secondary" type="button" id="distribution-show-rollback">Rollback…</button>
+            </div>
+            <form class="reject-form" id="distribution-rollback-form" hidden>
+              <label class="form-field" for="distribution-rollback-reason">
+                <span>Rollback reason <span class="required-note">Required</span></span>
+                <textarea id="distribution-rollback-reason" rows="2" maxlength="500" required></textarea>
+              </label>
+              <button class="button button-danger" type="submit">Confirm rollback</button>
+            </form>
+          </div>
+          <p class="form-hint" id="distribution-empty-instances" hidden>No enabled fleet instances. Register instances under Operations first.</p>
+        </section>
         <div class="review-actions" id="review-actions">
           <button class="button button-secondary" id="show-reject-form" type="button">Reject…</button>
           <button class="button button-primary" id="approve-change" type="button">Approve change</button>

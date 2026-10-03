@@ -14,6 +14,8 @@ from as_config_service.change_order_store import (
     StoredChangeOrder,
 )
 from as_config_service.managed_rule_store import PostgresManagedRuleStore
+from as_config_service.runtime_bundle import EmptyActiveBundleError, compile_active_bundle
+from as_config_service.version_store import VersionStore
 
 
 class _Connection(Protocol):
@@ -37,6 +39,8 @@ def apply_distributed_change(
     actor: str,
     now: float,
     *,
+    version_store: VersionStore | None = None,
+    bundle_version: str | None = None,
     commit: bool = True,
 ) -> StoredChangeOrder:
     """Apply a proposal and append APPLIED in one PostgreSQL transaction.
@@ -48,6 +52,13 @@ def apply_distributed_change(
     connection = change_order_store.connection
     if managed_rule_store.connection is not connection:
         raise ValueError("change-order and managed-rule stores must share one connection")
+    version_connection = getattr(version_store, "connection", None)
+    if (
+        version_store is not None
+        and version_connection is not None
+        and version_connection is not connection
+    ):
+        raise ValueError("version store must share the activation connection")
     _require_idle_connection(connection)
 
     try:
@@ -77,6 +88,18 @@ def apply_distributed_change(
                     expected_revision=proposal.expected_revision,
                     commit=False,
                 )
+        if version_store is not None:
+            if bundle_version is None or not str(bundle_version).strip():
+                raise ValueError("bundle_version is required when version_store is set")
+            bundle = compile_active_bundle(str(bundle_version).strip(), managed_rule_store)
+            if not bundle.rules:
+                raise EmptyActiveBundleError()
+            version_store.append(
+                bundle,
+                now,
+                change_id=change_id,
+                commit=False,
+            )
         result = change_order_store.append_transition(
             applied_order,
             expected_revision=expected_change_order_revision,

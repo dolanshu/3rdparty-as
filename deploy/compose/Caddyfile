@@ -1,0 +1,12 @@
+{
+	auto_https off
+}
+
+https://localhost, https://127.0.0.1 {
+	tls /etc/caddy/certs/tls.crt /etc/caddy/certs/tls.key
+
+	reverse_proxy config-service:8000 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+}

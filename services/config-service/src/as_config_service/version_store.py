@@ -58,6 +58,8 @@ class VersionStore(Protocol):
         bundle: ConfigBundle,
         now: float,
         change_id: str | None = None,
+        *,
+        commit: bool = True,
     ) -> ConfigVersion:
         """Append a version. The history already written is never modified.
 
@@ -65,6 +67,7 @@ class VersionStore(Protocol):
             bundle: The configuration to store as the new version.
             now: When the row is written, injected by the caller.
             change_id: The change order that produced this version.
+            commit: When ``False``, leave the transaction open for the caller.
 
         Returns:
             The appended version, numbered one higher than the previous head.
@@ -126,6 +129,8 @@ class InMemoryVersionStore:
         bundle: ConfigBundle,
         now: float | None = None,
         change_id: str | None = None,
+        *,
+        commit: bool = True,
     ) -> ConfigVersion:
         """Append a version, leaving every existing row untouched. See ADR-0006.
 
@@ -134,6 +139,7 @@ class InMemoryVersionStore:
             now: When the row is written, injected by the caller. ``None`` falls
                 back to the clock this store was built with.
             change_id: The change order that produced this version.
+            commit: Ignored; the in-memory store has no database transaction.
 
         Returns:
             The appended version, whose number is one higher than the previous

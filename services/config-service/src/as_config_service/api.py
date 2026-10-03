@@ -25,6 +25,15 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from starlette.staticfiles import StaticFiles
 
 from as_config_service.activation import apply_distributed_change
+from as_config_service.as_instance import AsInstance, AsUseCase
+from as_config_service.as_instance_store import (
+    AsInstanceNotFoundError,
+    AsInstanceStore,
+    DuplicateAsInstanceError,
+    PostgresAsInstanceStore,
+    StaleAsInstanceRevisionError,
+    StoredAsInstance,
+)
 from as_config_service.audit_store import PostgresAuditStore
 from as_config_service.auth import (
     ConsoleBootstrapRequiredError,
@@ -70,6 +79,12 @@ from as_config_service.distributor import (
     DistributionState,
     IllegalDistributionStateError,
 )
+from as_config_service.fleet_health import FleetHealthProbeError, probe_instance_health
+from as_config_service.fleet_notify import (
+    FleetNotifyError,
+    build_notify_payload,
+    post_distribution_notify,
+)
 from as_config_service.managed_rule import ManagedRule, MatchField, MatchMode, TargetService
 from as_config_service.managed_rule_store import (
     ManagedRuleStore,
@@ -78,6 +93,9 @@ from as_config_service.managed_rule_store import (
     StoredManagedRule,
     serialize_managed_rule,
 )
+from as_config_service.postgres_store import PostgresVersionStore
+from as_config_service.runtime_bundle import BundleCompileError, EmptyActiveBundleError
+from as_config_service.version_store import VersionStore
 from as_console.access import AuditOutcome, AuditRecord, Permission, Principal, Role, authorize
 from as_platform.api.contract import ConfigBundle, RuleDTO, ToggleDTO
 
@@ -228,6 +246,58 @@ class CreateChangeOrderRequest(_ResponseModel):
     managed_rule_change: ManagedRuleChangeResponse | None = None
 
 
+class ManagedRuleUpdateRequest(ManagedRuleRecordResponse):
+    """Managed-rule body plus the revision the client last observed."""
+
+    expected_revision: int = Field(gt=0, strict=True)
+
+
+class ManagedRuleDeleteRequest(_ResponseModel):
+    """Compare-and-swap revision for a managed-rule deletion proposal."""
+
+    expected_revision: int = Field(gt=0, strict=True)
+
+
+class AsInstanceRecordResponse(_ResponseModel):
+    """Serialized fleet instance inventory row."""
+
+    instance_id: str
+    use_case: Literal["translation", "anti-fraud"]
+    notify_url: str | None
+    health_url: str | None
+    enabled: bool
+
+
+class AsInstanceResponse(_ResponseModel):
+    """Fleet instance row and its positive store revision."""
+
+    revision: int = Field(gt=0)
+    instance_id: str
+    use_case: Literal["translation", "anti-fraud"]
+    notify_url: str | None
+    health_url: str | None
+    enabled: bool
+    change_id: str
+    actor: str
+    updated_at: float
+
+
+class CreateAsInstanceRequest(AsInstanceRecordResponse):
+    """Body for registering a new fleet instance."""
+
+
+class UpdateAsInstanceRequest(AsInstanceRecordResponse):
+    """Fleet instance body plus the revision the client last observed."""
+
+    expected_revision: int = Field(gt=0, strict=True)
+
+
+class DeleteAsInstanceRequest(_ResponseModel):
+    """Compare-and-swap revision for fleet instance removal."""
+
+    expected_revision: int = Field(gt=0, strict=True)
+
+
 class RejectChangeOrderRequest(_ResponseModel):
     """Reason recorded in the rejection audit entry."""
 
@@ -368,12 +438,16 @@ def create_app(
     now: Clock = time.time,
     new_change_id: ChangeIdFactory = lambda: str(uuid4()),
     distribution_store: PostgresDistributionStore | None = None,
+    version_store: VersionStore | None = None,
     can_manage_users: UserManagementAuthorizer | None = None,
     auth_store: PostgresConsoleAuthStore | None = None,
+    as_instance_store: AsInstanceStore | None = None,
     audit_store: PostgresAuditStore | None = None,
     *,
     allow_unaudited_callback_mode: bool = False,
     audit_resource_hmac_key: bytes | None = None,
+    fleet_notify_opener: Callable[..., Any] | None = None,
+    fleet_health_opener: Callable[..., Any] | None = None,
 ) -> FastAPI:
     """Build the API around injected stores, identity, and authorization callbacks.
 
@@ -394,7 +468,14 @@ def create_app(
         raise ValueError("audit_resource_hmac_key must be exactly 32 bytes when audit_store is set")
     api_request_lock = Lock()
     connections_by_id: dict[int, Any] = {}
-    request_stores = (managed_rule_store, change_order_store, distribution_store, auth_store)
+    request_stores = (
+        managed_rule_store,
+        change_order_store,
+        distribution_store,
+        version_store,
+        auth_store,
+        as_instance_store,
+    )
     for store in (*request_stores, audit_store):
         connection = getattr(store, "connection", None)
         if connection is not None:
@@ -410,7 +491,9 @@ def create_app(
                     PostgresChangeOrderStore,
                     PostgresManagedRuleStore,
                     PostgresDistributionStore,
+                    PostgresVersionStore,
                     PostgresConsoleAuthStore,
+                    PostgresAsInstanceStore,
                     PostgresAuditStore,
                 ),
             )
@@ -685,23 +768,165 @@ def create_app(
     def require_distribution_store() -> PostgresDistributionStore:
         if distribution_store is None:
             raise HTTPException(status_code=503, detail="distribution API unavailable")
-        if not isinstance(change_order_store, PostgresChangeOrderStore) or not isinstance(
-            managed_rule_store, PostgresManagedRuleStore
-        ):
-            raise HTTPException(status_code=503, detail="distribution API unavailable")
         if (
-            distribution_store.connection is not change_order_store.connection
-            or distribution_store.connection is not managed_rule_store.connection
+            isinstance(change_order_store, PostgresChangeOrderStore)
+            and isinstance(managed_rule_store, PostgresManagedRuleStore)
+            and (
+                distribution_store.connection is not change_order_store.connection
+                or distribution_store.connection is not managed_rule_store.connection
+            )
         ):
             raise HTTPException(status_code=503, detail="distribution storage unavailable")
         return distribution_store
 
-    def require_activation_stores() -> tuple[PostgresChangeOrderStore, PostgresManagedRuleStore]:
+    def require_activation_stores() -> tuple[
+        PostgresChangeOrderStore, PostgresManagedRuleStore, VersionStore | None
+    ]:
         if not isinstance(change_order_store, PostgresChangeOrderStore) or not isinstance(
             managed_rule_store, PostgresManagedRuleStore
         ):
             raise HTTPException(status_code=503, detail="distribution API unavailable")
-        return change_order_store, managed_rule_store
+        return change_order_store, managed_rule_store, version_store
+
+    def activation_bundle_version(plan_version: int) -> str:
+        return str(plan_version)
+
+    def require_as_instance_store() -> AsInstanceStore:
+        if as_instance_store is None:
+            raise HTTPException(status_code=503, detail="fleet instance inventory unavailable")
+        return as_instance_store
+
+    def as_instance_response(stored: StoredAsInstance) -> dict[str, object]:
+        return {
+            "revision": stored.revision,
+            "instance_id": stored.instance.instance_id,
+            "use_case": stored.instance.use_case.value,
+            "notify_url": stored.instance.notify_url,
+            "health_url": stored.instance.health_url,
+            "enabled": stored.instance.enabled,
+            "change_id": stored.change_id,
+            "actor": stored.actor,
+            "updated_at": stored.updated_at,
+        }
+
+    def as_instance_from_record(
+        record: AsInstanceRecordResponse, *, instance_id: str | None = None
+    ) -> AsInstance:
+        resolved_id = instance_id if instance_id is not None else record.instance_id
+        return AsInstance(
+            instance_id=resolved_id,
+            use_case=AsUseCase(record.use_case),
+            notify_url=record.notify_url,
+            health_url=record.health_url,
+            enabled=record.enabled,
+        )
+
+    def validate_fleet_batch_inventory(instance_ids: tuple[str, ...]) -> None:
+        if as_instance_store is None:
+            return
+        store = require_as_instance_store()
+        for instance_id in instance_ids:
+            stored = store.get(instance_id)
+            if stored is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"fleet instance not in inventory: {instance_id}",
+                )
+            if not stored.instance.enabled:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"fleet instance disabled: {instance_id}",
+                )
+
+    def notify_fleet_distribution_start(
+        change_id: str, version: int, instance_ids: tuple[str, ...]
+    ) -> None:
+        if as_instance_store is None:
+            return
+        store = require_as_instance_store()
+        bundle_version = activation_bundle_version(version)
+        payload = build_notify_payload(change_id, version, bundle_version)
+        for instance_id in instance_ids:
+            stored = store.get(instance_id)
+            if stored is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"fleet instance not in inventory: {instance_id}",
+                )
+            notify_url = stored.instance.notify_url
+            if notify_url is None or not notify_url.strip():
+                continue
+            try:
+                post_distribution_notify(
+                    notify_url,
+                    payload,
+                    opener=fleet_notify_opener,
+                )
+            except FleetNotifyError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"fleet notify failed for {instance_id}",
+                ) from exc
+
+    def validate_fleet_health_reports(reports: dict[str, bool], batch: tuple[str, ...]) -> None:
+        if as_instance_store is None:
+            return
+        store = require_as_instance_store()
+        for instance_id in batch:
+            stored = store.get(instance_id)
+            if stored is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"fleet instance not in inventory: {instance_id}",
+                )
+            health_url = stored.instance.health_url
+            if health_url is None or not health_url.strip():
+                continue
+            try:
+                probed = probe_instance_health(health_url, opener=fleet_health_opener)
+            except FleetHealthProbeError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"fleet health probe failed for {instance_id}",
+                ) from exc
+            if reports[instance_id] != probed:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"fleet health report mismatch for {instance_id}",
+                )
+
+    def create_managed_rule_draft(
+        request: Request,
+        identity: ApiIdentity,
+        proposal: ManagedRuleChange,
+    ) -> dict[str, object]:
+        require_submit_permission(identity)
+        change_id = _validate_path_id(new_change_id())
+        try:
+            order = ChangeOrder(
+                change_id=change_id,
+                state=ChangeState.DRAFT,
+                bundle=ConfigBundle(version="draft", rules=(), toggles=()),
+                created_by=identity.user_id,
+                created_at=now(),
+                managed_rule_change=proposal,
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="invalid managed rule proposal") from exc
+        try:
+            if audit_store is None:
+                stored = change_order_store.create(order)
+            else:
+                stored = change_order_store.create(order, commit=False)
+        except DuplicateChangeOrderError as exc:
+            raise HTTPException(status_code=409, detail="change order already exists") from exc
+        except InvalidChangeOrderTransitionError as exc:
+            raise HTTPException(status_code=409, detail="change order transition conflict") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="change order storage error") from exc
+        response = _change_order_response(stored)
+        set_audit_context(request, after_value=response)
+        return response
 
     def require_idle_distribution_connection(store: PostgresDistributionStore) -> None:
         from psycopg.pq import TransactionStatus
@@ -789,6 +1014,166 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=500, detail="change order storage error") from exc
 
+    @router.get("/as-instances", response_model=list[AsInstanceResponse])
+    def list_as_instances(identity: ApiIdentity = identity_dependency) -> list[dict[str, object]]:
+        require_config_read(identity)
+        store = require_as_instance_store()
+        try:
+            return [as_instance_response(item) for item in store.list_all()]
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="fleet instance storage error") from exc
+
+    @router.get("/as-instances/{instance_id}", response_model=AsInstanceResponse)
+    def get_as_instance(
+        instance_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
+        identity: ApiIdentity = identity_dependency,
+    ) -> dict[str, object]:
+        require_config_read(identity)
+        store = require_as_instance_store()
+        validated_id = _validate_path_id(instance_id)
+        stored = store.get(validated_id)
+        if stored is None:
+            raise HTTPException(status_code=404, detail="fleet instance not found")
+        return as_instance_response(stored)
+
+    @write_router.post(
+        "/as-instances",
+        response_model=AsInstanceResponse,
+        status_code=201,
+    )
+    def create_as_instance(
+        body: CreateAsInstanceRequest,
+        request: Request,
+        identity: ApiIdentity = identity_dependency,
+    ) -> dict[str, object]:
+        require_approve_permission(identity)
+        store = require_as_instance_store()
+        validated_id = _validate_path_id(body.instance_id)
+        try:
+            instance = as_instance_from_record(body, instance_id=validated_id)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="invalid fleet instance request") from exc
+        change_id = _validate_path_id(new_change_id())
+        try:
+            if audit_store is None:
+                stored = store.create(instance, change_id, identity.user_id, now())
+            else:
+                stored = store.create(instance, change_id, identity.user_id, now(), commit=False)
+        except DuplicateAsInstanceError as exc:
+            raise HTTPException(status_code=409, detail="fleet instance already exists") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="invalid fleet instance request") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="fleet instance storage error") from exc
+        response = as_instance_response(stored)
+        set_audit_context(request, after_value=response)
+        return response
+
+    @write_router.put(
+        "/as-instances/{instance_id}",
+        response_model=AsInstanceResponse,
+    )
+    def update_as_instance(
+        instance_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
+        body: UpdateAsInstanceRequest,
+        request: Request,
+        identity: ApiIdentity = identity_dependency,
+    ) -> dict[str, object]:
+        require_approve_permission(identity)
+        store = require_as_instance_store()
+        validated_id = _validate_path_id(instance_id)
+        if body.instance_id != validated_id:
+            raise HTTPException(status_code=422, detail="instance id mismatch")
+        before = store.get(validated_id)
+        if before is None:
+            raise HTTPException(status_code=404, detail="fleet instance not found")
+        if before.revision != body.expected_revision:
+            raise HTTPException(status_code=409, detail="fleet instance revision conflict")
+        try:
+            instance = as_instance_from_record(body, instance_id=validated_id)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="invalid fleet instance request") from exc
+        change_id = _validate_path_id(new_change_id())
+        try:
+            if audit_store is None:
+                stored = store.update(
+                    instance,
+                    change_id,
+                    identity.user_id,
+                    now(),
+                    body.expected_revision,
+                )
+            else:
+                stored = store.update(
+                    instance,
+                    change_id,
+                    identity.user_id,
+                    now(),
+                    body.expected_revision,
+                    commit=False,
+                )
+        except AsInstanceNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="fleet instance not found") from exc
+        except StaleAsInstanceRevisionError as exc:
+            raise HTTPException(status_code=409, detail="fleet instance revision conflict") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="invalid fleet instance request") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="fleet instance storage error") from exc
+        response = as_instance_response(stored)
+        set_audit_context(
+            request,
+            before_value=as_instance_response(before),
+            after_value=response,
+        )
+        return response
+
+    @write_router.delete(
+        "/as-instances/{instance_id}",
+        status_code=204,
+    )
+    def delete_as_instance(
+        instance_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
+        body: DeleteAsInstanceRequest,
+        request: Request,
+        identity: ApiIdentity = identity_dependency,
+    ) -> Response:
+        require_approve_permission(identity)
+        store = require_as_instance_store()
+        validated_id = _validate_path_id(instance_id)
+        before = store.get(validated_id)
+        if before is None:
+            raise HTTPException(status_code=404, detail="fleet instance not found")
+        if before.revision != body.expected_revision:
+            raise HTTPException(status_code=409, detail="fleet instance revision conflict")
+        change_id = _validate_path_id(new_change_id())
+        try:
+            if audit_store is None:
+                store.delete(
+                    validated_id,
+                    change_id,
+                    identity.user_id,
+                    now(),
+                    body.expected_revision,
+                )
+            else:
+                store.delete(
+                    validated_id,
+                    change_id,
+                    identity.user_id,
+                    now(),
+                    body.expected_revision,
+                    commit=False,
+                )
+        except AsInstanceNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="fleet instance not found") from exc
+        except StaleAsInstanceRevisionError as exc:
+            raise HTTPException(status_code=409, detail="fleet instance revision conflict") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="fleet instance storage error") from exc
+        set_audit_context(request, before_value=as_instance_response(before))
+        return Response(status_code=204)
+
     @router.get("/managed-rules", response_model=list[ManagedRuleResponse])
     def list_managed_rules() -> list[dict[str, object]]:
         return [_managed_rule_response(item) for item in managed_rule_store.list_latest()]
@@ -802,6 +1187,79 @@ def create_app(
         if stored is None:
             raise HTTPException(status_code=404, detail="managed rule not found")
         return _managed_rule_response(stored)
+
+    @write_router.post(
+        "/managed-rules",
+        response_model=ChangeOrderResponse,
+        status_code=201,
+    )
+    def propose_managed_rule_create(
+        body: ManagedRuleRecordResponse,
+        request: Request,
+        identity: ApiIdentity = identity_dependency,
+    ) -> dict[str, object]:
+        validated_id = _validate_path_id(body.rule_id)
+        if managed_rule_store.get(validated_id) is not None:
+            raise HTTPException(status_code=409, detail="managed rule already exists")
+        rule = _managed_rule_from_record(body)
+        proposal = ManagedRuleChange(
+            ManagedRuleChangeAction.CREATE,
+            validated_id,
+            rule,
+            None,
+        )
+        return create_managed_rule_draft(request, identity, proposal)
+
+    @write_router.put(
+        "/managed-rules/{rule_id}",
+        response_model=ChangeOrderResponse,
+    )
+    def propose_managed_rule_update(
+        rule_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
+        body: ManagedRuleUpdateRequest,
+        request: Request,
+        identity: ApiIdentity = identity_dependency,
+    ) -> dict[str, object]:
+        validated_id = _validate_path_id(rule_id)
+        if body.rule_id != validated_id:
+            raise HTTPException(status_code=422, detail="rule id mismatch")
+        stored = managed_rule_store.get(validated_id)
+        if stored is None or stored.rule is None:
+            raise HTTPException(status_code=404, detail="managed rule not found")
+        if stored.revision != body.expected_revision:
+            raise HTTPException(status_code=409, detail="managed rule revision conflict")
+        rule = _managed_rule_from_record(body)
+        proposal = ManagedRuleChange(
+            ManagedRuleChangeAction.UPDATE,
+            validated_id,
+            rule,
+            body.expected_revision,
+        )
+        return create_managed_rule_draft(request, identity, proposal)
+
+    @write_router.delete(
+        "/managed-rules/{rule_id}",
+        response_model=ChangeOrderResponse,
+    )
+    def propose_managed_rule_delete(
+        rule_id: Annotated[str, Path(min_length=1, max_length=_MAX_PATH_ID_LENGTH)],
+        body: ManagedRuleDeleteRequest,
+        request: Request,
+        identity: ApiIdentity = identity_dependency,
+    ) -> dict[str, object]:
+        validated_id = _validate_path_id(rule_id)
+        stored = managed_rule_store.get(validated_id)
+        if stored is None or stored.rule is None:
+            raise HTTPException(status_code=404, detail="managed rule not found")
+        if stored.revision != body.expected_revision:
+            raise HTTPException(status_code=409, detail="managed rule revision conflict")
+        proposal = ManagedRuleChange(
+            ManagedRuleChangeAction.DELETE,
+            validated_id,
+            None,
+            body.expected_revision,
+        )
+        return create_managed_rule_draft(request, identity, proposal)
 
     @router.get("/change-orders", response_model=list[ChangeOrderResponse])
     def list_change_orders() -> list[dict[str, object]]:
@@ -910,11 +1368,13 @@ def create_app(
                 version=body.version,
                 batches=tuple(tuple(batch) for batch in body.batches),
             )
+            validate_fleet_batch_inventory(plan.batches[0])
             started = store.create(plan, identity.user_id, now(), commit=False)
             distributing = begin_distribution(stored_order.order, identity.user_id, now())
             updated_order = change_order_store.append_transition(
                 distributing, stored_order.revision, commit=False
             )
+            notify_fleet_distribution_start(validated_id, body.version, plan.batches[0])
             if audit_store is None:
                 connection.commit()
             set_audit_context(
@@ -972,7 +1432,6 @@ def create_app(
     ) -> dict[str, object]:
         require_approve_permission(identity)
         store = require_distribution_store()
-        activation_orders, activation_rules = require_activation_stores()
         require_idle_distribution_connection(store)
         validated_id = _validate_path_id(change_id)
         connection = store.connection
@@ -981,6 +1440,10 @@ def create_app(
             previous_order = change_order_store.get(validated_id)
             if previous_order is None:
                 raise HTTPException(status_code=404, detail="change order not found")
+            current_batch = previous_distribution.distribution.plan.batches[
+                previous_distribution.distribution.completed_batches
+            ]
+            validate_fleet_health_reports(body.reports, current_batch)
             updated_distribution = store.record_batch(
                 validated_id,
                 body.reports,
@@ -1031,6 +1494,7 @@ def create_app(
                 raise HTTPException(status_code=404, detail="change order not found")
             if stored_order.order.state is not ChangeState.DISTRIBUTING:
                 raise HTTPException(status_code=409, detail="change order is not distributing")
+            activation_orders, activation_rules, activation_versions = require_activation_stores()
             rule_change = stored_order.order.managed_rule_change
             managed_rule_before = (
                 None if rule_change is None else activation_rules.get(rule_change.rule_id)
@@ -1069,6 +1533,10 @@ def create_app(
                 stored_order.revision,
                 identity.user_id,
                 now(),
+                version_store=activation_versions,
+                bundle_version=activation_bundle_version(
+                    confirmed_distribution.distribution.plan.version
+                ),
                 commit=audit_store is None,
             )
             managed_rule_after = (
@@ -1087,6 +1555,9 @@ def create_app(
         except HTTPException:
             connection.rollback()
             raise
+        except (BundleCompileError, EmptyActiveBundleError) as exc:
+            connection.rollback()
+            raise HTTPException(status_code=409, detail="activation conflict") from exc
         except StaleDistributionRevisionError as exc:
             connection.rollback()
             raise HTTPException(status_code=409, detail="distribution revision conflict") from exc
@@ -1122,7 +1593,7 @@ def create_app(
     ) -> dict[str, object]:
         require_approve_permission(identity)
         store = require_distribution_store()
-        activation_orders, activation_rules = require_activation_stores()
+        activation_orders, activation_rules, activation_versions = require_activation_stores()
         require_idle_distribution_connection(store)
         validated_id = _validate_path_id(change_id)
         try:
@@ -1168,6 +1639,8 @@ def create_app(
                 body.expected_change_order_revision,
                 identity.user_id,
                 now(),
+                version_store=activation_versions,
+                bundle_version=activation_bundle_version(distribution.distribution.plan.version),
                 commit=audit_store is None,
             )
             managed_rule_after = (
@@ -1182,6 +1655,9 @@ def create_app(
         except HTTPException:
             store.connection.rollback()
             raise
+        except (BundleCompileError, EmptyActiveBundleError) as exc:
+            store.connection.rollback()
+            raise HTTPException(status_code=409, detail="activation conflict") from exc
         except (
             IllegalTransitionError,
             InvalidChangeOrderTransitionError,
@@ -1569,6 +2045,19 @@ def _config_bundle(value: ConfigBundleResponse) -> ConfigBundle:
         version=value.version,
         rules=tuple(RuleDTO(**rule.model_dump()) for rule in value.rules),
         toggles=tuple(ToggleDTO(**toggle.model_dump()) for toggle in value.toggles),
+    )
+
+
+def _managed_rule_from_record(value: ManagedRuleRecordResponse) -> ManagedRule:
+    return ManagedRule(
+        rule_id=value.rule_id,
+        name=value.name,
+        match_field=MatchField(value.match_field),
+        match_mode=MatchMode(value.match_mode),
+        match_value=value.match_value,
+        target_service=TargetService(value.target_service),
+        enabled=value.enabled,
+        target_detail=value.target_detail,
     )
 
 

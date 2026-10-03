@@ -1,10 +1,114 @@
-# 开发环境骨架。生产部署走 Helm（deploy/helm/）。
-# 随 M2 开始开发时逐步填充各服务定义。
-# 当前仅列出计划中的服务名，不绑定具体镜像：
-#   - platform（内核容器，暂无线可构建）
-#   - apps-translation、apps-anti-fraud（用例容器）
-#   - services-config-service、services-console（控制面容器）
-#   - redis + postgres（外部依赖骨架）
-#   - simulators（testbed 仿真网元容器）
+# M4b-8 dev stack: PostgreSQL 12.22 + config-service + Caddy (self-signed TLS, same-origin).
+# Production deploy uses Helm (deploy/helm/). See README.md in this directory.
+
+name: as-m4b8-dev
+
 services:
-  # 占位：随 M2 启动
+  postgres:
+    image: postgres:12.22
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres}
+      POSTGRES_DB: as_config
+      AS_CONFIG_OWNER_PASSWORD: ${AS_CONFIG_OWNER_PASSWORD:-as_config_owner_dev}
+      AS_CONFIG_WEB_PASSWORD: ${AS_CONFIG_WEB_PASSWORD:-as_config_web_dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d as_config"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    ports:
+      - "${POSTGRES_PUBLISH_PORT:-55432}:5432"
+    networks:
+      m4b8:
+
+  config-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/config-service.Dockerfile
+    environment:
+      AS_CONFIG_DSN: postgresql://as_config_web:${AS_CONFIG_WEB_PASSWORD:-as_config_web_dev}@postgres:5432/as_config
+      AS_CONFIG_RUNTIME_ROLE: as_config_runtime
+      AS_CONFIG_SCHEMA: as_config
+      AS_AUDIT_SCHEMA: console_audit
+      AS_CONFIG_HOST: 0.0.0.0
+      AS_CONFIG_PORT: 8000
+      AS_CONFIG_PROXY_HEADERS: "true"
+      AS_CONFIG_TRUSTED_PROXIES: ${AS_CONFIG_TRUSTED_PROXIES:-10.89.0.0/24}
+      AS_AUDIT_RESOURCE_HMAC_KEY_B64: ${AS_AUDIT_RESOURCE_HMAC_KEY_B64:?set AS_AUDIT_RESOURCE_HMAC_KEY_B64 in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      m4b8:
+        ipv4_address: 10.89.0.20
+
+  caddy:
+    image: caddy:2.8-alpine
+    ports:
+      - "${HTTPS_PUBLISH_PORT:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+    depends_on:
+      - config-service
+    networks:
+      m4b8:
+        ipv4_address: 10.89.0.10
+
+  # Optional stub for M4b-7.5 fleet health probes (strict {"healthy": true} JSON).
+  testbed-health:
+    image: caddy:2.8-alpine
+    volumes:
+      - ./testbed-health/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      m4b8:
+        ipv4_address: 10.89.0.30
+
+  migrate:
+    profiles: ["setup"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/config-service.Dockerfile
+    environment:
+      AS_CONFIG_OWNER_DSN: postgresql://as_config_owner:${AS_CONFIG_OWNER_PASSWORD:-as_config_owner_dev}@postgres:5432/as_config
+      AS_CONFIG_RUNTIME_ROLE: as_config_runtime
+      AS_CONFIG_SCHEMA: as_config
+      AS_AUDIT_SCHEMA: console_audit
+    entrypoint: ["as-config-migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      m4b8:
+
+  bootstrap-admin:
+    profiles: ["setup"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/config-service.Dockerfile
+    environment:
+      AS_CONFIG_OWNER_DSN: postgresql://as_config_owner:${AS_CONFIG_OWNER_PASSWORD:-as_config_owner_dev}@postgres:5432/as_config
+      AS_CONFIG_SCHEMA: as_config
+    entrypoint: ["as-config-bootstrap-admin"]
+    stdin_open: true
+    tty: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      m4b8:
+
+networks:
+  m4b8:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.0.0/24
+
+volumes:
+  postgres-data:

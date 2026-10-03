@@ -196,6 +196,9 @@
     state.rules = [];
     state.changeOrders = [];
     state.traces = [];
+    state.asInstances = [];
+  } else {
+    state.asInstances = [];
   }
 
   let nextRuleNumber = 132;
@@ -204,22 +207,24 @@
   let selectedOrderId = null;
   let selectedTraceId = state.traces[0]?.callId || null;
   let traceQuery = "";
-  const liveData = { rules: "loading", orders: "loading" };
+  const liveData = { rules: "loading", orders: "loading", instances: "loading" };
   let authenticated = false;
   let sessionUserId = null;
   let sessionRoles = [];
+  let editingInstanceId = null;
 
   const viewCopy = {
     rules: { title: "Rule registry", description: isPreview ? "Review rule state and submit changes for approval." : "Review current managed-rule records and their revisions." },
     "change-orders": { title: "Change orders", description: isPreview ? "Review proposed changes; decisions here affect local preview data only." : "Track change-order state through approval and distribution." },
     "call-traces": { title: "Call traces", description: "Search fixture message traces by Call-ID." },
-    operations: { title: "Operations", description: "Inspect representative fixture metrics and instance state." },
+    operations: { title: "Operations", description: isPreview ? "Inspect representative fixture metrics and instance state." : "Maintain fleet instance inventory for distribution notify and health probes." },
   };
 
   const elements = {
     pageTitle: document.querySelector("#page-title"),
     pageDescription: document.querySelector("#page-description"),
     createRuleButton: document.querySelector("#create-rule-button"),
+    createInstanceButton: document.querySelector("#create-instance-button"),
     previewBanner: document.querySelector("#preview-banner"),
     environmentLabel: document.querySelector("#environment-label"),
     loginButton: document.querySelector("#login-button"),
@@ -261,6 +266,21 @@
     operationsDescription: document.querySelector("#operations-description"),
     operationsUnavailable: document.querySelector("#operations-unavailable"),
     operationsPendingTotal: document.querySelector("#operations-pending-total"),
+    fleetLivePanel: document.querySelector("#fleet-live-panel"),
+    fleetTable: document.querySelector("#fleet-table-body"),
+    fleetSearch: document.querySelector("#fleet-search"),
+    fleetStateFilter: document.querySelector("#fleet-state-filter"),
+    fleetResultCount: document.querySelector("#fleet-result-count"),
+    instanceDialog: document.querySelector("#instance-dialog"),
+    instanceForm: document.querySelector("#instance-form"),
+    instanceDialogTitle: document.querySelector("#instance-dialog-title"),
+    instanceIdRow: document.querySelector("#instance-id-row"),
+    instanceIdField: document.querySelector("#instance-id-field"),
+    instanceUseCase: document.querySelector("#instance-use-case"),
+    instanceNotifyUrl: document.querySelector("#instance-notify-url"),
+    instanceHealthUrl: document.querySelector("#instance-health-url"),
+    instanceEnabled: document.querySelector("#instance-enabled"),
+    instanceFormSubmit: document.querySelector("#instance-form-submit"),
     traceSearchForm: document.querySelector("#trace-search-form"),
     traceSearch: document.querySelector("#trace-search"),
     traceResultSummary: document.querySelector("#trace-result-summary"),
@@ -271,9 +291,15 @@
     ruleDialog: document.querySelector("#rule-dialog"),
     ruleForm: document.querySelector("#rule-form"),
     ruleDialogTitle: document.querySelector("#rule-dialog-title"),
+    ruleIdField: document.querySelector("#rule-id-field"),
+    ruleId: document.querySelector("#rule-id"),
+    ruleFormSubmit: document.querySelector("#rule-form-submit"),
     ruleName: document.querySelector("#rule-name"),
     ruleMatchValue: document.querySelector("#rule-match-value"),
+    ruleMatchField: document.querySelector("#rule-match-field"),
     ruleMatchType: document.querySelector("#rule-match-type"),
+    ruleM4ScopeHint: document.querySelector("#rule-m4-scope-hint"),
+    ruleLegacyScopeNote: document.querySelector("#rule-legacy-scope-note"),
     ruleTargetDetail: document.querySelector("#rule-target-detail"),
     reviewDialog: document.querySelector("#review-dialog"),
     reviewTitle: document.querySelector("#review-dialog-title"),
@@ -284,8 +310,22 @@
     reviewActions: document.querySelector("#review-actions"),
     rejectForm: document.querySelector("#reject-form"),
     rejectReason: document.querySelector("#reject-reason"),
+    reviewDistribution: document.querySelector("#review-distribution"),
+    distributionStartPanel: document.querySelector("#distribution-start-panel"),
+    distributionActivePanel: document.querySelector("#distribution-active-panel"),
+    distributionVersion: document.querySelector("#distribution-version"),
+    distributionBatchMode: document.querySelector("#distribution-batch-mode"),
+    distributionStartButton: document.querySelector("#distribution-start"),
+    distributionSummary: document.querySelector("#distribution-summary"),
+    distributionReportButton: document.querySelector("#distribution-report-batch"),
+    distributionShowRollback: document.querySelector("#distribution-show-rollback"),
+    distributionRollbackForm: document.querySelector("#distribution-rollback-form"),
+    distributionRollbackReason: document.querySelector("#distribution-rollback-reason"),
+    distributionEmptyInstances: document.querySelector("#distribution-empty-instances"),
     toastRegion: document.querySelector("#toast-region"),
   };
+
+  let selectedDistribution = null;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -325,13 +365,254 @@
     return isPreview ? order.status === "Pending" : order.status === "draft" || order.status === "submitted";
   }
 
+  function sessionRoleSet() {
+    return new Set(sessionRoles.map((role) => String(role).toLowerCase()));
+  }
+
+  function canSubmitManagedRuleChange() {
+    const roles = sessionRoleSet();
+    return ["operator", "approver", "admin"].some((role) => roles.has(role));
+  }
+
+  function canManageDistribution() {
+    if (isPreview || !authenticated) return false;
+    const roles = new Set(sessionRoles);
+    return ["approver", "admin"].some((role) => roles.has(role));
+  }
+
+  function enabledFleetInstanceIds() {
+    return state.asInstances
+      .filter((item) => item.enabled)
+      .map((item) => item.instanceId)
+      .sort();
+  }
+
+  function buildDistributionBatches(mode) {
+    const ids = enabledFleetInstanceIds();
+    if (!ids.length) return [];
+    if (mode === "per-instance") return ids.map((id) => [id]);
+    return [ids];
+  }
+
+  function mapDistributionRecord(payload) {
+    if (!payload) return null;
+    const dist = payload.distribution || payload;
+    return {
+      revision: dist.revision,
+      plan: dist.plan,
+      state: dist.state,
+      completedBatches: dist.completed_batches ?? 0,
+      reports: dist.reports || [],
+      rolledBackTo: dist.rolled_back_to ?? null,
+      rollbackReason: dist.rollback_reason ?? null,
+      raw: dist,
+    };
+  }
+
+  async function fetchDistribution(changeId) {
+    try {
+      const payload = await apiRequest(`/change-orders/${encodeURIComponent(changeId)}/distribution`);
+      return mapDistributionRecord(payload);
+    } catch (error) {
+      if (error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  function renderDistributionPanel(order) {
+    if (isPreview || !elements.reviewDistribution) return;
+    const status = String(order?.status || "").toLowerCase();
+    const show = canManageDistribution()
+      && (status === "approved" || status === "distributing" || status === "applied" || status === "rolled_back");
+    elements.reviewDistribution.hidden = !show;
+    if (!show) return;
+
+    const instanceIds = enabledFleetInstanceIds();
+    elements.distributionEmptyInstances.hidden = instanceIds.length > 0;
+    elements.distributionStartButton.disabled = instanceIds.length === 0;
+
+    const dist = selectedDistribution;
+    const inFlight = dist && (dist.state === "in_progress" || dist.state === "completed");
+    const canStart = status === "approved" && !inFlight;
+    elements.distributionStartPanel.hidden = !canStart;
+    elements.distributionActivePanel.hidden = !inFlight || status === "applied";
+
+    if (dist && inFlight) {
+      const batches = dist.plan?.batches || [];
+      const batchIndex = dist.completedBatches;
+      const currentBatch = batches[batchIndex] || [];
+      elements.distributionSummary.innerHTML = `
+        <dt>State</dt><dd>${escapeHtml(liveStatusLabel(dist.state))}</dd>
+        <dt>Plan version</dt><dd class="mono">${escapeHtml(dist.plan?.version ?? "—")}</dd>
+        <dt>Batches</dt><dd class="mono">${escapeHtml(JSON.stringify(batches))}</dd>
+        <dt>Completed batches</dt><dd>${escapeHtml(batchIndex)} / ${escapeHtml(batches.length)}</dd>
+        <dt>Current batch</dt><dd class="mono">${escapeHtml(currentBatch.join(", ") || "—")}</dd>
+        <dt>Distribution revision</dt><dd>${escapeHtml(dist.revision ?? "—")}</dd>`;
+      const awaitingReport = dist.state === "in_progress" && currentBatch.length > 0;
+      elements.distributionReportButton.hidden = !awaitingReport;
+      elements.distributionShowRollback.hidden = status !== "distributing" || dist.state !== "in_progress";
+    } else if (status === "applied") {
+      elements.distributionSummary.innerHTML = `<dt>Result</dt><dd>Change applied after distribution.</dd>`;
+      elements.distributionActivePanel.hidden = false;
+      elements.distributionReportButton.hidden = true;
+      elements.distributionShowRollback.hidden = true;
+    }
+  }
+
+  async function refreshSelectedDistribution(order) {
+    if (!order || isPreview) {
+      selectedDistribution = null;
+      return;
+    }
+    try {
+      selectedDistribution = await fetchDistribution(order.id);
+    } catch (error) {
+      selectedDistribution = null;
+      showToast(error.message || "Distribution status could not be loaded.", true);
+    }
+    renderDistributionPanel(order);
+  }
+
+  async function startLiveDistribution(order) {
+    if (!order?.revision) return;
+    const version = Number(elements.distributionVersion.value);
+    if (!Number.isInteger(version) || version < 1) {
+      showToast("Enter a plan version of 1 or greater.", true);
+      return;
+    }
+    const batches = buildDistributionBatches(elements.distributionBatchMode.value);
+    if (!batches.length) {
+      showToast("Register at least one enabled fleet instance under Operations.", true);
+      return;
+    }
+    elements.distributionStartButton.disabled = true;
+    try {
+      const response = await apiRequest(
+        `/change-orders/${encodeURIComponent(order.id)}/distribution`,
+        {
+          method: "POST",
+          csrf: true,
+          body: {
+            version,
+            batches,
+            expected_change_order_revision: order.revision,
+          },
+        },
+      );
+      selectedDistribution = mapDistributionRecord(response);
+      await loadLiveData();
+      const refreshed = state.changeOrders.find((item) => item.id === order.id);
+      if (refreshed) await refreshSelectedDistribution(refreshed);
+      showToast(`Distribution started for ${order.id}.`);
+    } catch (error) {
+      showToast(error.message || "Distribution could not be started.", true);
+      if (error.status === 409) await loadLiveData();
+    } finally {
+      elements.distributionStartButton.disabled = false;
+    }
+  }
+
+  async function reportLiveDistributionBatch(order) {
+    if (!selectedDistribution?.revision) return;
+    const batches = selectedDistribution.plan?.batches || [];
+    const currentBatch = batches[selectedDistribution.completedBatches] || [];
+    if (!currentBatch.length) {
+      showToast("No batch is waiting for a health report.", true);
+      return;
+    }
+    const reports = Object.fromEntries(currentBatch.map((id) => [id, true]));
+    elements.distributionReportButton.disabled = true;
+    try {
+      const response = await apiRequest(
+        `/change-orders/${encodeURIComponent(order.id)}/distribution/reports`,
+        {
+          method: "POST",
+          csrf: true,
+          body: {
+            expected_distribution_revision: selectedDistribution.revision,
+            reports,
+          },
+        },
+      );
+      selectedDistribution = mapDistributionRecord(response);
+      await loadLiveData();
+      const refreshed = state.changeOrders.find((item) => item.id === order.id);
+      if (refreshed) {
+        selectedOrderId = refreshed.id;
+        await refreshSelectedDistribution(refreshed);
+        openChangeOrder(refreshed.id);
+      }
+      showToast(`Batch report recorded for ${order.id}.`);
+    } catch (error) {
+      showToast(error.message || "Batch report failed.", true);
+      if (error.status === 409) await loadLiveData();
+    } finally {
+      elements.distributionReportButton.disabled = false;
+    }
+  }
+
+  async function rollbackLiveDistribution(order, reason) {
+    if (!selectedDistribution?.revision || !order?.revision) return;
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      showToast("Rollback reason is required.", true);
+      return;
+    }
+    try {
+      await apiRequest(
+        `/change-orders/${encodeURIComponent(order.id)}/distribution/rollback`,
+        {
+          method: "POST",
+          csrf: true,
+          body: {
+            expected_distribution_revision: selectedDistribution.revision,
+            expected_change_order_revision: order.revision,
+            reason: trimmed,
+          },
+        },
+      );
+      elements.distributionRollbackForm.hidden = true;
+      elements.distributionRollbackReason.value = "";
+      await loadLiveData();
+      const refreshed = state.changeOrders.find((item) => item.id === order.id);
+      if (refreshed) await refreshSelectedDistribution(refreshed);
+      showToast(`Distribution rolled back for ${order.id}.`);
+    } catch (error) {
+      showToast(error.message || "Rollback failed.", true);
+      if (error.status === 409) await loadLiveData();
+    }
+  }
+
+  function canManageFleetInventory() {
+    const roles = sessionRoleSet();
+    return ["approver", "admin"].some((role) => roles.has(role));
+  }
+
+  function isOperationsViewActive() {
+    return document.querySelector('[data-nav-target="operations"]')?.classList.contains("is-current");
+  }
+
+  function syncCreateInstanceButton() {
+    elements.createInstanceButton.hidden = isPreview
+      || !(isOperationsViewActive() && authenticated && canManageFleetInventory());
+  }
+
   function liveOrderAction(order) {
-    const roles = new Set(sessionRoles.map((role) => String(role).toLowerCase()));
-    const canSubmit = ["operator", "approver", "admin"].some((role) => roles.has(role));
+    const roles = sessionRoleSet();
+    const canSubmit = canSubmitManagedRuleChange();
     const canApprove = ["approver", "admin"].some((role) => roles.has(role));
     if (order.status === "draft" && order.createdBy === sessionUserId && canSubmit) return "submit";
     if (order.status === "submitted" && order.createdBy && order.createdBy !== sessionUserId && canApprove) return "review";
     return "details";
+  }
+
+  function isRulesViewActive() {
+    return document.querySelector('[data-nav-target="rules"]')?.classList.contains("is-current");
+  }
+
+  function syncCreateRuleButton() {
+    elements.createRuleButton.hidden = !(isPreview ? isRulesViewActive() : isRulesViewActive() && authenticated && canSubmitManagedRuleChange());
+    syncCreateInstanceButton();
   }
 
   function pendingOrderFor(ruleId) {
@@ -358,15 +639,23 @@
       : pending?.action === "Create"
         ? `<span class="status-badge status-pending">Pending creation</span>`
         : `<div class="status-stack">${statusBadge(rule.enabled ? "Enabled" : "Disabled")}${pending ? `<span class="status-badge status-pending">Pending ${escapeHtml(pending.action.toLowerCase())}</span>` : ""}</div>`;
-    const actions = !isPreview
-      ? ""
-      : pending
-      ? `<button class="button-link" type="button" data-open-order="${escapeHtml(pending.id)}">Review request</button>`
-      : `<div class="row-actions">
-          <button class="button-link" type="button" data-rule-action="edit" data-rule-id="${escapeHtml(rule.id)}">Edit</button>
-          <button class="button-link" type="button" data-rule-action="toggle" data-rule-id="${escapeHtml(rule.id)}">Queue ${rule.enabled ? "disable" : "enable"}</button>
-          <button class="button-link" type="button" data-rule-action="delete" data-rule-id="${escapeHtml(rule.id)}">Queue delete</button>
-        </div>`;
+    const actions = isPreview
+      ? pending
+        ? `<button class="button-link" type="button" data-open-order="${escapeHtml(pending.id)}">Review request</button>`
+        : `<div class="row-actions">
+            <button class="button-link" type="button" data-rule-action="edit" data-rule-id="${escapeHtml(rule.id)}">Edit</button>
+            <button class="button-link" type="button" data-rule-action="toggle" data-rule-id="${escapeHtml(rule.id)}">Queue ${rule.enabled ? "disable" : "enable"}</button>
+            <button class="button-link" type="button" data-rule-action="delete" data-rule-id="${escapeHtml(rule.id)}">Queue delete</button>
+          </div>`
+      : !authenticated || !canSubmitManagedRuleChange() || rule.isTombstone
+        ? ""
+        : pending
+          ? `<button class="button-link" type="button" data-open-order="${escapeHtml(pending.id)}">View pending change</button>`
+          : `<div class="row-actions">
+              <button class="button-link" type="button" data-rule-action="edit" data-rule-id="${escapeHtml(rule.id)}">Edit</button>
+              <button class="button-link" type="button" data-rule-action="toggle" data-rule-id="${escapeHtml(rule.id)}">Propose ${rule.enabled ? "disable" : "enable"}</button>
+              <button class="button-link" type="button" data-rule-action="delete" data-rule-id="${escapeHtml(rule.id)}">Propose delete</button>
+            </div>`;
 
     return `<tr>
       <td class="primary-cell"><strong>${escapeHtml(rule.name)}</strong><small class="mono">${escapeHtml(rule.id)}</small></td>
@@ -447,6 +736,70 @@
     elements.ordersNavCount.textContent = String(pendingCount);
   }
 
+  const useCaseLabels = {
+    translation: "Translation",
+    "anti-fraud": "Anti-fraud",
+  };
+
+  function formatOptionalUrl(value) {
+    return value ? escapeHtml(value) : "—";
+  }
+
+  function renderFleetRow(instance) {
+    const canManage = !isPreview && authenticated && canManageFleetInventory();
+    const actions = canManage
+      ? `<div class="row-actions">
+          <button class="button-link" type="button" data-instance-action="edit" data-instance-id="${escapeHtml(instance.instanceId)}">Edit</button>
+          <button class="button-link" type="button" data-instance-action="toggle" data-instance-id="${escapeHtml(instance.instanceId)}">${instance.enabled ? "Disable" : "Enable"}</button>
+          <button class="button-link" type="button" data-instance-action="delete" data-instance-id="${escapeHtml(instance.instanceId)}">Remove</button>
+        </div>`
+      : "";
+    return `<tr>
+      <td class="primary-cell"><strong class="mono">${escapeHtml(instance.instanceId)}</strong></td>
+      <td>${escapeHtml(useCaseLabels[instance.useCase] || instance.useCase)}</td>
+      <td class="secondary-cell mono">${formatOptionalUrl(instance.notifyUrl)}</td>
+      <td class="secondary-cell mono">${formatOptionalUrl(instance.healthUrl)}</td>
+      <td>${statusBadge(instance.enabled ? "Enabled" : "Disabled")}</td>
+      <td class="mono">${escapeHtml(instance.revision)}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }
+
+  function renderFleetInstances() {
+    if (isPreview || !elements.fleetTable) return;
+    elements.fleetLivePanel.hidden = false;
+    elements.operationsUnavailable.hidden = true;
+    const query = elements.fleetSearch.value.trim().toLowerCase();
+    const stateFilter = elements.fleetStateFilter.value;
+    const allRows = state.asInstances;
+    const rows = allRows.filter((instance) => {
+      const searchable = [
+        instance.instanceId,
+        instance.useCase,
+        instance.notifyUrl,
+        instance.healthUrl,
+      ].join(" ").toLowerCase();
+      const matchesQuery = !query || searchable.includes(query);
+      const matchesState = stateFilter === "all"
+        || (stateFilter === "enabled" && instance.enabled)
+        || (stateFilter === "disabled" && !instance.enabled);
+      return matchesQuery && matchesState;
+    });
+    const fleetState = liveData.instances !== "ready"
+      ? liveData.instances === "loading"
+        ? "Loading fleet inventory…"
+        : liveData.instances === "unauthenticated"
+          ? "Sign in to load fleet inventory."
+          : "Fleet inventory could not be loaded. Retry the request."
+      : null;
+    elements.fleetTable.innerHTML = fleetState
+      ? `<tr class="row-empty"><td colspan="7">${escapeHtml(fleetState)}</td></tr>`
+      : rows.length
+        ? rows.map(renderFleetRow).join("")
+        : `<tr class="row-empty"><td colspan="7">${allRows.length ? "No instances match these filters." : "No fleet instances registered."}</td></tr>`;
+    elements.fleetResultCount.textContent = `${rows.length} ${rows.length === 1 ? "entry" : "entries"}`;
+  }
+
   function matchingTraces() {
     const query = traceQuery.toLowerCase();
     return state.traces.filter((trace) =>
@@ -511,6 +864,7 @@
   function renderAll() {
     renderRules();
     renderChangeOrders();
+    if (!isPreview) renderFleetInstances();
     if (isPreview) renderTraces();
   }
 
@@ -533,7 +887,7 @@
     });
     elements.pageTitle.textContent = viewCopy[name].title;
     elements.pageDescription.textContent = viewCopy[name].description;
-    elements.createRuleButton.hidden = !isPreview || name !== "rules";
+    syncCreateRuleButton();
     document.title = `${viewCopy[name].title} | AS Operations`;
   }
 
@@ -564,7 +918,7 @@
     elements.previewBanner.hidden = !isPreview;
     elements.loginButton.hidden = isPreview;
     elements.logoutButton.hidden = true;
-    elements.createRuleButton.hidden = !isPreview;
+    syncCreateRuleButton();
     elements.liveStatus.hidden = true;
     elements.environmentLabel.textContent = isPreview ? "Local preview" : "Live console";
     elements.identityUser.textContent = isPreview ? "Not connected" : "Checking session";
@@ -580,7 +934,7 @@
       : "Live Call-ID trace search is not available in this integration.";
     elements.operationsDescription.textContent = isPreview
       ? "A fixed fixture snapshot for layout preview; no telemetry is connected."
-      : "Live service telemetry is not available in this integration.";
+      : "Maintain registered AS instances, notify URLs, and health probe endpoints used by distribution.";
     elements.ruleRevisionHeading.textContent = isPreview ? "Version / updated" : "Revision";
     if (!isPreview) {
       elements.pageDescription.textContent = viewCopy.rules.description;
@@ -625,14 +979,24 @@
     return mapRuleRecord(record, item.revision);
   }
 
+  const targetServiceLabels = {
+    translation: "Translation",
+    "anti-fraud": "Anti-fraud",
+    routing: "Routing",
+    block: "Blocking",
+    default: "Default",
+  };
+
+  const targetServiceApiValues = {
+    Translation: "translation",
+    "Anti-fraud": "anti-fraud",
+    Routing: "routing",
+    Blocking: "block",
+    Default: "default",
+  };
+
   function mapRuleRecord(record, revision) {
-    const targets = {
-      translation: "Translation",
-      "anti-fraud": "Anti-fraud",
-      routing: "Routing",
-      block: "Block",
-      default: "Default",
-    };
+    const targets = targetServiceLabels;
     return {
       id: record.rule_id,
       name: record.name,
@@ -670,6 +1034,34 @@
     };
   }
 
+  function mapAsInstance(item) {
+    return {
+      instanceId: item.instance_id,
+      useCase: item.use_case,
+      notifyUrl: item.notify_url || null,
+      healthUrl: item.health_url || null,
+      enabled: Boolean(item.enabled),
+      revision: item.revision,
+    };
+  }
+
+  function optionalUrlField(value) {
+    const trimmed = String(value ?? "").trim();
+    return trimmed ? trimmed : null;
+  }
+
+  function instanceRecordPayload(draft, { expectedRevision } = {}) {
+    const payload = {
+      instance_id: draft.instanceId,
+      use_case: draft.useCase,
+      notify_url: draft.notifyUrl,
+      health_url: draft.healthUrl,
+      enabled: draft.enabled,
+    };
+    if (expectedRevision !== undefined) payload.expected_revision = expectedRevision;
+    return payload;
+  }
+
   async function apiRequest(path, { method = "GET", body, csrf = false } = {}) {
     const headers = { Accept: "application/json" };
     if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -687,7 +1079,18 @@
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     if (!response.ok) {
-      const error = new Error(`HTTP ${response.status}`);
+      let message = `HTTP ${response.status}`;
+      try {
+        const payload = await response.json();
+        if (typeof payload?.detail === "string") {
+          message = payload.detail;
+        } else if (payload?.detail) {
+          message = JSON.stringify(payload.detail);
+        }
+      } catch {
+        // Keep the status-only message when the body is not JSON.
+      }
+      const error = new Error(message);
       error.status = response.status;
       throw error;
     }
@@ -704,7 +1107,7 @@
       : "No roles assigned";
     elements.loginButton.hidden = true;
     elements.logoutButton.hidden = false;
-    elements.createRuleButton.hidden = true;
+    syncCreateRuleButton();
   }
 
   function clearSession() {
@@ -717,26 +1120,89 @@
     elements.logoutButton.hidden = true;
     state.rules = [];
     state.changeOrders = [];
+    state.asInstances = [];
+    syncCreateRuleButton();
+  }
+
+  function readRuleFormDraft(existing) {
+    const name = elements.ruleName.value.trim();
+    const matchValue = elements.ruleMatchValue.value.trim();
+    const targetDetail = elements.ruleTargetDetail.value.trim();
+    elements.ruleName.setCustomValidity(name ? "" : "Enter a rule name.");
+    elements.ruleMatchValue.setCustomValidity(matchValue ? "" : "Enter a match value.");
+    elements.ruleTargetDetail.setCustomValidity(targetDetail ? "" : "Enter target detail.");
+    if (!isPreview && !existing) {
+      const ruleId = elements.ruleId.value.trim();
+      elements.ruleId.setCustomValidity(ruleId ? "" : "Enter a rule ID.");
+    } else {
+      elements.ruleId.setCustomValidity("");
+    }
+    if (!elements.ruleForm.reportValidity()) return null;
+    if (elements.ruleMatchType.value === "Regex") {
+      try {
+        new RegExp(matchValue);
+      } catch {
+        elements.ruleMatchValue.setCustomValidity("Enter a valid regular expression.");
+        elements.ruleMatchValue.reportValidity();
+        return null;
+      }
+    }
+    const formData = new FormData(elements.ruleForm);
+    const ruleId = existing?.id || (isPreview ? `R-${nextRuleNumber++}` : elements.ruleId.value.trim());
+    const matchField = isPreview ? String(formData.get("matchField")) : "Called party";
+    const matchType = isPreview ? String(formData.get("matchType")) : "Prefix";
+    return {
+      id: ruleId,
+      name,
+      matchField,
+      matchType,
+      matchValue,
+      target: String(formData.get("target")),
+      targetDetail,
+      enabled: formData.get("enabled") === "on",
+      revision: existing?.revision,
+      version: existing?.version || "v01",
+      updatedAt: existing?.updatedAt || (isPreview ? "Preview session" : ""),
+    };
+  }
+
+  function ruleDraftToApiPayload(draft, { expectedRevision } = {}) {
+    const payload = {
+      rule_id: draft.id,
+      name: draft.name,
+      match_field: draft.matchField === "Calling party" ? "calling" : "called",
+      match_mode: draft.matchType === "Regex" ? "regex" : "prefix",
+      match_value: draft.matchValue,
+      target_service: targetServiceApiValues[draft.target] || String(draft.target).toLowerCase(),
+      enabled: draft.enabled,
+      target_detail: draft.targetDetail || null,
+    };
+    if (expectedRevision !== undefined) payload.expected_revision = expectedRevision;
+    return payload;
   }
 
   async function loadLiveData() {
     if (!authenticated) return;
     state.rules = [];
     state.changeOrders = [];
+    state.asInstances = [];
     liveData.rules = "loading";
     liveData.orders = "loading";
-    setLiveStatus("Loading managed rules and change orders…");
+    liveData.instances = "loading";
+    setLiveStatus("Loading managed rules, change orders, and fleet inventory…");
     renderAll();
 
     const results = await Promise.allSettled([
       apiRequest("/managed-rules"),
       apiRequest("/change-orders"),
+      apiRequest("/as-instances"),
     ]);
     const expired = results.some((result) => result.status === "rejected" && result.reason.status === 401);
     if (expired) {
       clearSession();
       liveData.rules = "unauthenticated";
       liveData.orders = "unauthenticated";
+      liveData.instances = "unauthenticated";
       setLiveStatus("Your session expired. Sign in again.", { error: true });
       renderAll();
       return;
@@ -757,6 +1223,13 @@
       liveData.orders = "error";
       errors.push(`change orders (${results[1].status === "rejected" ? results[1].reason.message : "invalid response"})`);
     }
+    if (results[2].status === "fulfilled" && Array.isArray(results[2].value)) {
+      state.asInstances = results[2].value.map(mapAsInstance);
+      liveData.instances = "ready";
+    } else {
+      liveData.instances = "error";
+      errors.push(`fleet inventory (${results[2].status === "rejected" ? results[2].reason.message : "invalid response"})`);
+    }
     renderAll();
     setLiveStatus(errors.length ? `Could not load ${errors.join("; ")}.` : "Live configuration loaded.", {
       error: errors.length > 0,
@@ -774,6 +1247,7 @@
       clearSession();
       liveData.rules = error.status === 401 || error.status === 403 ? "unauthenticated" : "error";
       liveData.orders = liveData.rules;
+      liveData.instances = liveData.rules;
       renderAll();
       if (error.status === 401 || error.status === 403) {
         setLiveStatus("Sign in to load managed rules and change orders.");
@@ -820,6 +1294,7 @@
       clearSession();
       liveData.rules = "unauthenticated";
       liveData.orders = "unauthenticated";
+      liveData.instances = "unauthenticated";
       setLiveStatus("Signed out. Sign in to load configuration.");
       renderAll();
     } catch {
@@ -859,19 +1334,239 @@
     return order;
   }
 
+  function applyLiveRuleFormScope(rule = null) {
+    const callingOption = elements.ruleMatchField?.querySelector('option[value="Calling party"]');
+    const regexOption = elements.ruleMatchType?.querySelector('option[value="Regex"]');
+    if (isPreview) {
+      if (callingOption) callingOption.hidden = false;
+      if (regexOption) regexOption.hidden = false;
+      if (elements.ruleM4ScopeHint) elements.ruleM4ScopeHint.hidden = true;
+      if (elements.ruleLegacyScopeNote) elements.ruleLegacyScopeNote.hidden = true;
+      elements.ruleMatchField.disabled = false;
+      elements.ruleMatchType.disabled = false;
+      elements.ruleFormSubmit.disabled = false;
+      return;
+    }
+    if (callingOption) callingOption.hidden = true;
+    if (regexOption) regexOption.hidden = true;
+    if (elements.ruleM4ScopeHint) elements.ruleM4ScopeHint.hidden = false;
+    const legacy = Boolean(
+      rule && (rule.matchField !== "Called party" || rule.matchType !== "Prefix"),
+    );
+    if (legacy) {
+      elements.ruleMatchField.value = rule.matchField;
+      elements.ruleMatchType.value = rule.matchType;
+      elements.ruleMatchField.disabled = true;
+      elements.ruleMatchType.disabled = true;
+      elements.ruleFormSubmit.disabled = true;
+      if (elements.ruleLegacyScopeNote) elements.ruleLegacyScopeNote.hidden = false;
+    } else {
+      elements.ruleMatchField.value = "Called party";
+      elements.ruleMatchType.value = "Prefix";
+      elements.ruleMatchField.disabled = true;
+      elements.ruleMatchType.disabled = true;
+      elements.ruleFormSubmit.disabled = false;
+      if (elements.ruleLegacyScopeNote) elements.ruleLegacyScopeNote.hidden = true;
+    }
+  }
+
   function openRuleDialog(rule = null) {
     editingRuleId = rule?.id || null;
     elements.ruleForm.reset();
+    const isCreate = !rule;
     elements.ruleDialogTitle.textContent = rule ? `Edit ${rule.id}` : "New rule";
+    elements.ruleIdField.hidden = isPreview || !isCreate;
+    elements.ruleId.required = !isPreview && isCreate;
+    elements.ruleId.readOnly = Boolean(rule);
+    elements.ruleId.value = rule?.id || "";
     elements.ruleName.value = rule?.name || "";
-    document.querySelector("#rule-match-field").value = rule?.matchField || "Called party";
+    elements.ruleMatchField.value = rule?.matchField || "Called party";
     elements.ruleMatchType.value = rule?.matchType || "Prefix";
+    applyLiveRuleFormScope(rule);
     elements.ruleMatchValue.value = rule?.matchValue || "";
     document.querySelector("#rule-target").value = rule?.target || "Translation";
-    document.querySelector("#rule-target-detail").value = rule?.targetDetail || "";
+    document.querySelector("#rule-target-detail").value = rule?.targetDetail === "—" ? "" : (rule?.targetDetail || "");
     document.querySelector("#rule-enabled").checked = rule ? rule.enabled : true;
+    elements.ruleFormSubmit.textContent = isPreview ? "Queue for approval" : (isCreate ? "Propose create" : "Propose update");
     elements.ruleDialog.showModal();
-    elements.ruleName.focus();
+    (isPreview || rule ? elements.ruleName : elements.ruleId).focus();
+  }
+
+  async function proposeLiveManagedRule({ method, path, body }) {
+    const submitButton = elements.ruleFormSubmit;
+    submitButton.disabled = true;
+    try {
+      const response = await apiRequest(path, { method, body, csrf: true });
+      elements.ruleDialog.close();
+      await loadLiveData();
+      const changeId = response?.record?.order?.change_id;
+      showToast(changeId ? `Draft change order ${changeId} created.` : "Managed-rule change proposed.");
+      return response;
+    } catch (error) {
+      if (error.status === 401) {
+        clearSession();
+        liveData.rules = "unauthenticated";
+        liveData.orders = "unauthenticated";
+        liveData.instances = "unauthenticated";
+        renderAll();
+        showToast("Your session expired. Sign in again.", true);
+      } else if (error.status === 403) {
+        showToast("You do not have permission to propose managed-rule changes.", true);
+      } else if (error.status === 409) {
+        showToast(error.message || "The managed rule changed on the server. Reload and try again.", true);
+        await loadLiveData();
+      } else {
+        showToast(error.message || "The managed-rule proposal could not be saved.", true);
+      }
+      return null;
+    } finally {
+      submitButton.disabled = false;
+    }
+  }
+
+  async function proposeLiveRuleDelete(rule) {
+    if (!rule?.revision) {
+      showToast("This rule revision is unavailable. Reload and try again.", true);
+      return;
+    }
+    const confirmed = window.confirm(`Propose deletion for ${rule.id} · ${rule.name}? This creates a draft change order.`);
+    if (!confirmed) return;
+    await proposeLiveManagedRule({
+      method: "DELETE",
+      path: `/managed-rules/${encodeURIComponent(rule.id)}`,
+      body: { expected_revision: rule.revision },
+    });
+  }
+
+  async function proposeLiveRuleToggle(rule) {
+    if (!rule?.revision) {
+      showToast("This rule revision is unavailable. Reload and try again.", true);
+      return;
+    }
+    const draft = {
+      ...rule,
+      enabled: !rule.enabled,
+      targetDetail: rule.targetDetail === "—" ? "" : rule.targetDetail,
+    };
+    await proposeLiveManagedRule({
+      method: "PUT",
+      path: `/managed-rules/${encodeURIComponent(rule.id)}`,
+      body: ruleDraftToApiPayload(draft, { expectedRevision: rule.revision }),
+    });
+  }
+
+  function readInstanceFormDraft(existing) {
+    const instanceId = existing?.instanceId || elements.instanceIdField.value.trim();
+    if (!existing) {
+      elements.instanceIdField.setCustomValidity(instanceId ? "" : "Enter an instance ID.");
+      if (!elements.instanceIdField.reportValidity()) return null;
+    }
+    return {
+      instanceId,
+      useCase: elements.instanceUseCase.value,
+      notifyUrl: optionalUrlField(elements.instanceNotifyUrl.value),
+      healthUrl: optionalUrlField(elements.instanceHealthUrl.value),
+      enabled: elements.instanceEnabled.checked,
+      revision: existing?.revision,
+    };
+  }
+
+  function openInstanceDialog(instance = null) {
+    editingInstanceId = instance?.instanceId || null;
+    elements.instanceForm.reset();
+    const isCreate = !instance;
+    elements.instanceDialogTitle.textContent = instance ? `Edit ${instance.instanceId}` : "New instance";
+    elements.instanceIdRow.hidden = !isCreate;
+    elements.instanceIdField.required = isCreate;
+    elements.instanceIdField.readOnly = Boolean(instance);
+    elements.instanceIdField.value = instance?.instanceId || "";
+    elements.instanceUseCase.value = instance?.useCase || "translation";
+    elements.instanceNotifyUrl.value = instance?.notifyUrl || "";
+    elements.instanceHealthUrl.value = instance?.healthUrl || "";
+    elements.instanceEnabled.checked = instance ? instance.enabled : true;
+    elements.instanceFormSubmit.textContent = isCreate ? "Register instance" : "Save changes";
+    elements.instanceDialog.showModal();
+    (isCreate ? elements.instanceIdField : elements.instanceNotifyUrl).focus();
+  }
+
+  async function persistFleetInstance({ method, path, body, successMessage }) {
+    const submitButton = elements.instanceFormSubmit;
+    submitButton.disabled = true;
+    try {
+      await apiRequest(path, { method, body, csrf: true });
+      elements.instanceDialog.close();
+      await loadLiveData();
+      showToast(successMessage);
+      return true;
+    } catch (error) {
+      if (error.status === 401) {
+        clearSession();
+        liveData.rules = "unauthenticated";
+        liveData.orders = "unauthenticated";
+        liveData.instances = "unauthenticated";
+        renderAll();
+        showToast("Your session expired. Sign in again.", true);
+      } else if (error.status === 403) {
+        showToast("You do not have permission to change fleet inventory.", true);
+      } else if (error.status === 409) {
+        showToast(error.message || "Fleet inventory changed on the server. Reload and try again.", true);
+        await loadLiveData();
+      } else {
+        showToast(error.message || "Fleet inventory could not be saved.", true);
+      }
+      return false;
+    } finally {
+      submitButton.disabled = false;
+    }
+  }
+
+  async function deleteFleetInstance(instance) {
+    if (!instance?.revision) {
+      showToast("This instance revision is unavailable. Reload and try again.", true);
+      return;
+    }
+    const confirmed = window.confirm(`Remove ${instance.instanceId} from fleet inventory?`);
+    if (!confirmed) return;
+    try {
+      await apiRequest(`/as-instances/${encodeURIComponent(instance.instanceId)}`, {
+        method: "DELETE",
+        body: { expected_revision: instance.revision },
+        csrf: true,
+      });
+      await loadLiveData();
+      showToast(`${instance.instanceId} removed from fleet inventory.`);
+    } catch (error) {
+      if (error.status === 401) {
+        clearSession();
+        liveData.instances = "unauthenticated";
+        renderAll();
+        showToast("Your session expired. Sign in again.", true);
+      } else if (error.status === 403) {
+        showToast("You do not have permission to change fleet inventory.", true);
+      } else if (error.status === 409) {
+        showToast(error.message || "Fleet inventory changed on the server. Reload and try again.", true);
+        await loadLiveData();
+      } else {
+        showToast(error.message || "Fleet instance could not be removed.", true);
+      }
+    }
+  }
+
+  async function toggleFleetInstance(instance) {
+    if (!instance?.revision) {
+      showToast("This instance revision is unavailable. Reload and try again.", true);
+      return;
+    }
+    const draft = {
+      ...instance,
+      enabled: !instance.enabled,
+    };
+    await persistFleetInstance({
+      method: "PUT",
+      path: `/as-instances/${encodeURIComponent(instance.instanceId)}`,
+      body: instanceRecordPayload(draft, { expectedRevision: instance.revision }),
+      successMessage: `${instance.instanceId} is now ${draft.enabled ? "enabled" : "disabled"}.`,
+    });
   }
 
   function ruleDetailMarkup(rule) {
@@ -920,6 +1615,9 @@
       document.querySelector("#show-reject-form").hidden = action !== "review";
       elements.rejectForm.hidden = true;
       elements.rejectForm.reset();
+      elements.distributionRollbackForm.hidden = true;
+      elements.distributionRollbackReason.value = "";
+      void refreshSelectedDistribution(order);
       elements.reviewDialog.showModal();
       return;
     }
@@ -992,6 +1690,7 @@
         clearSession();
         liveData.rules = "unauthenticated";
         liveData.orders = "unauthenticated";
+        liveData.instances = "unauthenticated";
         renderAll();
         elements.reviewActions.hidden = true;
         elements.rejectForm.hidden = true;
@@ -1029,7 +1728,65 @@
   });
 
   elements.createRuleButton.addEventListener("click", () => {
-    if (isPreview) openRuleDialog();
+    openRuleDialog();
+  });
+  elements.createInstanceButton.addEventListener("click", () => {
+    openInstanceDialog();
+  });
+  elements.fleetSearch.addEventListener("input", renderFleetInstances);
+  elements.fleetStateFilter.addEventListener("change", renderFleetInstances);
+  elements.fleetTable.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button || isPreview) return;
+    const instance = state.asInstances.find((item) => item.instanceId === button.dataset.instanceId);
+    if (!instance) return;
+    if (button.dataset.instanceAction === "edit") {
+      openInstanceDialog(instance);
+      return;
+    }
+    if (button.dataset.instanceAction === "toggle") {
+      toggleFleetInstance(instance);
+      return;
+    }
+    if (button.dataset.instanceAction === "delete") {
+      deleteFleetInstance(instance);
+    }
+  });
+  elements.instanceForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (isPreview) return;
+    if (!authenticated) {
+      showToast("Sign in to change fleet inventory.", true);
+      return;
+    }
+    if (!canManageFleetInventory()) {
+      showToast("You do not have permission to change fleet inventory.", true);
+      return;
+    }
+    const existing = editingInstanceId
+      ? state.asInstances.find((item) => item.instanceId === editingInstanceId)
+      : null;
+    const draft = readInstanceFormDraft(existing);
+    if (!draft) return;
+    if (existing) {
+      if (!existing.revision) {
+        showToast("This instance revision is unavailable. Reload and try again.", true);
+        return;
+      }
+      await persistFleetInstance({
+        method: "PUT",
+        path: `/as-instances/${encodeURIComponent(existing.instanceId)}`,
+        body: instanceRecordPayload(draft, { expectedRevision: existing.revision }),
+        successMessage: `${existing.instanceId} updated.`,
+      });
+      return;
+    }
+    await persistFleetInstance({
+      method: "POST",
+      path: "/as-instances",
+      body: instanceRecordPayload(draft),
+      successMessage: `${draft.instanceId} registered.`,
+    });
   });
   elements.ruleSearch.addEventListener("input", renderRules);
   elements.ruleStateFilter.addEventListener("change", renderRules);
@@ -1037,23 +1794,35 @@
   elements.orderStateFilter.addEventListener("change", renderChangeOrders);
 
   elements.rulesTable.addEventListener("click", (event) => {
-    if (!isPreview) return;
     const button = event.target.closest("button");
     if (!button) return;
     if (button.dataset.openOrder) {
       openChangeOrder(button.dataset.openOrder);
       return;
     }
-    const rule = state.rules.find((item) => item.id === button.dataset.ruleId);
-    if (!rule) return;
+    const rule = state.rules.find((item) => item.id === button.dataset.ruleId)
+      || visibleRuleRows().find((item) => item.id === button.dataset.ruleId);
+    if (!rule || rule.isTombstone) return;
     if (button.dataset.ruleAction === "edit") {
       openRuleDialog(rule);
-    } else if (button.dataset.ruleAction === "toggle") {
-      const action = rule.enabled ? "Disable" : "Enable";
-      queueChange(action, rule.id, rule.name, { ...rule, enabled: !rule.enabled }, rule);
-    } else if (button.dataset.ruleAction === "delete") {
-      const confirmed = window.confirm(`Queue a local deletion request for ${rule.id} · ${rule.name}?`);
-      if (confirmed) queueChange("Delete", rule.id, rule.name, null, rule);
+      return;
+    }
+    if (button.dataset.ruleAction === "toggle") {
+      if (isPreview) {
+        const action = rule.enabled ? "Disable" : "Enable";
+        queueChange(action, rule.id, rule.name, { ...rule, enabled: !rule.enabled }, rule);
+      } else {
+        proposeLiveRuleToggle(rule);
+      }
+      return;
+    }
+    if (button.dataset.ruleAction === "delete") {
+      if (isPreview) {
+        const confirmed = window.confirm(`Queue a local deletion request for ${rule.id} · ${rule.name}?`);
+        if (confirmed) queueChange("Delete", rule.id, rule.name, null, rule);
+      } else {
+        proposeLiveRuleDelete(rule);
+      }
     }
   });
 
@@ -1068,61 +1837,79 @@
     if (button) openChangeOrder(button.dataset.openOrder);
   });
 
-  elements.ruleForm.addEventListener("submit", (event) => {
+  elements.ruleForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!isPreview) return;
-    const name = elements.ruleName.value.trim();
-    const matchValue = elements.ruleMatchValue.value.trim();
-    const targetDetail = elements.ruleTargetDetail.value.trim();
-    elements.ruleName.setCustomValidity(name ? "" : "Enter a rule name.");
-    elements.ruleMatchValue.setCustomValidity(matchValue ? "" : "Enter a match value.");
-    elements.ruleTargetDetail.setCustomValidity(targetDetail ? "" : "Enter target detail.");
-    if (!elements.ruleForm.reportValidity()) return;
-    if (elements.ruleMatchType.value === "Regex") {
-      try {
-        new RegExp(matchValue);
-      } catch {
-        elements.ruleMatchValue.setCustomValidity("Enter a valid regular expression.");
-        elements.ruleMatchValue.reportValidity();
-        return;
-      }
-    }
     const existing = editingRuleId ? state.rules.find((rule) => rule.id === editingRuleId) : null;
     if (existing && pendingOrderFor(existing.id)) {
       showToast("This rule already has a pending change order.", true);
       elements.ruleDialog.close();
       return;
     }
-    const formData = new FormData(elements.ruleForm);
-    const ruleId = existing?.id || `R-${nextRuleNumber++}`;
-    const draft = {
-      id: ruleId,
-      name,
-      matchField: String(formData.get("matchField")),
-      matchType: String(formData.get("matchType")),
-      matchValue,
-      target: String(formData.get("target")),
-      targetDetail,
-      enabled: formData.get("enabled") === "on",
-      version: existing?.version || "v01",
-      updatedAt: existing?.updatedAt || "Preview session",
-    };
-    const order = queueChange(existing ? "Update" : "Create", ruleId, draft.name, draft, existing);
-    if (order) elements.ruleDialog.close();
+    const draft = readRuleFormDraft(existing);
+    if (!draft) return;
+    if (isPreview) {
+      const order = queueChange(existing ? "Update" : "Create", draft.id, draft.name, draft, existing);
+      if (order) elements.ruleDialog.close();
+      return;
+    }
+    if (!authenticated) {
+      showToast("Sign in to propose managed-rule changes.", true);
+      return;
+    }
+    if (!canSubmitManagedRuleChange()) {
+      showToast("You do not have permission to propose managed-rule changes.", true);
+      return;
+    }
+    if (existing) {
+      if (!existing.revision) {
+        showToast("This rule revision is unavailable. Reload and try again.", true);
+        return;
+      }
+      await proposeLiveManagedRule({
+        method: "PUT",
+        path: `/managed-rules/${encodeURIComponent(existing.id)}`,
+        body: ruleDraftToApiPayload(draft, { expectedRevision: existing.revision }),
+      });
+      return;
+    }
+    await proposeLiveManagedRule({
+      method: "POST",
+      path: "/managed-rules",
+      body: ruleDraftToApiPayload(draft),
+    });
   });
 
+  elements.ruleId.addEventListener("input", () => elements.ruleId.setCustomValidity(""));
   elements.ruleName.addEventListener("input", () => elements.ruleName.setCustomValidity(""));
   elements.ruleMatchValue.addEventListener("input", () => elements.ruleMatchValue.setCustomValidity(""));
   elements.ruleMatchType.addEventListener("change", () => elements.ruleMatchValue.setCustomValidity(""));
   elements.ruleTargetDetail.addEventListener("input", () => elements.ruleTargetDetail.setCustomValidity(""));
   elements.ruleForm.addEventListener("reset", () => {
-    [elements.ruleName, elements.ruleMatchValue, elements.ruleTargetDetail].forEach((field) => {
+    [elements.ruleId, elements.ruleName, elements.ruleMatchValue, elements.ruleTargetDetail].forEach((field) => {
       field.setCustomValidity("");
     });
   });
 
   document.querySelectorAll("[data-close-dialog]").forEach((button) => {
     button.addEventListener("click", () => button.closest("dialog").close());
+  });
+
+  elements.distributionStartButton.addEventListener("click", () => {
+    const order = state.changeOrders.find((item) => item.id === selectedOrderId);
+    if (order) void startLiveDistribution(order);
+  });
+  elements.distributionReportButton.addEventListener("click", () => {
+    const order = state.changeOrders.find((item) => item.id === selectedOrderId);
+    if (order) void reportLiveDistributionBatch(order);
+  });
+  elements.distributionShowRollback.addEventListener("click", () => {
+    elements.distributionRollbackForm.hidden = false;
+    elements.distributionRollbackReason.focus();
+  });
+  elements.distributionRollbackForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const order = state.changeOrders.find((item) => item.id === selectedOrderId);
+    if (order) void rollbackLiveDistribution(order, elements.distributionRollbackReason.value);
   });
 
   document.querySelector("#approve-change").addEventListener("click", () => {

@@ -408,3 +408,38 @@ See [`m4b-5-2c-applied-transaction-review-2026-10-01.md`](../reviews/m4b-5-2c-ap
 
 - **Focused unit evidence**：`uv run --directory services/config-service pytest tests/test_migrate.py tests/test_runtime.py tests/test_bootstrap_admin.py -q`：**39 passed**。Migration tests 使用 fake connection/store factories，无真实 database credentials；覆盖配置 fail-before-connect、public/equal schema rejection、ensure call order、限定 grants、失败 rollback/close 与 DSN 错误不泄漏。
 - **验收边界**：未运行完整 `make gate`、CI、Helm lint/template/render、镜像构建或数据库部署验证。该代码级 slice 不证明实际 PostgreSQL permissions/deployment，也不改变 7.2d Helm render/HTTPS ingress/trusted-proxy/browser proof 的 OPEN 状态；M4b/M4 与所有 REQ acceptance 仍未通过。
+
+## M4b-7.5 Console fleet inventory UI（2026-10-03；engineering evidence, NOT M4b/M4/REQ ACCEPTANCE）
+
+本节记录 Operations 视图下的 live fleet inventory CRUD 工程切片；后端 PG `as_instances` inventory、distribution notify 与 testbed health probe 已在 prior 7.5 API/store slice 交付。**不**宣称 REQ-F-15/M4 验收、真实 AS 栈补测或 distribution UI。
+
+- **Console UI**：live mode 在 Operations 视图列出 `/internal/v1/as-instances`；approver/admin 可 POST/PUT/DELETE（含 enable/disable、notify URL、health URL）并使用 same-origin session + `X-CSRF-Token` 写路径；只读 session 可 GET 列表。`?preview=1` 仍使用 fixture 表格，不调用 API。
+- **API routes**：`GET/POST /internal/v1/as-instances`、`GET/PUT/DELETE /internal/v1/as-instances/{instance_id}` 已在 `api.py`（inventory store 注入时可用）。
+- **Focused tests**：`node --check services/console/web/console.js`；`uv run --directory services/config-service pytest tests/test_fleet_api.py -q`（含 list/create/update inventory regression）。
+- **PostgreSQL integration（维护者环境）**：`uv run pytest -m integration services/config-service/tests/test_postgres_as_instance_store_integration.py -q`（临时 PG 12.22；非 CI；PG16 未测）。该 marker run 不证明 browser workflow 或 AS 全栈 notify/health 补测。
+- **Distribution UI（7.6 slice）**：change-order review modal 内 live **start / batch report / rollback**（`console.js`）；仍非 full M4b-8 或 REQ-F-15 验收。
+
+## M4b-7.6 Distribution console UI（2026-10-03；engineering slice, NOT M4b/M4/REQ ACCEPTANCE）
+
+- **UI**：已批准 / 分发中的 change order → Review 对话框 → Fleet rollout（plan version、批次布局、start、report current batch healthy、rollback）。
+- **API**：`POST/GET .../distribution`、`POST .../reports`、`POST .../rollback`（与 `test_fleet_api.py` / PG pipeline integration 一致）。
+- **前置**：Operations 登记 enabled 实例；health URL 配置正确时 batch report 触发服务端 probe。
+- **证据**：`node --check services/console/web/console.js`；`make gate`；浏览器 HTTPS 证据仍归 M4b-8 节。
+
+## M4b-8 Dev HTTPS same-origin stack（runbook + engineering; NOT signed acceptance）
+
+| 项 | 状态 |
+|---|---|
+| Compose 栈 | `deploy/compose/README.md` |
+| Runbook | [`m4b-8-runbook.md`](m4b-8-runbook.md) |
+| 规则范围 | **被叫+前缀**（[`m4-req-calling-regex-lossless-adjudication-2026-10-03.md`](../reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md)） |
+| Artifact 目录 | [`artifacts/m4b-8/README.md`](../../artifacts/m4b-8/README.md) |
+| 脱敏材料路径 | [`artifacts/m4b-8/2026-10-03/`](../../artifacts/m4b-8/2026-10-03/)（Playwright 截图 + `runbook-checklist.md` + `browser-evidence-log.json`） |
+| 复现命令 | `M4B8_E2E_PASSWORD='<dev-only>' deploy/compose/scripts/m4b-8-browser-evidence.sh` |
+| Git commit | _维护者填写_ |
+| **维护者签字** | **待填** — 仅表示：已审阅上述路径内材料，且认可 runbook 中 PASS/FAIL/BLOCKED/N/A 标注与 10-03 关门裁决一致；**不**表示 REQ-F-13、7.2d、F-15 真 AS 补测已通过 |
+| 自动化 smoke（2026-10-03） | 本机 compose：`postgres:12.22` + `up.sh` 后 `./scripts/smoke-https.sh` **OK**（宿主机 `HTTP(S)_PROXY` 需 `--noproxy` 访问 localhost，脚本已处理） |
+| Compose PG integration（2026-10-03） | `AS_PG_TEST_DSN=postgresql://postgres:postgres@127.0.0.1:55432/as_config uv run pytest -m integration -q services/config-service/tests` → **136 passed, 3 skipped**（`wal_level` publication 跳过）；非 CI |
+| Playwright 浏览器证据（2026-10-03） | 同上 compose 栈；headless Chromium；同源 API 采样见 artifact log |
+
+**M4b-8 步骤 N/A / BLOCKED**：步骤 3（F-13 trace）；7.2d 生产 preflight（M5）；v1.1 主叫/正则；F-15 真 AS 栈补测（裁决后置）。

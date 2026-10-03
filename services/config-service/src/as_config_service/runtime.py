@@ -18,11 +18,13 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
 from as_config_service.api import ApiIdentity, create_app
+from as_config_service.as_instance_store import PostgresAsInstanceStore
 from as_config_service.audit_store import PostgresAuditStore
 from as_config_service.auth import PostgresConsoleAuthStore
 from as_config_service.change_order_store import PostgresChangeOrderStore
 from as_config_service.distribution_store import PostgresDistributionStore
 from as_config_service.managed_rule_store import PostgresManagedRuleStore
+from as_config_service.postgres_store import PostgresVersionStore
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,62}\Z")
 
@@ -249,6 +251,17 @@ def create_runtime_app(
             cursor.close()
         connection.commit()
 
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                sql.SQL("SET search_path TO {}, pg_catalog").format(
+                    sql.Identifier(settings.config_schema)
+                )
+            )
+        finally:
+            cursor.close()
+        connection.commit()
+
         store_connection = cast(Any, connection)
         managed_rule_store = PostgresManagedRuleStore(
             store_connection, schema=settings.config_schema
@@ -260,12 +273,18 @@ def create_runtime_app(
             store_connection, schema=settings.config_schema
         )
         auth_store = PostgresConsoleAuthStore(store_connection, schema=settings.config_schema)
+        as_instance_store = PostgresAsInstanceStore(store_connection, schema=settings.config_schema)
         audit_store = PostgresAuditStore(store_connection, schema=settings.audit_schema)
+        version_store = PostgresVersionStore(
+            store_connection, table=f"{settings.config_schema}_config_versions"
+        )
         app = create_app(
             managed_rule_store=managed_rule_store,
             change_order_store=change_order_store,
             distribution_store=distribution_store,
+            version_store=version_store,
             auth_store=auth_store,
+            as_instance_store=as_instance_store,
             audit_store=audit_store,
             resolve_identity=None,
             can_read_config=_deny,

@@ -163,6 +163,11 @@ class PostgresVersionStore:
         self._connection = connection
         self.table = table
 
+    @property
+    def connection(self) -> _Connection:
+        """Expose the injected connection for shared-transaction coordination."""
+        return self._connection
+
     @classmethod
     def from_dsn(cls, dsn: str, table: str = DEFAULT_TABLE) -> PostgresVersionStore:
         """Build a repository by connecting to ``dsn``. This is the production entry point.
@@ -200,6 +205,8 @@ class PostgresVersionStore:
         bundle: ConfigBundle,
         now: float,
         change_id: str | None = None,
+        *,
+        commit: bool = True,
     ) -> ConfigVersion:
         """Append a version, leaving every row already written untouched. See ADR-0006.
 
@@ -216,6 +223,7 @@ class PostgresVersionStore:
             change_id: The change order that produced this version. ``None``
                 only for a version written outside a change order, which
                 ADR-0006 forbids in production. REQ-NF-10.
+            commit: When ``False``, leave the transaction open for the caller.
 
         Returns:
             The appended version, numbered one higher than the previous head, or
@@ -227,7 +235,8 @@ class PostgresVersionStore:
             (_encode(bundle), now, change_id),
         )
         row = cursor.fetchone()
-        self._connection.commit()
+        if commit:
+            self._connection.commit()
         if row is None:
             raise RuntimeError(f"appending to {self.table} returned no row")
         version, created_at, stored_change_id = row

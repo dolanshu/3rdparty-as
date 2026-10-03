@@ -35,7 +35,7 @@ fixture，状态只保留在当前页面内，不使用 localStorage 或网络�
 外部部署必须通过同一 HTTPS origin 暴露 console 与 API，并保留 `/internal/v1` 路径；ingress/reverse proxy 必须保留可信的 HTTPS scheme 行为，供 ASGI app 正确识别原始请求 scheme。代码级 ASGI factory/CLI 已交付，但当前没有 deployed HTTPS ingress/trusted-proxy 证据。
 不要以 HTTP 直接登录：服务端会拒绝登录，且 session/CSRF cookies 使用 `Secure` 属性。
 
-除登录/session/logout、规则与变更单读取外，live Change orders table/modal 仅支持 creator 提交既有 draft，以及由不同 approver 批准或拒绝 submitted order；提交/决策后从 server 重新加载状态，写请求带 CSRF。此 workflow 不启用 ManagedRule create/edit/enable/delete 或其他规则写入；runtime bundle mapping/compiler 与 regex semantics 未解决前，规则写入仍被阻塞。Distribution start/reports/rollback UI 也不可用。没有 live Call-ID 查询或遥测端点，对应视图会明确显示 unavailable。API 请求失败时显示错误，不会回退到 fixture。认证信息不存入 localStorage，也不会写入日志。preview 仍只操作本地 fixture，不调用 live API。
+除登录/session/logout、规则与变更单读取外，live Change orders table/modal 仅支持 creator 提交既有 draft，以及由不同 approver 批准或拒绝 submitted order；提交/决策后从 server 重新加载状态，写请求带 CSRF。此 workflow 不启用 ManagedRule create/edit/enable/delete 或其他规则写入；runtime bundle mapping/compiler 与 regex semantics 未解决前，规则写入仍被阻塞。Live change-order modal 含 **distribution start / batch report / rollback**（需 approver/admin、已登记 fleet 实例）；仍无 Call-ID trace UI。没有 live Call-ID 查询或遥测端点，对应视图会明确显示 unavailable。API 请求失败时显示错误，不会回退到 fixture。认证信息不存入 localStorage，也不会写入日志。preview 仍只操作本地 fixture，不调用 live API。
 
 ## M4b 剩余验收
 

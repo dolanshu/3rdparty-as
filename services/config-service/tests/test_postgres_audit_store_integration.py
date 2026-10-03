@@ -70,6 +70,20 @@ def _relation(schema: str, table: str) -> Any:
     return sql.SQL("{}.{}").format(sql.Identifier(schema), sql.Identifier(table))
 
 
+def _login_role_connection_params(login_role: str) -> dict[str, Any]:
+    from psycopg.conninfo import conninfo_to_dict
+
+    connection_params = conninfo_to_dict(TEST_DSN)
+    password = connection_params.get("password") or ""
+    connection_params.pop("passfile", None)
+    connection_params.update(
+        user=login_role,
+        password=password,
+        connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+    )
+    return connection_params
+
+
 @pytest.fixture()
 def pg() -> Iterator[PgHarness]:
     driver = pytest.importorskip("psycopg")
@@ -348,14 +362,22 @@ def test_runtime_role_can_append_and_read_only_with_effective_grants(pg: PgHarne
 
 def test_login_role_can_set_runtime_role_and_append(pg: PgHarness) -> None:
     from psycopg import sql
-    from psycopg.conninfo import conninfo_to_dict
 
     login_role = f"audit_login_{uuid.uuid4().hex[:12]}"
     login_connection = None
     role_created = False
+    login_password = _login_role_connection_params(login_role)["password"]
     cursor = pg.owner_connection.cursor()
     try:
-        cursor.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(login_role)))
+        if login_password:
+            cursor.execute(
+                sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                    sql.Identifier(login_role),
+                    sql.Literal(login_password),
+                )
+            )
+        else:
+            cursor.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(login_role)))
         cursor.execute(
             sql.SQL("GRANT {} TO {}").format(
                 sql.Identifier(pg.runtime_role), sql.Identifier(login_role)
@@ -364,15 +386,7 @@ def test_login_role_can_set_runtime_role_and_append(pg: PgHarness) -> None:
         pg.owner_connection.commit()
         role_created = True
 
-        connection_params = conninfo_to_dict(TEST_DSN)
-        connection_params.pop("password", None)
-        connection_params.pop("passfile", None)
-        connection_params.update(
-            user=login_role,
-            password="",
-            connect_timeout=_CONNECT_TIMEOUT_SECONDS,
-        )
-        login_connection = pg.driver.connect(**connection_params)
+        login_connection = pg.driver.connect(**_login_role_connection_params(login_role))
         cursor = login_connection.cursor()
         cursor.execute("SELECT current_user")
         assert cursor.fetchone()[0] == login_role

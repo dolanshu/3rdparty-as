@@ -346,6 +346,7 @@ def _replace_stores(monkeypatch: pytest.MonkeyPatch, events: list[tuple[Any, ...
         "PostgresChangeOrderStore",
         "PostgresDistributionStore",
         "PostgresConsoleAuthStore",
+        "PostgresAsInstanceStore",
         "PostgresAuditStore",
     ):
 
@@ -381,6 +382,7 @@ def test_runtime_uses_one_connection_and_sets_role_before_app_construction(
                 "change_order_store",
                 "distribution_store",
                 "auth_store",
+                "as_instance_store",
                 "audit_store",
             )
         )
@@ -401,8 +403,11 @@ def test_runtime_uses_one_connection_and_sets_role_before_app_construction(
     assert events[0] == ("role", 'SET ROLE "as_config_runtime"')
     assert events[1] == ("cursor-close",)
     assert events[2] == ("commit",)
+    assert events[3] == ("role", 'SET search_path TO "as_config", pg_catalog')
+    assert events[4] == ("cursor-close",)
+    assert events[5] == ("commit",)
     store_events = [event for event in events if event[0] == "store"]
-    assert len(store_events) == 5
+    assert len(store_events) == 6
     assert all(event[2] is connection for event in store_events)
     assert events[-1][0] == "app"
     assert app.router.shutdown_handlers == [connection.close]

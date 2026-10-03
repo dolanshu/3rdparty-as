@@ -70,7 +70,13 @@ src = [
   "testbed/simulators/src",
   "testbed/load/src",
 ]
-extend-exclude = [".venv", "build", "dist"]
+extend-exclude = [
+  ".venv",
+  "build",
+  "dist",
+  # Non-product probe scripts excluded from the product gate.
+  "testbed/simulators/resip-probe/research",
+]
 
 [tool.ruff.lint]
 select = [

@@ -4,6 +4,8 @@
 **日期**：2026-09-28
 **状态**：占位 — 验收标准从 PRD v0.2 同步挪入，具体 test case 待 M2 设计阶段补充
 
+**M4b-8 BLOCKED 矩阵（2026-10-03）**：维护者裁决见 [`reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md`](../reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md)。dev HTTPS 栈（`deploy/compose/`）上可收集：**被叫+前缀**规则 CRUD→审批、ChangeOrder、审计、fleet inventory 等。**步骤 1（F-12）**：**被叫+前缀**可测；主叫/正则属 **v1.1**，不纳入 M4。**步骤 3（F-13）**：**BLOCKED**（7.4 延期）。**7.2d** 生产 preflight：**BLOCKED**（M5）。**步骤 4（F-15）**：**PARTIAL**（API notify/health + fleet UI；完整浏览器 distribution 与 AS 补测待 7.6）。详见 [`m4b-8-runbook.md`](m4b-8-runbook.md)。
+
 > 本文档从 PRD v0.2（prd.md）的验收标准部分提取而来。
 > 具体 test case（步骤、断言、数据准备）由 M2 设计阶段补充。
 > **协议章节号说明**：同 PRD，文中 RFC 3261 章节号以 IETF 2002 年发布的 RFC 3261 原文为准。
@@ -146,7 +148,8 @@
 
 ### REQ-F-12 验收标准
 - [ ] 控制台界面存在：规则列表、创建、编辑、删除按钮
-- [ ] 创建规则时能填写：匹配对象（主叫/被叫，下拉选择）、匹配模式（前缀/正则）、目标业务类型（翻译/反欺诈/路由/阻止/默认）、启用/禁用开关
+- [ ] 创建规则时能填写：匹配对象（**M4：被叫**；主叫为 v1.1）、匹配模式（**M4：前缀**；正则为 v1.1）、目标业务类型（翻译/反欺诈/路由/阻止/默认）、启用/禁用开关
+- [ ] **M4**：激活后的规则与控制台填写的被叫前缀、目标类型/明细一致（与 REQ-F-6/F-7 被叫匹配轴一致；见 PRD REQ-F-12 M4 范围说明）
 - [ ] 规则保存后进入审批队列（REQ-F-14 联动）
 - [ ] 审批通过后规则生效，禁用的规则不参与匹配
 - [ ] 规则 CRUD 操作生成审计日志（REQ-S-4）
@@ -174,6 +177,8 @@
 ### M4b-8 浏览器验收执行程序（从属于上述 REQ；依赖就绪后执行）
 
 本程序是 REQ-F-12/13/14/15 与 REQ-S-4 的执行步骤，不新增或替代其验收标准。开始前须具备：same-origin HTTPS console/API serving；已配置 PostgreSQL、audit 与 auth；两个不同账号及权限明确的 operator、approver；已知且有预期 SIP 事件的 Call-ID；以及可安全操作的测试 AS instances。当前缺少已配置的 HTTPS serving/proxy、lossless runtime rule mapping、live trace source/API、AS instance inventory、notification transport 与 health source；受这些后端阻塞的步骤标记 **BLOCKED**，不得记作通过。
+
+**M4 浏览器 HTTPS（2026-10-03 关门裁决）**：M4/M4b-8 可在 **compose、自签证书或本地反代** 提供的同源 HTTPS 上执行并收集脱敏证据；这不替代下文 7.2d 的正式生产/集群 preflight。正式 **7.2d** ingress/trusted-proxy 证明归入 **M5** 验收，见 [`reviews/m4-closure-adjudication-2026-10-03.md`](../reviews/m4-closure-adjudication-2026-10-03.md) 与 `plan.md` §4.2。
 
 **M4b-7.2d ingress/TLS preflight (BLOCKED)**：在开始任何 login/browser workflow 前，对实际客户/测试部署完成并记录以下检查：
 

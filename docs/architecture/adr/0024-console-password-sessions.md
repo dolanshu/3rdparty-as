@@ -1,6 +1,6 @@
 # ADR-0024 — Console Password Authentication and Sessions
 
-- **Status**: draft · pending maintainer review
+- **Status**: accepted · maintainer signoff 2026-10-03 ([review record](../../reviews/adr-0024-console-password-sessions-review-2026-10-02.md))
 - **Date**: 2026-10-02
 - **Decides**: §0 ledger item 18 — propose role-based password authentication with persistent, revocable console sessions
 - **回应 REQ**: REQ-S-4, REQ-F-14
@@ -10,12 +10,12 @@
 - REQ-S-4 requires role-based authorization using a password or client certificate, authorization and audit for all control-console operations, and append-only audit logs.
 - ADR-0016 assigns console authentication and complete audit to M4 but does not select an authentication or session mechanism.
 - At draft time, `services/console/access.py` implemented pure role/permission policy and audit-record construction, `api.py` accepted injected identity and authorization callbacks, and there was no account or session persistence.
-- The console shares a PostgreSQL governance store. Its application uses a shared PostgreSQL connection that must remain dedicated and request-serialized; mutating `search_path` is not an acceptable isolation mechanism.
-- At draft time, M4b-5-2d2 was an engineering slice, not an authenticated service or acceptance evidence, and persistent audit integration remained undelivered. As of 2026-10-02, M4b-6a auth/session and M4b-6b audit API/store engineering slices exist; neither is REQ-S-4 acceptance. This ADR remains draft, pending maintainer review and signoff. See the [acceptance report](../../acceptance/report.md) for current scope and evidence.
+- The console shares a PostgreSQL governance store. Its application uses a shared PostgreSQL connection that must remain dedicated and request-serialized; mutating `search_path` is not an acceptable isolation mechanism; the delivered M4b-6a/6b slices follow that constraint.
+- M4b-6a (identity, password, session) and M4b-6b (append-only audit API/store) are **delivered as engineering slices** on branch `cur`. The 2026-10-03 implementation review recorded alignment with this ADR (104 passed in `test_auth` + `test_audit_store`; no P0 drift). Neither slice is REQ-S-4 or M4b acceptance. This ADR is **accepted** per the [review record](../../reviews/adr-0024-console-password-sessions-review-2026-10-02.md). See the [acceptance report](../../acceptance/report.md) for current scope and evidence.
 
 ## Decision（决策）
 
-Propose role plus password authentication for the control console, subject to maintainer review. This is a design proposal, not an accepted decision or authorization to claim REQ-S-4 or M4b acceptance.
+Adopt role plus password authentication for the control console per this ADR (accepted 2026-10-03). Acceptance does not authorize claiming REQ-S-4 or M4b acceptance.
 
 - Reuse the existing `VIEWER`, `OPERATOR`, `APPROVER`, and `ADMIN` roles, permissions, `MANAGE_USERS` permission, and two-person approval policy. Every control-console operation must authorize the actor and produce an audit event; durable append-only audit is a separate M4b-6b delivery gate.
 - Store password verifiers as `pbkdf2-sha256$v1$<iterations>$32$<salt>$<digest>`, where salt and digest are canonical unpadded base64url encodings of the 16-byte cryptographically random salt and 32-byte derived key. The v1 parameters are PBKDF2-HMAC-SHA256 and 600,000 iterations. Password input is the exact UTF-8 encoding of the supplied string: do not normalize or truncate input; reject passwords exceeding 1,024 UTF-8 bytes before PBKDF2. Verify the digest with a constant-time comparison, using the algorithm, iteration count, key length, and salt recorded with each verifier. Require at least 12 characters. After successful login, rehash with the current parameters when they are stronger than those in the record. Never store or emit plaintext passwords in the database, logs, or audit records. No additional cryptography dependency is proposed.
@@ -48,9 +48,9 @@ An audited API starts only when its shared PostgreSQL connection is already swit
 - This slice provides a local password-account lifecycle only. MFA, SSO, and client-certificate authentication are not included.
 - Rate limiting depends on deployment ingress and remains a security follow-up; this proposal does not claim application-level rate limiting.
 - HTTPS termination and trusted-proxy configuration remain deployment responsibilities and must be validated before production exposure.
-- Persistent append-only audit is not delivered by the login/session design and remains the separate M4b-6b requirement.
+- Login/session (M4b-6a) and append-only audit (M4b-6b) are separate engineering slices; both are implemented on `cur`, but neither slice alone satisfies REQ-S-4 or M4b acceptance.
 - Password recovery, lockout policy, session listing, and other account lifecycle requirements are not selected here beyond the specified admin operations and password-change revocation.
-- No REQ-S-4 or M4b acceptance is claimed. The proposal remains draft until maintainer review; integration and security verification are pending.
+- No REQ-S-4 or M4b acceptance is claimed. Production HTTPS/trusted-proxy verification and M4b-8 browser evidence remain follow-up work.
 
 ## Alternatives considered（考虑过的备选）
 
@@ -63,7 +63,7 @@ An audited API starts only when its shared PostgreSQL connection is already swit
 ## Evidence（证据）
 
 - **Engineering evidence (not acceptance):** Auth/session implementation is in [`auth.py`](../../../services/config-service/src/as_config_service/auth.py), [`api.py`](../../../services/config-service/src/as_config_service/api.py), and [`bootstrap_admin.py`](../../../services/config-service/src/as_config_service/bootstrap_admin.py); tests are [`test_auth.py`](../../../services/config-service/tests/test_auth.py), [`test_postgres_auth_integration.py`](../../../services/config-service/tests/test_postgres_auth_integration.py), and [`test_postgres_auth_api_integration.py`](../../../services/config-service/tests/test_postgres_auth_api_integration.py). Durable audit implementation is in [`audit_store.py`](../../../services/config-service/src/as_config_service/audit_store.py) and [`api.py`](../../../services/config-service/src/as_config_service/api.py); tests are [`test_audit_store.py`](../../../services/config-service/tests/test_audit_store.py), [`test_postgres_audit_store_integration.py`](../../../services/config-service/tests/test_postgres_audit_store_integration.py), and [`test_api.py`](../../../services/config-service/tests/test_api.py). The [acceptance report](../../acceptance/report.md) records the current local gate and integration results.
-- **Evidence limits:** Verification is local on PostgreSQL 12.22 only; three publication DDL integration tests were skipped because `wal_level=replica` (they require `logical`). PostgreSQL 16 and CI were not tested. There is no production trusted-proxy evidence, application rate-limiting evidence, browser UI, or REQ-S-4 acceptance. These engineering slices do not constitute acceptance; this ADR remains draft pending maintainer review and signoff.
+- **Evidence limits:** Verification is local on PostgreSQL 12.22 only; three publication DDL integration tests were skipped because `wal_level=replica` (they require `logical`). PostgreSQL 16 and CI were not tested. There is no production trusted-proxy evidence, application rate-limiting evidence, or REQ-S-4 acceptance. Engineering slices do not constitute REQ acceptance.
 
 ## Related（相关）
 

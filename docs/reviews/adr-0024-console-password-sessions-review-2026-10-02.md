@@ -11,7 +11,7 @@ Independent design review of the proposed console role/password/PG-session bound
 
 ## Conclusion
 
-**Pass after fixes.** The final independent review found no remaining design mismatch. ADR-0024 remains draft pending maintainer review. This is not security certification, implementation review, REQ-S-4 acceptance, or M4b/M4 acceptance.
+**Pass after fixes.** The final independent review found no remaining design mismatch. ADR-0024 is **accepted** per maintainer signoff below. This is not security certification, REQ-S-4 acceptance, or M4b/M4 acceptance.
 
 ## Findings and Fixes
 
@@ -23,4 +23,36 @@ Independent design review of the proposed console role/password/PG-session bound
 
 ## Status and Signoff
 
-M4b-6a auth/session design is current; implementation has not started. M4b-6b durable append-only audit remains unchecked and a required follow-up. All tests and acceptance remain unchecked. Maintainer signoff: pending.
+M4b-6a auth/session and M4b-6b durable append-only audit are delivered as engineering slices on branch `cur` (see **Implementation review (2026-10-03)** below). REQ-S-4 acceptance, M4b acceptance, and M4b-8 browser evidence remain unchecked.
+
+## Implementation review (2026-10-03)
+
+Independent implementation review of the M4b-6a/6b slices on branch `cur` against [ADR-0024](../architecture/adr/0024-console-password-sessions.md) and the 2026-10-02 design review baseline.
+
+### Scope and evidence
+
+- Auth/session: [`auth.py`](../../services/config-service/src/as_config_service/auth.py), [`api.py`](../../services/config-service/src/as_config_service/api.py), [`bootstrap_admin.py`](../../services/config-service/src/as_config_service/bootstrap_admin.py); tests in [`test_auth.py`](../../services/config-service/tests/test_auth.py) and PostgreSQL integration tests.
+- Durable audit: [`audit_store.py`](../../services/config-service/src/as_config_service/audit_store.py); tests in [`test_audit_store.py`](../../services/config-service/tests/test_audit_store.py) and PostgreSQL integration tests.
+
+### Validation
+
+- Focused gate: **104 passed** across `test_auth` and `test_audit_store` (unit and PostgreSQL integration subsets as run in the implementation review).
+- **No P0 drift** from the accepted design-review fixes (session revocation on account change, bootstrap transaction, cookie/CSRF contract, verifier encoding, audit privilege model).
+
+### Residual notes (non-blocking for impl alignment)
+
+- **P2:** Session cookie `Max-Age` vs eight-hour absolute expiry semantics should be verified in deployment/browser evidence.
+- **P2:** No dedicated session renewal endpoint; absolute lifetime only (consistent with ADR text).
+
+### Conclusion (implementation)
+
+**Pass for implementation alignment** with ADR-0024 and the 2026-10-02 design review. This is **not** REQ-S-4 acceptance, **not** M4b acceptance, and **not** M4b-8 browser workflow acceptance.
+
+## Maintainer signoff
+
+| Field | Value |
+|-------|--------|
+| Design review conclusion | Pass (2026-10-02) |
+| Implementation review date | 2026-10-03 |
+| ADR-0024 status | **Accepted** |
+| Maintainer | Approved; recorded by AI agent per maintainer authorization in chat (2026-10-03) |

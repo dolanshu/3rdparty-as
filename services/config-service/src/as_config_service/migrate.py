@@ -14,13 +14,17 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
+from as_config_service.as_instance_store import PostgresAsInstanceStore
 from as_config_service.audit_store import PostgresAuditStore
 from as_config_service.auth import PostgresConsoleAuthStore
 from as_config_service.change_order_store import PostgresChangeOrderStore
 from as_config_service.distribution_store import PostgresDistributionStore
 from as_config_service.managed_rule_store import PostgresManagedRuleStore
+from as_config_service.postgres_store import PostgresVersionStore
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,62}\Z")
+
+_VERSION_TABLE_COLUMNS = ("version", "bundle_json", "created_at", "change_id")
 
 _CONFIG_TABLE_COLUMNS = (
     ("managed_rules_heads", ("rule_id", "current_revision")),
@@ -41,7 +45,31 @@ _CONFIG_TABLE_COLUMNS = (
         ("token_digest", "csrf_digest", "user_id", "created_at", "expires_at", "revoked_at"),
     ),
     ("console_auth_bootstrap", ("singleton", "complete")),
+    (
+        "as_instances",
+        (
+            "instance_id",
+            "use_case",
+            "notify_url",
+            "health_url",
+            "enabled",
+            "revision",
+            "change_id",
+            "actor",
+            "updated_at",
+        ),
+    ),
 )
+
+
+def _version_table_name(config_schema: str) -> str:
+    return f"{config_schema}_config_versions"
+
+
+def _config_table_column_map(config_schema: str) -> dict[str, set[str]]:
+    expected = {name: set(columns) for name, columns in _CONFIG_TABLE_COLUMNS}
+    expected[_version_table_name(config_schema)] = set(_VERSION_TABLE_COLUMNS)
+    return expected
 
 
 class _Cursor(Protocol):
@@ -185,7 +213,7 @@ def _validate_config_relations(
         (schema,),
     )
     rows = cursor.fetchall()
-    expected = {name for name, _columns in _CONFIG_TABLE_COLUMNS}
+    expected = set(_config_table_column_map(schema))
     actual = {str(row[0]) for row in rows}
     unexpected = actual - expected
     if unexpected:
@@ -220,7 +248,7 @@ def _validate_config_columns(
             actual[relation_name].add(str(column))
         if str(relation_owner) != owner:
             raise ValueError("config relation must be owned by the current database role")
-    expected = {name: set(columns) for name, columns in _CONFIG_TABLE_COLUMNS}
+    expected = _config_table_column_map(schema)
     expected_for_existing = (
         expected if require_complete else {name: expected[name] for name in actual}
     )
@@ -262,7 +290,9 @@ def _execute_grant(cursor: _Cursor, statement: sql.Composable) -> None:
     cursor.execute(statement)
 
 
-def _configure_runtime_grants(cursor: _Cursor, schema: str, runtime_role: str) -> None:
+def _configure_runtime_grants(
+    cursor: _Cursor, schema: str, runtime_role: str, *, version_table: str
+) -> None:
     schema_id = sql.Identifier(schema)
     role_id = sql.Identifier(runtime_role)
     grantees = sql.SQL("PUBLIC, {}").format(role_id)
@@ -288,7 +318,10 @@ def _configure_runtime_grants(cursor: _Cursor, schema: str, runtime_role: str) -
             schema_id, grantees
         ),
     )
-    for table_name, columns in _CONFIG_TABLE_COLUMNS:
+    for table_name, columns in (
+        *_CONFIG_TABLE_COLUMNS,
+        (version_table, _VERSION_TABLE_COLUMNS),
+    ):
         column_list = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
         _execute_grant(
             cursor,
@@ -310,6 +343,7 @@ def _configure_runtime_grants(cursor: _Cursor, schema: str, runtime_role: str) -
         "distributions_events",
         "console_auth_users",
         "console_auth_sessions",
+        "as_instances",
     ):
         _execute_grant(
             cursor,
@@ -317,6 +351,18 @@ def _configure_runtime_grants(cursor: _Cursor, schema: str, runtime_role: str) -
                 schema_id, sql.Identifier(table_name), role_id
             ),
         )
+    _execute_grant(
+        cursor,
+        sql.SQL("GRANT UPDATE, DELETE ON TABLE {}.{} TO {}").format(
+            schema_id, sql.Identifier("as_instances"), role_id
+        ),
+    )
+    _execute_grant(
+        cursor,
+        sql.SQL("GRANT SELECT, INSERT ON TABLE {}.{} TO {}").format(
+            schema_id, sql.Identifier(version_table), role_id
+        ),
+    )
 
     for table_name, column in (
         ("managed_rules_heads", "current_revision"),
@@ -373,6 +419,9 @@ def migrate_database(
             store_connection, schema=config.config_schema
         )
         auth_store = PostgresConsoleAuthStore(store_connection, schema=config.config_schema)
+        as_instance_store = PostgresAsInstanceStore(store_connection, schema=config.config_schema)
+        version_table = _version_table_name(config.config_schema)
+        version_store = PostgresVersionStore(store_connection, table=version_table)
         audit_store = PostgresAuditStore(store_connection, schema=config.audit_schema)
 
         config_stores = (
@@ -400,6 +449,17 @@ def migrate_database(
         change_order_store.ensure_schema()
         distribution_store.ensure_schema()
         auth_store.ensure_schema()
+        as_instance_store.ensure_schema()
+        search_path_cursor = connection.cursor()
+        try:
+            search_path_cursor.execute(
+                sql.SQL("SET LOCAL search_path TO {}, pg_catalog").format(
+                    sql.Identifier(config.config_schema)
+                )
+            )
+        finally:
+            search_path_cursor.close()
+        version_store.ensure_schema()
         audit_store.ensure_schema(config.runtime_role)
 
         cursor = connection.cursor()
@@ -407,7 +467,12 @@ def migrate_database(
             _validate_config_relations(cursor, config.config_schema, owner, require_complete=True)
             _validate_config_columns(cursor, config.config_schema, owner, require_complete=True)
             _validate_config_routines(cursor, config.config_schema, owner, expected_routines)
-            _configure_runtime_grants(cursor, config.config_schema, config.runtime_role)
+            _configure_runtime_grants(
+                cursor,
+                config.config_schema,
+                config.runtime_role,
+                version_table=version_table,
+            )
         finally:
             cursor.close()
         connection.commit()

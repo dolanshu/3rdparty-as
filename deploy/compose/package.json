@@ -1,0 +1,8 @@
+{
+  "name": "as-m4b8-compose-evidence",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "playwright": "1.49.1"
+  }
+}
