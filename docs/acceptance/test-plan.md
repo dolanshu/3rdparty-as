@@ -4,7 +4,7 @@
 **日期**：2026-09-28
 **状态**：占位 — 验收标准从 PRD v0.2 同步挪入，具体 test case 待 M2 设计阶段补充
 
-**M4b-8 BLOCKED 矩阵（2026-10-03）**：维护者裁决见 [`reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md`](../reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md)。dev HTTPS 栈（`deploy/compose/`）上可收集：**被叫+前缀**规则 CRUD→审批、ChangeOrder、审计、fleet inventory 等。**步骤 1（F-12）**：**被叫+前缀**可测；主叫/正则属 **v1.1**，不纳入 M4。**步骤 3（F-13）**：**BLOCKED**（7.4 延期）。**7.2d** 生产 preflight：**BLOCKED**（M5）。**步骤 4（F-15）**：**PARTIAL**（API notify/health + fleet UI；完整浏览器 distribution 与 AS 补测待 7.6）。详见 [`m4b-8-runbook.md`](m4b-8-runbook.md)。
+**M4b-8 BLOCKED 矩阵（2026-10-03）**：维护者裁决见 [`reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md`](../reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md)。**M4 工程关门**（2026-10-04）后，下列项为 **补测/后置**，不阻塞 §4.3：见 [`plan.md`](../plan.md) **§5.4**（F-13、F-15 真 AS、主叫/正则 v1.1、REQ 全绿）。dev HTTPS 上已采证：**被叫+前缀** CRUD→审批、fleet、distribution start 等（[`m4b-8-runbook.md`](m4b-8-runbook.md)）。**步骤 3（F-13）**：BLOCKED→**§5.4**。**7.2d**：**M5**。
 
 > 本文档从 PRD v0.2（prd.md）的验收标准部分提取而来。
 > 具体 test case（步骤、断言、数据准备）由 M2 设计阶段补充。

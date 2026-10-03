@@ -3,7 +3,7 @@
 > **Subject:** M4 / M4b closure criteria, evidence boundaries, and deferred gates  
 > **Date:** 2026-10-03  
 > **Session:** Maintainer grill (closure adjudication)  
-> **Status:** Decisions recorded; **M4 / M4b / REQ acceptance are not claimed complete**
+> **Status:** Decisions recorded; **M4 engineering closure** recorded 2026-10-04 (`plan.md` §4.3). **REQ-level acceptance** not claimed.
 
 This record persists maintainer-confirmed intent from the 2026-10-03 session. It does not supersede PRD or formal REQ text for unresolved product semantics (see open gaps).
 

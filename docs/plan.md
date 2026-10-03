@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| 当前进行中的步骤 | **M4b —— 运维控制台 UI（强制）；M4b-7.1、7.2a–7.2c、7.3a 已交付为 engineering slices**，包括 owner-only `as-config-migrate` 手动 DB setup。关门裁决见 **§4.2（2026-10-03）**：7.2d 正式生产 ingress/trusted-proxy 证明并入 **M5**；M4 浏览器同源 HTTPS 可用 compose/自签/本地反代支撑 M4b-8。7.3b ManagedRule CRUD/lossless runtime bundle contract、7.4 trace（M4 延期）、7.5 实例 inventory/notify/testbed health（M4 范围）、7.6 full browser workflow 与 M4b-8 acceptance 仍开放。Focused migration/runtime/bootstrap tests **39 passed**。当前分支 `cur` 上 **`make gate` 绿**（2026-10-03）：Ruff format/check、mypy **48 sources clean**、`unit or contract` **838 passed, 2 skipped, 143 deselected, 11 warnings**。M4 证据门槛：本地 `make gate` + 维护者环境 PG integration 即可；**origin CI 全绿不是 M4 硬门禁**（验收报告须写明）。本次未运行 CI 或 Helm render/deployment；此前 Helm CLI/registry 限制仍适用。PG16 未测；M4b/M4 与所有 REQ acceptance 保持开放。ADR-0024 已于 2026-10-03 Accepted（见 [`adr-0024-console-password-sessions-review-2026-10-02.md`](reviews/adr-0024-console-password-sessions-review-2026-10-02.md)）。Owner/runtime DSN 分离、数据库角色预配置；HMAC key 外部提供且轮换会打断跨周期关联；敏感值检测仍要求 producer allow-list/redaction。较早 d2 slice 不证明 AS 通知、fleet delivery 或真实健康 attestation，Distribution completion 与 ManagedRule/ChangeOrder APPLIED 为两个 PostgreSQL transactions；详见 §4.2、§5.3 与 handoff） |
+| 当前进行中的步骤 | **M4 工程关门（§4.2–§4.3，2026-10-04）已完成**：M4b 强制控制台工程切片 + M4b-8 dev HTTPS 证据与维护者签字（`1bca9eee`、`643bdb6` on `cur`）。**下一里程碑：M5**（尚未启动；M5 门禁与 7.2d 到 M5 再核对）。**不**等于 `test-plan` 全 REQ 绿 —— F-13、F-15 真 AS、主叫/正则 v1.1 等见 **§5.4 补测**。证据门槛仍为 `make gate` + 维护者环境 PG integration（**origin CI 全绿非 M4 硬门禁**）。 |
 | 设计基线 | 已确认（`architecture/新系统整体架构.md`，决策 1–19） |
 | 卡住后续里程碑的未决项 | §5（含 D11：REQ-F-4 SDP 原始 body 字节恒等的线上证明） |
 | POC 代码的迁移 | 刻意推迟到 M1–M3，且由 [`migration/triage.md`](migration/triage.md) 把关 |
@@ -120,8 +120,8 @@
 | **M1** | 甄别与行为基线 | 冻结 POC commit；抓取消息样例与 trace；确认或推翻 `migration/triage.md` 里每个裁决。**无产品代码。** | **已完成（2026-09-28；门禁裁决见 §4.1）** | 每个文件都有一个带证据的裁决；基线已抓取且可复现 |
 | **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | **M2a 已完成；M2b seam 已落（2026-09-28），栈绑定未开始** | 内核守卫绿；能在其上构建用例而不碰 sippy |
 | **M3** | 应用 | `apps/translation` 与 `apps/anti-fraud`；决策模块先做 TDD | **已完成（2026-09-28；门禁裁决见 docs/reviews/m3-gate-review.md）** | 契约用例集对两者都重放绿 |
-| **M4a** | 控制面后端与访问策略 | `services/config-service` 配置治理，以及 `services/console` 的纯访问策略 / 审计判定；console 仍是骨架，`access.py` 不含 HTTP、login、session、password 或 persistence 实现 | **后端 / 策略切片已交付（2026-09-28）；不代表整体 M4 完成** | 后端治理闭环与开关两态测试；整体 M4 还须通过 M4b |
-| **M4b** | 运维控制台 UI（强制） | operator UI：按 REQ-F-12/13/14/15 提供规则 CRUD、审批队列、Call-ID 轨迹查询、灰度分发 / 回滚工作流；静态预览与管理规则 schema 已交付 | **M4b-7.1、7.2a–7.2c、7.3a 为已交付 engineering slices；7.2d、7.3b、7.4–7.6 与 M4b-8 仍 OPEN；M4b/M4 整体未验收** | 登录/session shell、ASGI static hosting/package、runtime factory/CLI、独立 config-service image、默认关闭的 Helm Deployment/ClusterIP Service/optional Ingress 与既有 ChangeOrder submit/approve/reject UI 已实现，但不等于验收。仍须完成真实 HTTPS ingress/trusted-proxy proof、ManagedRule create/edit/delete 与 lossless bundle compiler、Call-ID trace、AS inventory/notifier/真实 health 与 live distribution/rollback、full browser workflow，以及 [`acceptance/test-plan.md`](acceptance/test-plan.md) §1.4/§3 acceptance。ADR-0024 **accepted**（2026-10-03）；M4b/M4 与 REQ acceptance 均未通过。 |
+| **M4a** | 控制面后端与访问策略 | `services/config-service` 配置治理，以及 `services/console` 的纯访问策略 / 审计判定 | **已交付（2026-09-28）** | 纳入 **M4 工程关门**（§4.3） |
+| **M4b** | 运维控制台 UI（强制） | M4 裁决定义：被叫+前缀、审批、compose HTTPS、fleet、M4b-8 浏览器证据 | **工程关门（2026-10-04）** | 见 §4.3；补测 §5.4；**不**等于 `test-plan` 全 REQ 绿。7.2d → M5。 |
 | **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集 | **工程工作已提前部分交付（2026-09-28–30：Helm / 告警 / 渲染校验 / 缩容保护 / PG 闭环 / 容器镜像）；正式阶段闭合 / 后续顺序受 M4b 把关；真实集群滚动升级与缩容验证仍未完成** | M4b 通过后，在真实集群验证滚动升级不掉呼叫、缩容不掉呼叫，方可关闭 M5 |
 | **M6** | **容量研究** | 真实 socket 压测 harness；测出 CPS、并发会话、建立时延 —— 按栈分别 | 未开始 | 产出 O1 的答案；在这跑起来之前不假设任何目标 |
 | **M7** | 生产 SIP 集成与验收 | Python 产品决策模块接入 reSIProcate DUM/产品 CallController；完成协议行为和恢复验收 | 未开始（仅有探索性证据；产品集成/验收未开始） | **受 D9、D10、D11、E1/E4/E5 把关。** REQ-NF-1 为硬验收要求；REQ-F-4 SDP 字节恒等须由完整产品路径验收；M6 容量测试仍须使用真实 socket |
@@ -129,7 +129,7 @@
 
 **M4b-7.2 status clarification（2026-10-03）**：7.2c 含 config-service image recipe、默认关闭的 Helm workload/Ingress wiring；owner-only `as-config-migrate` 是新增的代码级 setup slice，要求 DBA 预先 provision roles，且不会创建/修改角色。Migration 与 bootstrap owner DSN 均是手动操作，不进入 web Pod。Helm render、镜像构建、真实集群、HTTPS、trusted-proxy 与 browser proof 仍归属 7.2d，保持 OPEN。Ingress 使用固定 redirect annotations，但真实 controller 必须保留默认 `nginx.ingress.kubernetes.io` annotation prefix，且 `no-tls-redirect-locations` 不得豁免 `/`；chart 本身不能配置这些 controller-level prerequisites。Helm lint/template 与 Docker image build 未验证；当前无 Helm render、真实集群或浏览器部署证据，不代表 M4b/M4 或 REQ acceptance。
 
-**M4b implementation checklist（按顺序；当前未完成子步骤：M4b-7.2d、7.3b–7.6）：**
+**M4b implementation checklist（按顺序；M4 工程关门后仍 OPEN 仅：7.2d→M5、7.4→§5.4）：**
 
 - [x] M4b-1 静态预览：四视图、本地 fixture、当前页面内存状态；不是验收证据。
 - [x] M4b-2 管理规则 schema（本步骤）：config-service immutable management-plane rule model 与 REQ-F-12 单元测试。
@@ -150,13 +150,13 @@
 - [x] **M4b-7.2c2 Owner-only database setup（engineering slice only）**：新增 `as-config-migrate`，通过 `AS_CONFIG_OWNER_DSN` 建立/验证非 public、独立的 `as_config` schema，调用 managed-rule/change-order/distribution/auth schema setup 与 `PostgresAuditStore.ensure_schema(runtime_role)`，再撤销 `PUBLIC`/runtime 的既有 schema/table/column 权限并只授予 runtime 所需权限。角色必须由 DBA 预先创建；migration 不创建/修改角色、不 `SET ROLE`。Runtime 与 bootstrap schema 默认对齐 `as_config`，web startup 仍无 DDL。Focused migration/runtime/bootstrap unit tests **37 passed**；不构成 DB deployment、Helm render、M4b/M4 或 REQ acceptance。
 - [ ] **M4b-7.2d HTTPS ingress/trusted-proxy deployment validation（M5 硬门禁；M4 不阻塞）**：**2026-10-03 裁决**：正式生产/客户集群 ingress/trusted-proxy 证明与 **M5** 集群验收捆绑，**不是** M4 关门硬门禁。M4/M4b-8 浏览器同源 HTTPS 可用 **compose / 自签证书 / 本地反代** 收集证据（见 §4.2）。7.2d 仍须在未来完成：保留默认 `nginx.ingress.kubernetes.io` annotation prefix；确认 `no-tls-redirect-locations` 不豁免 `/`；客户 TLS Secret；真实客户端 redirect/拒绝与浏览器 credentials 不经 HTTP；显式 proxy IP/CIDR 的 forwarded scheme 信任。在 M5 记录真实 controller/deployment/browser evidence 前保持 OPEN。
 - [x] **M4b-7.3a Live decisions on existing ChangeOrders（engineering slice only）**：live table/modal 支持 draft creator 提交既有 draft，以及由不同 approver 批准或拒绝 submitted order；API 禁止 creator 自拒绝。仅是现有 ChangeOrder 的 submit/approve/reject workflow，不提供规则 CRUD/create/edit/write，也不是 M4b/M4 或 REQ acceptance；route-mocked browser checks 与 focused API regression evidence 见 [`acceptance/report.md`](acceptance/report.md)。
-- [ ] **M4b-7.3b ManagedRule write/approval integration**：**M4 范围** 被叫+前缀（裁决 [`reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md`](reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md)）。已交付：`runtime_bundle`、[ADR-0025](architecture/adr/0025-managed-rule-runtime-bundle.md)、managed-rules API、live console（M4 隐藏主叫/正则）、PG E2E `test_postgres_managed_rule_pipeline_integration.py`。**仍 OPEN**：PG E2E 维护者环境绿、M4b-8 被叫+前缀浏览器证据、7.3b 整项勾选（不等同 REQ/M4 验收）。
-- [ ] **M4b-7.4 Live Call-ID trace integration（M4 关门延期）**：**2026-10-03 裁决**：REQ-F-13 / 7.4 **不纳入 M4 关门**；信令/集成栈就绪后 **补测**。实现前仍须定义 trace source/store 与 API contract；当前无可查询的 live Call-ID trace endpoint/store。
-- [ ] **M4b-7.5 Real distribution/health/rollback integration（M4 范围；AS 全栈补测后置）**：**2026-10-03 裁决**；**engineering on `cur`**：PostgreSQL `as_instances`、notify（first batch）、health probe（testbed JSON）、**Operations fleet inventory console UI**、`test_fleet_api.py` 扩展。**未**声称 M4/REQ-F-15 验收；live distribution 浏览器链路与 **完整 AS 栈补测**仍为 follow-up（见 `acceptance/report.md` M4b-7.5）。
-- [ ] **M4b-7.6 Full browser workflow integration**：**distribution UI slice（2026-10-03）** — change-order modal 内 start/report/rollback；**仍 OPEN** — 与规则 propose→审批→分发→apply 的 **整条浏览器链**、M4b-8 维护者签字证据；trace 仍缺；mock/preview 不满足。
-- [ ] M4b-8 browser acceptance：验证 REQ-F-12/13/14/15 与 REQ-S-4 全部 flows（工程/AI 执行步骤并收集脱敏材料；**维护者审阅并签字**）。M4 可在 dev HTTPS（§4.2）上跑；7.2d 正式 preflight 属 M5。
+- [x] **M4b-7.3b ManagedRule write/approval integration（M4 被叫+前缀）**：`runtime_bundle`、managed-rules API、live console、`test_postgres_managed_rule_pipeline_integration.py`；compose PG integration 与 M4b-8 浏览器证据（2026-10-03/04）。不等同全 REQ 验收。
+- [ ] **M4b-7.4 Live Call-ID trace**：**不纳入 M4 工程关门**；补测见 **§5.4**（REQ-F-13）。
+- [x] **M4b-7.5 distribution/health（M4 工程切片）**：`as_instances`、notify、testbed health probe、Operations fleet UI、`test_fleet_api.py`。**完整 AS 栈**补测见 **§5.4**。
+- [x] **M4b-7.6 browser workflow（M4 裁决定义链）**：distribution modal UI + Playwright 被叫+前缀 propose→审批→distribution start（`artifacts/m4b-8/2026-10-03/`）。F-13 trace 不适用；全 REQ 链见 §5.4。
+- [x] **M4b-8 dev HTTPS same-origin evidence**：runbook + 脱敏 artifact；维护者签字 2026-10-04。**不**宣称 REQ-F-12/13/14/15 与 REQ-S-4 全绿；BLOCKED/N/A 见 runbook。
 
-主叫/正则匹配为 v1.1；M4 live 规则路径为被叫+前缀。M4b 与整体 M4 仍未验收。
+主叫/正则为 **v1.1**（§5.4）。**M4 工程关门**见 §4.3；**REQ 级整体验收**未声明。
 
 ### 4.1 M1 门禁裁决（2026-09-28）
 
@@ -199,7 +199,16 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 | PostgreSQL | M4 证据 **12.22**；**PG16** 非阻塞跟进 |
 | M4b-8 | 工程/AI 跑步骤与脱敏 artifact；维护者审阅签字 |
 
-**M4 工程证据维护者签字**：M4b 切片 reviews + M4b-8 artifacts/runbook **已记录 2026-10-04**（chat 授权代签）；**不**等于 REQ/M4 整体验收。**仍开放/后置**：7.4/F-13、F-15 AS **补测**、7.2d（M5）、REQ 级 acceptance。（规则匹配轴与 M4 被叫+前缀已裁决；ADR-0024 Accepted，2026-10-03。）
+**M4 工程证据维护者签字**：M4b 切片 reviews + M4b-8 artifacts/runbook **已记录 2026-10-04**（chat 授权代签）；**不**等于 REQ 级整体验收。补测与 v1.1 见 **§5.4**；7.2d 见 **M5**（未启动前不改 M5 表内前置表述）。
+
+### 4.3 M4 工程关门（2026-10-04）
+
+| 项 | 记录 |
+|---|---|
+| 裁决 | [`m4-closure-adjudication-2026-10-03.md`](reviews/m4-closure-adjudication-2026-10-03.md) |
+| 证据 commit | `1bca9eee`（m4 close）、`643bdb6`（m4 approved），分支 `cur` |
+| 范围 | M4b 强制控制台 + 被叫+前缀 + compose 同源 HTTPS + M4b-8 材料 |
+| 明确不含 | `test-plan` 全 REQ 绿；F-13；F-15 真 AS；主叫/正则 v1.1；7.2d 生产 ingress |
 
 ---
 
@@ -253,6 +262,21 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 | UM（User Management） | M4b-6a 在 ADR-0024（accepted）下提供基础本地账号、角色、密码与 session engineering slice；M4b-6b 后续交付 durable audit API/store engineering slice。两者均不构成 REQ-S-4 acceptance，也不代表 M4b 完成 | UM 仍是独立缺口：尚无获批的完整 UM requirement / acceptance，覆盖完整 operator account lifecycle、UI/workflows、SSO / MFA、password recovery / lockout / session UX。继续在 base scope 之外单独规划；不并入或据此标记完成 M4b |
 
 在上述需求与验收标准获批前，不把 PM / AM / UM 的未定义功能并入 M4b。
+
+### 5.4 M4 后补测与 v1.1（不阻塞 §4.3 M4 工程关门）
+
+以下在 M4 关门时**刻意后置**；在对应栈/里程碑就绪后再做，不回头阻塞 M4 工程签字。
+
+| 项 | 计划归属 | 说明 |
+|---|---|---|
+| REQ-F-13 / M4b-7.4 Call-ID live trace | 信令/集成栈 + M7 前后 | 无 trace store/API；M4b-8 标 BLOCKED |
+| REQ-F-15 **完整 AS 栈**（非 testbed notify/health） | M7 集成后补测 | M4 已交付 inventory + notify + testbed probe + 浏览器 distribution start |
+| 主叫 / 正则规则（REQ-F-12 四维 UI） | **v1.1** | M4 live 仅被叫+前缀 |
+| REQ-S-4 / `test-plan` §1.4 **正式全绿** | M8 或维护者单独签收 | 与 §4.3 工程关门分离 |
+| PostgreSQL 16 | 非阻塞 follow-up | 证据基线 12.22 |
+| M4b-7.2d 生产 ingress / trusted-proxy | **M5** | 与 M5 启动时一并验收 |
+
+---
 
 ---
 
