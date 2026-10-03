@@ -2,7 +2,7 @@
 
 Date: 2026-10-01
 Scope: `services/config-service/src/as_config_service/activation.py`, `managed_rule_store.py`, `change_order_store.py`, and `services/config-service/tests/test_postgres_activation_integration.py`
-Status: final independent activation review found no findings after the idle-connection guard was added; maintainer signoff pending.
+Status: final independent activation review found no findings after the idle-connection guard was added; maintainer signoff recorded 2026-10-04 (chat authorization).
 
 ## Scope and contract
 
@@ -26,4 +26,4 @@ This review covers the transaction slice that coordinates a typed `CREATE`, `UPD
 
 This code slice coordinates two writes in one PostgreSQL transaction only. It is not proof of distribution success, active-fleet convergence, SIP runtime behavior, D10 recovery, or M4b/M4 acceptance. M4b-5-2b remains journal-only; the next step is M4b-5-2d, connecting the actual distribution result to the `APPLIED` API path and exposing observed status. M4b-6 auth/session/audit, M4b-7 UI integration, and M4b-8 browser acceptance remain pending. No REQ acceptance is claimed.
 
-Maintainer signoff: pending.
+Maintainer signoff: Approved; recorded by AI agent per maintainer authorization in chat (2026-10-04).

@@ -17,7 +17,7 @@ This is an engineering-slice review only. It is not security certification, REQ-
 
 ## Conclusion
 
-**Pass for the reviewed engineering slice after fixes.** The final independent review found no remaining concrete findings. ADR-0024 remains draft pending maintainer review/signoff. No requirement or milestone acceptance is claimed.
+**Pass for the reviewed engineering slice after fixes.** The final independent review found no remaining concrete findings. ADR-0024 **Accepted** 2026-10-03 ([review](adr-0024-console-password-sessions-review-2026-10-02.md)); M4b-6a maintainer signoff recorded 2026-10-04 below. No requirement or milestone acceptance is claimed.
 
 ## Findings and Fixes
 
@@ -40,4 +40,4 @@ Contract and residual boundaries: auth stores use dedicated injected PostgreSQL 
 Not verified or not implemented by this slice: PostgreSQL 16 compatibility; deployed trusted-proxy/ingress behavior; database runtime-role least privilege; application rate limiting; durable append-only audit; browser login UI and browser acceptance. Login checks the ASGI `request.url.scheme`; this is not proof of production proxy configuration. Since durable audit is absent, authorization decisions and all accesses are not durably audited until M4b-6b. ADR-0024 remains draft; REQ-S-4, M4b, and M4 remain unaccepted.
 
 - Independent reviewer confirmation: 2026-10-02
-- Maintainer signoff: **Pending**
+- Maintainer signoff: **Approved**; recorded by AI agent per maintainer authorization in chat (2026-10-04).

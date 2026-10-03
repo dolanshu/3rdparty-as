@@ -3,7 +3,7 @@
 > Date: 2026-10-01
 > Review type: implementation review; engineering evidence only, not milestone acceptance
 > Reviewer: independent reviewer (final review)
-> Maintainer signoff: pending
+> Maintainer signoff: Approved; recorded by AI agent per maintainer authorization in chat (2026-10-04).
 
 ## Scope And Spec
 
@@ -37,4 +37,4 @@ The temporary PostgreSQL 12.22 server was extracted from Ubuntu debs under `/tmp
 
 ## Conclusion
 
-**Pass for the tested PostgreSQL 12.22 M4b-4 persistence slice only.** PostgreSQL 16 compatibility remains an open, non-blocking follow-up; maintainer signoff is pending. This is not M4b or M4 acceptance, and no REQ acceptance is claimed. M4b-5 remains the next substep: internal HTTP API and validation/error mapping built on both durable stores. Authentication/session and UI workflow acceptance remain outstanding.
+**Pass for the tested PostgreSQL 12.22 M4b-4 persistence slice only.** PostgreSQL 16 compatibility remains an open, non-blocking follow-up; maintainer signoff recorded 2026-10-04 (chat authorization). This is not M4b or M4 acceptance, and no REQ acceptance is claimed. M4b-5 remains the next substep: internal HTTP API and validation/error mapping built on both durable stores. Authentication/session and UI workflow acceptance remain outstanding.

@@ -2,7 +2,7 @@
 
 > Date: 2026-10-01
 > Review type: implementation review; not milestone acceptance
-> Maintainer signoff: pending
+> Maintainer signoff: Approved; recorded by AI agent per maintainer authorization in chat (2026-10-04).
 
 ## Scope
 
@@ -34,4 +34,4 @@ The PostgreSQL integration command `AS_PG_TEST_DSN=postgresql://postgres@127.0.0
 
 ## Conclusion
 
-**Conditional pass for the exercised M4b-3 PostgreSQL 12.22 slice; PG16 compatibility remains open.** The integration evidence verifies the exercised database behavior, while PostgreSQL 16 compatibility remains a non-blocking follow-up. Maintainer signoff is pending. This is implementation groundwork only: there is no HTTP API, ManagedRule persistence, authentication/session, UI integration, or M4b acceptance; no REQ acceptance is claimed. Overall M4b and M4 remain open.
+**Conditional pass for the exercised M4b-3 PostgreSQL 12.22 slice; PG16 compatibility remains open.** The integration evidence verifies the exercised database behavior, while PostgreSQL 16 compatibility remains a non-blocking follow-up. Maintainer signoff recorded 2026-10-04 (chat authorization). This is implementation groundwork only: there is no HTTP API, ManagedRule persistence, authentication/session, UI integration, or M4b acceptance; no REQ acceptance is claimed. Overall M4b and M4 remain open.

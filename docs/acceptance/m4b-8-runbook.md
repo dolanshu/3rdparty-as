@@ -2,7 +2,7 @@
 
 **映射**：[`test-plan.md`](test-plan.md) §1.4「M4b-8 浏览器验收执行程序」步骤 1–5。  
 **栈**：[`deploy/compose/README.md`](../../deploy/compose/README.md)（PostgreSQL 12.22 + config-service + Caddy 自签 TLS）。  
-**状态**：工程/AI 可执行检查清单；**不**构成 M4b/M4/REQ 验收通过；**待维护者签字**（见 [`report.md`](report.md) M4b-8 节）。
+**状态**：工程/AI 可执行检查清单；**不**构成 M4b/M4/REQ 验收通过；维护者签字见 [`report.md`](report.md) M4b-8 节（2026-10-04 已记录）。
 
 ## 0. 准备
 
@@ -85,7 +85,7 @@
 artifacts/m4b-8/<YYYY-MM-DD>/
 ```
 
-在 [`report.md`](report.md) § M4b-8 填写路径、commit、阻塞项摘要；**待维护者签字**。
+在 [`report.md`](report.md) § M4b-8 填写路径、commit、阻塞项摘要；维护者签字已记录（2026-10-04）。
 
 ## 7. Playwright 自动化（可选）
 

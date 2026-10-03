@@ -31,17 +31,18 @@ This record persists maintainer-confirmed intent from the 2026-10-03 session. It
 | REQ-F-13 / M4b-7.4 | Trace integration and acceptance **补测** after signaling/integration stack. |
 | REQ-F-15 / 7.5 | Implementation of inventory + notifier + health probes; **full AS stack 补测** after integration. |
 | 7.2d production proof | Formal ingress/trusted-proxy evidence deferred to **M5** cluster acceptance. |
-| M4b-8 | Browser workflow evidence not yet collected or signed. |
+| M4b-8 | Browser/redacted artifacts collected（`artifacts/m4b-8/2026-10-03/`）；evidence commit `1bca9eee74c090964d48a217abfe41bfcdf73dab`（`cur`）；**维护者签字**已记录（2026-10-04，chat 授权代签）。 |
 | ADR-0024 | **Closed for ADR gate:** accepted 2026-10-03 per [`adr-0024-console-password-sessions-review-2026-10-02.md`](adr-0024-console-password-sessions-review-2026-10-02.md) (maintainer authorized agent to record signoff). REQ-S-4 / M4b acceptance still open. |
 
 ## What still blocks M4 milestone sign-off
 
-- Delivery and evidence for **7.5** (inventory table, notify, testbed health) and **M4b-8** (dev HTTPS same-origin browser run, redacted artifacts).
+- **Maintainer sign-off on engineering evidence** (M4b slice reviews, M4b-8 artifacts/runbook): **recorded 2026-10-04** per chat authorization; does **not** claim REQ/M4b/M4 acceptance.
 - **REQ-F-13** and **full REQ-F-15 AS 补测** remain post-integration / deferred per table above.
+- **plan.md** open checkboxes (7.3b–7.6, M4b-8 milestone wording) may still need alignment with delivered engineering vs formal REQ acceptance.
 
 ## Sign-off
 
 | Field | Value |
 |-------|--------|
 | Adjudication recorded by | AI agent (doc-writer), 2026-10-03 |
-| Maintainer sign-off | 待填 |
+| Maintainer sign-off | Approved; recorded by AI agent per maintainer authorization in chat (2026-10-04). Engineering evidence and M4b-8 runbook annotations accepted; REQ/M4 acceptance not claimed. |

@@ -41,4 +41,4 @@ D4 选择纯 HTML/CSS/JavaScript，不引入 bundler、build tool 或前端 runt
 
 ## 评审结论
 
-**Pass for M4b-1 slice only / not M4 completion.** M4b 的实现、集成与验收仍开放；M4 整体未完成。维护者签字：**待补**。
+**Pass for M4b-1 slice only / not M4 completion.** M4b 的实现、集成与验收仍开放；M4 整体未完成。维护者签字：**Approved**（2026-10-04；chat 授权 AI 代签）。

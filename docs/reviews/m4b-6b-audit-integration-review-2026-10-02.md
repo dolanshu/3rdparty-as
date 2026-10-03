@@ -18,7 +18,7 @@ This record reviews the final integrated engineering slice after fixes. It is no
 
 ## Conclusion
 
-**Pass for the reviewed integrated engineering slice after fixes.** The final independent API/auth/audit review found no remaining actionable findings. M4b-6b is delivered as an engineering slice; M4b-7 UI/workflow integration and M4b-8 browser acceptance remain open. ADR-0024 remains draft pending maintainer review/signoff. No requirement or milestone acceptance is claimed.
+**Pass for the reviewed integrated engineering slice after fixes.** The final independent API/auth/audit review found no remaining actionable findings. M4b-6b is delivered as an engineering slice; M4b-7/8 engineering evidence progressed separately. ADR-0024 **Accepted** 2026-10-03; M4b-6b maintainer signoff recorded 2026-10-04 below. No requirement or milestone acceptance is claimed.
 
 ## Findings and Fixes
 
@@ -43,4 +43,4 @@ The final integrated pass found no remaining actionable findings after implement
 M4b-7 UI/workflow integration and M4b-8 browser acceptance are open. There is no browser login UI, application rate limiting, MFA/SSO, deployed HTTPS trusted-proxy/ingress proof, CI evidence, or PostgreSQL 16 result. The HMAC key is externally provisioned, and key rotation breaks cross-period correlation. Heuristic secret checks do not replace producer allow-list/redaction. REQ-S-4, M4b, and M4 remain unaccepted.
 
 - Independent reviewer confirmation: 2026-10-02
-- Maintainer signoff: **Pending**
+- Maintainer signoff: **Approved**; recorded by AI agent per maintainer authorization in chat (2026-10-04).

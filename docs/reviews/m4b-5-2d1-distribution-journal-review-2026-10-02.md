@@ -38,4 +38,4 @@ This is an engineering-slice review only. It is not a formal REQ review, M4b/M4 
 Final independent confirmation after repairs: **no remaining concrete findings** in the reviewed scope.
 
 - Independent reviewer confirmation: 2026-10-02
-- Maintainer signoff: **Pending**
+- Maintainer signoff: **Approved**; recorded by AI agent per maintainer authorization in chat (2026-10-04).

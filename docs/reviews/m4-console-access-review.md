@@ -46,7 +46,7 @@
 | 评审结论 | 通过；M4 判为已完成 |
 | 门禁 | 全绿（309 passed / 2 skipped；integration 3 passed） |
 | 评审人 | AI agent，2026-09-28 |
-| 维护者签字 | 待填 |
+| 维护者签字 | Approved; recorded by AI agent per maintainer authorization in chat (2026-10-04). Historical M4a slice only; superseded by M4b scope. |
 
 ## 范围修正（2026-10-01）
 

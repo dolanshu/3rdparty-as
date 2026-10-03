@@ -2,7 +2,7 @@
 
 > 里程碑：**M1 —— 甄别与行为基线**
 > 日期：2026-09-28
-> 执行：AI agent（代办）；维护者签字待补
+> 执行：AI agent（代办）；M4b 工程切片 + M4b-8 维护者签字已记录（2026-10-04，chat 授权代签）；文首 M1 §6 签字仍为历史项
 > 门禁依据：`docs/plan.md` §4.1；DoD 依据：`AGENT.md` §14
 
 ## 1. 结论
@@ -284,7 +284,7 @@
 - **M4b-3 阶段本地门禁（历史）**：`make gate` 的 Ruff format 报告 197 files；Ruff clean；mypy 38 source files clean；pytest **463 passed, 2 known skips, 21 deselected**。仅为本地结果，未运行 CI；此后 M4b-4 阶段门禁已更新，见下节。
 - **范围边界**：本切片仅为 journal 工程基础；没有 HTTP API、ManagedRule persistence、authentication/session、UI integration 或 M4b acceptance。PG12.22 integration pass 不构成 M4b acceptance，也不表示任何 REQ 已接受；PG16 compatibility 仍待验证。整体 M4/M4b 仍开放；M5 仍为部分交付，M6 状态不变；D10/REQ-NF-1 及 PM/AM/UM gaps 保持当前记录状态。
 
-详见 [`m4b-3-change-order-journal-review-2026-10-01.md`](../reviews/m4b-3-change-order-journal-review-2026-10-01.md)：M4b-3 journal slice 在 PG12.22 的已测范围内 conditional pass；PG16 compatibility 与维护者签字仍待跟进，不代表 M4b/M4 完成或 REQ acceptance。
+详见 [`m4b-3-change-order-journal-review-2026-10-01.md`](../reviews/m4b-3-change-order-journal-review-2026-10-01.md)：M4b-3 journal slice 在 PG12.22 的已测范围内 conditional pass；维护者签字已记录（2026-10-04）；PG16 compatibility 仍为非阻塞 follow-up；不代表 M4b/M4 完成或 REQ acceptance。
 
 ## M4b-4 ManagedRule persistence (2026-10-01; engineering evidence, NOT M4b acceptance)
 
@@ -294,10 +294,10 @@
 - **聚焦测试**：`test_managed_rule_store.py`（unit）与 `test_postgres_managed_rule_store_integration.py` 合计 **38 passed**。其中只有 integration 文件的 **6 个 parametrized cases** 在临时 PostgreSQL **12.22** 上运行；38 是两文件合计，不是 38 个数据库测试。该 integration 子集覆盖 create/update/delete history 与 tombstone、CAS/duplicate、event UPDATE/DELETE/TRUNCATE 拒绝、deferred FK rollback，以及 PostgreSQL >=12 guard。
 - **本地 gate（M4b-4 阶段历史结果）**：`make gate` 为 Ruff format **200 files formatted**、Ruff clean、mypy **39 source files clean**、pytest **506 passed, 2 known skips, 36 deselected**。仅为本地结果，未运行 CI。另有 config-service integration markers 在 PG12.22 上 **30 passed, 145 deselected**；这是较宽的本地补充证据，不是 CI 或 acceptance。
 - **环境与兼容性**：临时 PostgreSQL 12.22 由 Ubuntu debs 解包至 `/tmp/as-m4b-postgres`，仅绑定 loopback，测试后已停止；未安装系统包。PostgreSQL 16 compatibility **尚未验证**，列为非阻塞 follow-up。
-- **评审**：独立评审提出的 TRUNCATE immutability、Unicode audit metadata 与 PostgreSQL version assertion 问题均已修复；最终 M4b-4 reviewer 无 findings。维护者 signoff pending。
+- **评审**：独立评审提出的 TRUNCATE immutability、Unicode audit metadata 与 PostgreSQL version assertion 问题均已修复；最终 M4b-4 reviewer 无 findings。维护者 signoff 已记录（2026-10-04）。
 - **范围边界**：当前实现只覆盖 management-plane persistence；没有 runtime RuleDTO mapping、regex compilation、HTTP API、authentication/session 或 UI workflow。该切片通过只适用于已测试的 PostgreSQL 12.22 范围，不代表 M4b/M4 完成，也不构成 REQ acceptance。
 
-详见 [`m4b-4-managed-rule-store-review-2026-10-01.md`](../reviews/m4b-4-managed-rule-store-review-2026-10-01.md)：结论仅为已测 PostgreSQL 12.22 slice pass；PG16 compatibility 与维护者签字仍待跟进。
+详见 [`m4b-4-managed-rule-store-review-2026-10-01.md`](../reviews/m4b-4-managed-rule-store-review-2026-10-01.md)：结论仅为已测 PostgreSQL 12.22 slice pass；维护者签字已记录（2026-10-04）；PG16 compatibility 仍为非阻塞 follow-up。
 
 ## M4b-5-2b ChangeOrder journal write API：工程证据 / NOT M4b/M4 ACCEPTANCE（2026-10-01）
 
@@ -309,7 +309,7 @@
 - **PostgreSQL 与总门禁（M4b-5-2b 阶段历史快照）**：config-service integration markers 在 PostgreSQL **12.22** 上 **30 passed, 216 deselected**，包括 durable stores。该阶段本地 `make gate`：Ruff format **204 files**；Ruff clean；mypy **40 source files clean**；pytest **577 passed, 2 known skips, 36 deselected**，另有一条 warning。均为本地结果，未运行 CI。PostgreSQL 16 compatibility 尚未验证，为非阻塞 follow-up；下方 M4b-5-2c 与 M4b-5-2d2 均为历史阶段证据，6b 阶段门禁快照见下方 M4b-6b section。
 - **后续与验收边界（M4b-5-2b 阶段记录）**：当时计划的下一步是 M4b-5-2c：先设计，再以共享 PostgreSQL transaction 协调 active ManagedRule snapshot 与 ChangeOrder `APPLIED` transition；在实现及验证前不宣称跨 store consistency/atomicity。该步骤及其后的 M4b-5-2d1/d2 与 M4b-6a/6b engineering slices 均已交付。当前下一步为 M4b-7 UI integration，之后 M4b-8 browser acceptance（见本报告最新 M4b-6b section 与 `docs/plan.md` 当前状态）。所有 REQ acceptance 均未因此达成。
 
-详见 [`m4b-5-2b-write-api-review-2026-10-01.md`](../reviews/m4b-5-2b-write-api-review-2026-10-01.md)：最终独立评审无 findings；维护者签字待补。
+详见 [`m4b-5-2b-write-api-review-2026-10-01.md`](../reviews/m4b-5-2b-write-api-review-2026-10-01.md)：最终独立评审无 findings；维护者签字已记录（2026-10-04）。
 
 ## M4b-5-1 identity/permission-gated read-only API：工程证据 / NOT M4b ACCEPTANCE（2026-10-01）
 
@@ -321,7 +321,7 @@
 - **数据库与本地门禁证据（M4b-5-1 阶段历史快照）**：config-service integration markers 在临时 PostgreSQL **12.22** 上 **30 passed, 145 deselected**，包括两个 durable stores；PostgreSQL 16 compatibility 仍为非阻塞 follow-up。该阶段本地 `make gate`：Ruff format **203 files formatted**、Ruff clean、mypy **40 source files clean**、pytest **534 passed, 2 known skips, 36 deselected**；另有上述一条 Starlette deprecation warning。以上均为本地结果，**未运行 CI**，PG12 结果不代表 PG16 或部署验收。下方 M4b-5-2c 与 M4b-5-2d2 均为历史阶段证据，M4b-6b 阶段门禁快照见下方对应 section。
 - **未实现 / 范围边界**：runtime rule DTO mapping、regex compilation、write routes、change-order submission/approval/rollback API、auth provider/login/session integration、persisted console audit 与 UI connection 均未实现。该 read-only API 不建立 ManagedRule 与 change-order journal 两个 stores 间的原子性；这是 M4b-5-2 的设计与实现工作。M4b-5-1 不构成 M4b/M4 completion 或 REQ acceptance。
 
-详见 [`m4b-5-1-read-api-review-2026-10-01.md`](../reviews/m4b-5-1-read-api-review-2026-10-01.md)：最终独立评审无 findings；维护者 signoff pending。
+详见 [`m4b-5-1-read-api-review-2026-10-01.md`](../reviews/m4b-5-1-read-api-review-2026-10-01.md)：最终独立评审无 findings；维护者 signoff 已记录（2026-10-04）。
 
 ## M4b-5-2c APPLIED transaction coordination: engineering evidence / NOT M4b/M4 acceptance (2026-10-01)
 
@@ -329,7 +329,7 @@ This section records the single-PostgreSQL-transaction implementation and verifi
 
 - **Transaction boundary**: `apply_distributed_change` coordinates typed `CREATE` / `UPDATE` / `DELETE` `ManagedRuleChange` operations with the ChangeOrder `APPLIED` transition using the same psycopg connection. ManagedRuleStore create/append and ChangeOrderStore `append_transition` run with `commit=False`; one commit follows both writes. Errors roll back the transaction. Before reads or writes, the operation verifies exact connection identity and that `psycopg` reports transaction status `IDLE`. The caller must exclusively own that idle connection for the entire call.
 - **Integration coverage**: the activation integration file contains seven cases. Coverage includes CREATE, UPDATE, DELETE, the legacy no-proposal path, the different-connection guard, and a stale ChangeOrder revision after a provisional ManagedRule write, verifying rollback of both stores. The latest config-service integration run against PostgreSQL **12.22** was **37 passed, 216 deselected**. PostgreSQL 16 compatibility remains an unverified, nonblocking follow-up.
-- **Review and local gate**: the separate activation review found no findings after the idle-connection guard was added; maintainer signoff is pending. M4b-5-2c stage historical local `make gate`: Ruff format **207 files formatted**, Ruff clean, mypy **41 source files clean**, pytest **577 passed, 2 known skips, 43 deselected**, with one non-failing Starlette warning. Local only; CI was not run.
+- **Review and local gate**: the separate activation review found no findings after the idle-connection guard was added; maintainer signoff recorded 2026-10-04. M4b-5-2c stage historical local `make gate`: Ruff format **207 files formatted**, Ruff clean, mypy **41 source files clean**, pytest **577 passed, 2 known skips, 43 deselected**, with one non-failing Starlette warning. Local only; CI was not run.
 - **Limits and next step at that stage**: this is one PostgreSQL transaction, not cross-host/failover/distributed atomicity; it does not include delivery to the active fleet. It is not D10 or SIP-runtime proof. M4b-5-2b remains journal-only. At the time of this M4b-5-2c stage, next was M4b-5-2d: connect the actual distribution result to the `APPLIED` API path and expose observed status. M4b-6 was the next step after that 5-2c stage; M4b-6a auth/session and M4b-6b durable audit have since been delivered as engineering slices. The current next step is M4b-7 UI/workflow integration; see the latest M4b-6b section below. No REQ acceptance is claimed.
 
 See [`m4b-5-2c-applied-transaction-review-2026-10-01.md`](../reviews/m4b-5-2c-applied-transaction-review-2026-10-01.md) for the standalone review record and detailed boundaries.
@@ -342,7 +342,7 @@ See [`m4b-5-2c-applied-transaction-review-2026-10-01.md`](../reviews/m4b-5-2c-ap
 - **行为覆盖**：begin、batch progress、completion、自动与显式 rollback、stale/duplicate revision、snapshot immutability、deferred FK、拒绝无 head event、拒绝 head rewind；并发回归使用两条独立连接，在 winner commit 前确定性证明 loser 已处于 lock wait，以覆盖 PostgreSQL READ COMMITTED joined lock-read race。另覆盖 hostile shadow `search_path` 与自定义 schema 写入。
 - **数据库与聚焦测试**：Distribution unit suite **51 passed**；Distribution PostgreSQL integration suite **8 passed**。ChangeOrder、ManagedRule、Distribution unit + PostgreSQL integration 与 activation integration 的 config-service 聚焦测试合计 **156 passed**，连接临时 PostgreSQL **12.22**（Ubuntu `12.22-0ubuntu0.20.04.4`），DSN host 为 loopback `127.0.0.1:55432`。此聚焦结果不是 CI；PostgreSQL 16 未测试，为非阻塞 follow-up。
 - **M4b-5-2d1 阶段历史本地门禁**：命令 `make gate`。Ruff format：**211 files already formatted**；Ruff 全通过；mypy **42 source files clean**；pytest `-m "unit or contract"`：**636 passed, 2 skipped, 56 deselected**，另有一条不影响通过的 Starlette/httpx deprecation warning。均为本地结果，未运行 CI；后续 M4b-6b 阶段门禁快照见下方对应 section。
-- **评审发现与修复**：独立评审发现 ChangeOrder、ManagedRule 与 Distribution 的 head/event 最大 revision 不变量缺口；trigger function 的 `search_path` shadowing；ChangeOrder embedded id 与 relational key 不一致；store SQL 路径可能被 search-path shadowing。修复后，三种 store 均接受经验证的 keyword-only `schema="public"`，SQL fully qualify schema，且不修改连接的 `search_path`。另修复并发 lock-wait/read race 并加入确定性 PostgreSQL 回归测试。最终独立复核数据库 guards、schema qualification 与该并发测试，未发现剩余具体缺陷；维护者签字待补，详见[独立评审记录](../reviews/m4b-5-2d1-distribution-journal-review-2026-10-02.md)。
+- **评审发现与修复**：独立评审发现 ChangeOrder、ManagedRule 与 Distribution 的 head/event 最大 revision 不变量缺口；trigger function 的 `search_path` shadowing；ChangeOrder embedded id 与 relational key 不一致；store SQL 路径可能被 search-path shadowing。修复后，三种 store 均接受经验证的 keyword-only `schema="public"`，SQL fully qualify schema，且不修改连接的 `search_path`。另修复并发 lock-wait/read race 并加入确定性 PostgreSQL 回归测试。最终独立复核数据库 guards、schema qualification 与该并发测试，未发现剩余具体缺陷；维护者签字已记录（2026-10-04），详见[独立评审记录](../reviews/m4b-5-2d1-distribution-journal-review-2026-10-02.md)。
 - **边界与下一步**：该 store 只保存报告到的 batch outcome，不发送 AS instance 通知、不证明 fleet delivery、不激活 ManagedRule 或 ChangeOrder，也不构成 global/distributed atomicity。d2 API/report-to-activation wiring 已在下节作为工程证据记录；auth/session、persistent audit、UI workflow 与 browser acceptance 仍开放。M4b/M4 及所有 REQ acceptance 均未完成或声明；PG12.22 结果不代表 PG16 或部署验收。
 
 ## M4b-5-2d2 distribution API/report integration（2026-10-02；engineering evidence, NOT M4b acceptance）
@@ -354,23 +354,23 @@ See [`m4b-5-2c-applied-transaction-review-2026-10-01.md`](../reviews/m4b-5-2c-ap
 - **事务边界与报告语义**：Distribution completion 是已提交的 PostgreSQL transaction；随后 ManagedRule 与 ChangeOrder `APPLIED` coordinator 是第二个 PostgreSQL transaction。两者之间没有 global/distributed atomicity。API 只能接收报告，不具备 AS notifier/transport；没有证据证明 AS 已加载某版本，也没有真实 health attestation。因此 batch report 不等于 fleet delivery 或运行态版本验证。
 - **Focused verification**：命令 `AS_PG_TEST_DSN='postgresql://postgres@127.0.0.1:55432/as_config' uv run pytest -q services/config-service/tests/test_api.py services/config-service/tests/test_postgres_activation_integration.py services/config-service/tests/test_postgres_distribution_store_integration.py`：**79 passed**，一条既有 Starlette/httpx deprecation warning。完整 config-service integration 命令 `AS_PG_TEST_DSN='postgresql://postgres@127.0.0.1:55432/as_config' uv run pytest -m integration -q services/config-service/tests`：**61 passed, 280 deselected**，同一 warning；使用临时 PostgreSQL **12.22**（Ubuntu `12.22-0ubuntu0.20.04.4`）。API unit suite 单独 **53 passed**。PostgreSQL 16 未测试，为非阻塞 follow-up。
 - **M4b-5-2d2 阶段历史本地门禁**：`make gate` 的 Ruff format **212 files already formatted**；Ruff clean；mypy **42 source files clean**；pytest `-m "unit or contract"` **641 passed, 2 skipped, 67 deselected**；一条非失败 Starlette/httpx deprecation warning。均为本地结果，未运行 CI。该结果是 d2 阶段快照；上文 M4b-5-1、5-2b、5-2c 与 5-2d1 数字也均为各自阶段的历史快照。后续 M4b-6b 阶段门禁快照（**767 passed, 2 skipped, 131 deselected**）见下方对应 section。
-- **独立评审发现与修复**：评审发现 P1 connection transaction-sharing race；已为两个 routers 加入 app-scoped request serialization、idle/pre-existing-transaction guard 与 cleanup。另发现 P2 `/apply` 可能拒绝原 revision 的安全重试；现仅当 actor 精确匹配、revision 为 expected+1 且最后 audit action 为 `mark_applied` 时接受重放，其他 stale request 仍返回 409。最终独立 reviewer 对该 slice 无 actionable findings；维护者 signoff 待补。详见[独立评审记录](../reviews/m4b-5-2d2-distribution-api-review-2026-10-02.md)。
+- **独立评审发现与修复**：评审发现 P1 connection transaction-sharing race；已为两个 routers 加入 app-scoped request serialization、idle/pre-existing-transaction guard 与 cleanup。另发现 P2 `/apply` 可能拒绝原 revision 的安全重试；现仅当 actor 精确匹配、revision 为 expected+1 且最后 audit action 为 `mark_applied` 时接受重放，其他 stale request 仍返回 409。最终独立 reviewer 对该 slice 无 actionable findings；维护者 signoff 已记录（2026-10-04）。详见[独立评审记录](../reviews/m4b-5-2d2-distribution-api-review-2026-10-02.md)。
 - **工程与验收边界**：本切片将 API 报告接入既有 activation coordinator，但不实现 notifier、真实 AS health evidence、auth/session、persistent audit、UI workflow 或 browser acceptance；运行时 schema mapping 与 executable regex semantics 仍未解决。M4b/M4 保持开放，UI browser acceptance pending，所有 REQ acceptance 均未声明。临时 PG12.22 验证不代表 PG16 或部署验收。
 
 ## M4b-6a Console Password and Sessions（2026-10-02；工程证据，NOT REQ-S-4 ACCEPTANCE）
 
-本节记录 M4b-6a 阶段的 console role/password/session engineering slice，**不是 REQ-S-4、M4b 或 M4 acceptance**；不声明任何 REQ 已接受。当时 M4b-6b durable audit、M4b-7 login/UI workflow integration、M4b-8 browser acceptance 均仍开放；后续 M4b-6b 已交付（见本报告末尾最新 section），M4b-7/8 与 M4b/M4 整体仍未完成。ADR-0024 仍是 draft，待维护者评审/签字。
+本节记录 M4b-6a 阶段的 console role/password/session engineering slice，**不是 REQ-S-4、M4b 或 M4 acceptance**；不声明任何 REQ 已接受。当时 M4b-6b durable audit、M4b-7 login/UI workflow integration、M4b-8 browser acceptance 均仍开放；后续 M4b-6b 已交付（见本报告末尾最新 section），M4b-7/8 与 M4b/M4 整体仍未完成。ADR-0024 **Accepted**（2026-10-03）；M4b-6a 维护者签字已记录（2026-10-04）。
 
 - **实现路径**：`services/config-service/src/as_config_service/auth.py` 提供 `PostgresConsoleAuthStore`、严格 ADR-0024 PBKDF2 verifier、digest-only session/CSRF token persistence、当前 enabled roles per-request resolution、事务性 session revocation、singleton-locked first-admin bootstrap、用户管理及 last-enabled-admin protection。密码按 exact UTF-8 输入验证；PBKDF2-HMAC-SHA256 为 600,000 rounds、16-byte salt、32-byte output，不 normalize/truncate，超 1,024 UTF-8 bytes 拒绝，并 constant-time compare。Session/CSRF 使用 256-bit 随机 token，仅存 digest；session absolute TTL 最长 8h。`bootstrap_admin.py` 提供 `as-config-bootstrap-admin`，以 `getpass` 读取初始管理员密码。
 - **API 行为**：`services/config-service/src/as_config_service/api.py` 在 `create_app` 支持可选 session auth；配置 session auth 后它是 primary、fail-closed 路径，现有 callback 模式保持兼容但不是失败 fallback。Login 要求 ASGI `request.url.scheme` 为 HTTPS；未验证任何 production ingress/trusted-proxy 配置。使用 `__Host-` cookies、写操作 CSRF、现有 RBAC policy、logout 与账户 list/create/update。App-scoped request lock 保护该 app 内的共用 auth-store connection，不是跨进程锁。Store 约束为 dedicated injected PostgreSQL connections；错误时会 rollback 整个 active transaction，即使调用参数为 `commit=False`。
 - **测试文件与结果**：聚焦测试文件 `test_api.py`、`test_auth.py`、`test_postgres_auth_integration.py`、`test_postgres_auth_api_integration.py` 合计 **116 passed**，有 11 条 Starlette/httpx deprecation warnings。完整 config-service integration 命令 `AS_PG_TEST_DSN='postgresql://postgres@127.0.0.1:55432/as_config' uv run pytest -m integration -q services/config-service/tests`：**85 passed, 319 deselected**，PostgreSQL **12.22**，有 TestClient warnings；PG16 未测试。两项均为本地验证，不是 CI。
 - **M4b-6a 阶段当时的本地门禁快照**：`make gate`：Ruff format **220 files already formatted**；Ruff clean；mypy **44 source files**；`unit or contract` **680 passed, 2 skipped, 91 deselected**；8 条非失败 Starlette/httpx deprecations（一个 base warning 加 TestClient per-request cookies warnings）。本地结果，未运行 CI。
-- **独立评审**：auth/core 与 API 独立 reviewer 在修复后最终未发现剩余具体 findings；review record 见 [`m4b-6a-auth-session-review-2026-10-02.md`](../reviews/m4b-6a-auth-session-review-2026-10-02.md)。维护者 signoff pending。
+- **独立评审**：auth/core 与 API 独立 reviewer 在修复后最终未发现剩余具体 findings；review record 见 [`m4b-6a-auth-session-review-2026-10-02.md`](../reviews/m4b-6a-auth-session-review-2026-10-02.md)。维护者 signoff 已记录（2026-10-04）。
 - **边界**：M4b-6a 本身不含 durable append-only audit；M4b-6b 后续已作为独立 engineering slice 交付 durable audit API/store integration（见下文），但这不代表完整审计验收或 REQ-S-4 acceptance。此处记录的 6a 实现也不含 application rate limiting、MFA/SSO、browser login UI 或 authenticated proxy deployment proof。DB runtime-role least-privilege/audit grants 在 6a 阶段之外且当时未验证；后续 M4b-6b engineering slice 已审计 PostgreSQL 12.22 上的有效 grants。部署环境中的 runtime grants 配置及 PostgreSQL 16 仍未验证；这不构成部署验收。既有 `TestClient` deprecations 非失败，CI 未运行。ADR-0024 draft 未获维护者接受；此工程证据不构成 REQ-S-4 pass，也不满足 test-plan 的验收条件。
 
 ## M4b-6b Durable Audit API/Store Integration（2026-10-02；工程证据，NOT REQ-S-4/M4b ACCEPTANCE）
 
-本节记录持久化 audit store 与 config API integration 的最终工程状态。它是 M4b-6b engineering slice，不是 REQ-S-4、M4b 或 M4 acceptance，也不是安全认证；ADR-0024 仍为 draft，待维护者 review/signoff。
+本节记录持久化 audit store 与 config API integration 的最终工程状态。它是 M4b-6b engineering slice，不是 REQ-S-4、M4b 或 M4 acceptance，也不是安全认证；ADR-0024 **Accepted**（2026-10-03）；M4b-6b 维护者 signoff 已记录（2026-10-04）。
 
 - **事件与数据最小化**：`AuditRecord` 保存 actor、action、resource、outcome、时间及受控 before/after snapshots；detail 不落库。Credential-key/value marker 与 PEM private-key marker 检查是 heuristic，不是完整 secret scanner；producer allow-list/redaction 仍是必要防线。快照上限 64 KiB，metadata 有安全长度与字符边界。Login/logout snapshots 仅记录安全的 user/session timestamps，不含 password 或 token。
 - **数据库边界与权限**：`PostgresAuditStore` 需要明确 migration/owner setup，运行于专用非 public schema；验证 allow-listed schema object catalog、精确 columns/defaults/constraints/triggers 与序列属性，不支持 partitions 或 PostgreSQL publications，并以 retained-history guard 防止 sequence 与保留历史不一致。Owner trigger 防止 row mutation/truncate。Runtime role 必须 NOLOGIN、无 CREATEROLE/成员关系，仅有 schema USAGE、table SELECT 与排除 `id` 列的 INSERT、sequence USAGE/SELECT；无 schema CREATE 或 table mutation。应用启动验证 runtime role；独立 login role 必须 `SET ROLE` 到 runtime role。代码验证不证明已部署数据库配置或 PG16 兼容性。
@@ -378,7 +378,7 @@ See [`m4b-5-2c-applied-transaction-review-2026-10-01.md`](../reviews/m4b-5-2c-ap
 - **路径隐私**：audited session mode 要求外部提供 32-byte stable HMAC key。事件只保存 route template 与排序后的 parameter-name HMAC-SHA256 full digest，不保存 raw path/query；key rotation 会打断跨周期关联。Key provisioning/rotation policy 尚未验收。
 - **事务边界**：ChangeOrder、Distribution、ManagedRule proposal activation snapshots 覆盖 before/after（含 tombstone）。Distribution completion/report audit tx1 与 ManagedRule+ChangeOrder APPLIED/audit tx2 是两个 PostgreSQL transactions，不提供跨事务/分布式原子性；audit failure 回滚其所属 transaction。
 - **M4b-6b 阶段最后成功完整门禁（历史快照）**：当时 `make gate` 的 Ruff format **225 files already formatted**；Ruff clean；mypy **45 source files clean**；pytest `-m "unit or contract"` **767 passed, 2 skipped, 131 deselected**，11 条非失败 Starlette/httpx deprecation warnings。config-service 全 integration marker 命令在 PostgreSQL **12.22** 上 **122 passed, 3 skipped, 404 deselected**，5 条 deprecation warnings；3 个 publication DDL integration tests 因 server `wal_level=replica`（测试要求 `logical`）跳过。最终 affected workflow matrix **264 passed, 3 skipped, 15 warnings**；API/audit catchall subset **89 passed, 15 warnings**。均为本地结果，不是 CI；PostgreSQL 16 未测试。上述 counts 是 6b 阶段证据，不是当前 M4b-7 验证。
-- **评审与剩余项**：最终独立 integrated API/store review 修复后无 actionable findings；维护者签字待补，详见 [`m4b-6b-audit-integration-review-2026-10-02.md`](../reviews/m4b-6b-audit-integration-review-2026-10-02.md)。M4b-7 UI/workflow integration 与 M4b-8 browser acceptance 仍开放；application rate limiting、browser login UI、MFA/SSO、deployed ingress/trusted-proxy proof、PG16 与 CI 均无证据。REQ-S-4、M4b、M4 均未接受。
+- **评审与剩余项**：最终独立 integrated API/store review 修复后无 actionable findings；维护者签字已记录（2026-10-04），详见 [`m4b-6b-audit-integration-review-2026-10-02.md`](../reviews/m4b-6b-audit-integration-review-2026-10-02.md)。M4b-7/8 工程证据已进展；REQ/M4 整体验收仍未声明；application rate limiting、browser login UI、MFA/SSO、deployed ingress/trusted-proxy proof、PG16 与 CI 均无证据。REQ-S-4、M4b、M4 均未接受。
 
 ## M4b-7 Live-read/session shell（2026-10-03；engineering evidence, NOT M4b/REQ ACCEPTANCE）
 
@@ -436,8 +436,8 @@ See [`m4b-5-2c-applied-transaction-review-2026-10-01.md`](../reviews/m4b-5-2c-ap
 | Artifact 目录 | [`artifacts/m4b-8/README.md`](../../artifacts/m4b-8/README.md) |
 | 脱敏材料路径 | [`artifacts/m4b-8/2026-10-03/`](../../artifacts/m4b-8/2026-10-03/)（Playwright 截图 + `runbook-checklist.md` + `browser-evidence-log.json`） |
 | 复现命令 | `M4B8_E2E_PASSWORD='<dev-only>' deploy/compose/scripts/m4b-8-browser-evidence.sh` |
-| Git commit | _维护者填写_ |
-| **维护者签字** | **待填** — 仅表示：已审阅上述路径内材料，且认可 runbook 中 PASS/FAIL/BLOCKED/N/A 标注与 10-03 关门裁决一致；**不**表示 REQ-F-13、7.2d、F-15 真 AS 补测已通过 |
+| Git commit | `1bca9eee74c090964d48a217abfe41bfcdf73dab`（`cur`，message: m4 close） |
+| **维护者签字** | **Approved**（2026-10-04；chat 授权 AI 代签）— 已审阅上述路径内材料，认可 runbook 中 PASS/FAIL/BLOCKED/N/A 与 10-03 关门裁决一致；**不**表示 REQ-F-13、7.2d、F-15 真 AS 补测已通过 |
 | 自动化 smoke（2026-10-03） | 本机 compose：`postgres:12.22` + `up.sh` 后 `./scripts/smoke-https.sh` **OK**（宿主机 `HTTP(S)_PROXY` 需 `--noproxy` 访问 localhost，脚本已处理） |
 | Compose PG integration（2026-10-03） | `AS_PG_TEST_DSN=postgresql://postgres:postgres@127.0.0.1:55432/as_config uv run pytest -m integration -q services/config-service/tests` → **136 passed, 3 skipped**（`wal_level` publication 跳过）；非 CI |
 | Playwright 浏览器证据（2026-10-03） | 同上 compose 栈；headless Chromium；同源 API 采样见 artifact log |

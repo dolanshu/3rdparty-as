@@ -2,7 +2,7 @@
 
 Date: 2026-10-01
 Scope: `services/config-service/src/as_config_service/api.py` and `services/config-service/tests/test_api.py`
-Status: final independent review found no findings; maintainer signoff pending.
+Status: final independent review found no findings; maintainer signoff recorded 2026-10-04 (chat authorization).
 
 ## Scope and contract
 
@@ -29,4 +29,4 @@ The injected identity and authorization callbacks are integration seams, not an 
 
 No test currently covers concurrent API clients against PostgreSQL CAS through these routes. Authentication provider/login/session, persistent console audit, browser/UI integration, and cross-store atomicity remain absent. At this slice, M4b-5-2c was next: design and implement a shared PostgreSQL transaction coordinating the active ManagedRule snapshot with the ChangeOrder `APPLIED` transition before claiming consistency. M4b and M4 remain incomplete; M4b-6 auth/session/audit, M4b-7 UI integration, and M4b-8 acceptance remain pending.
 
-Maintainer signoff: pending.
+Maintainer signoff: Approved; recorded by AI agent per maintainer authorization in chat (2026-10-04).
