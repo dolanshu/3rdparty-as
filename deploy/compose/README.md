@@ -46,6 +46,16 @@ docker compose up -d postgres
 | `scripts/smoke-https.sh` | `curl -k --noproxy '*'` 检查 `/` HTML 与未认证 session 401（避免宿主机 `HTTP(S)_PROXY` 对 localhost 返回 504） |
 | `scripts/m4b-8-browser-evidence.sh` | Playwright 截图 + API 同源证据（需 `M4B8_E2E_PASSWORD`；Ubuntu 20.04 无本机浏览器时自动用 Playwright Docker 镜像） |
 
+## 宿主机 integration 测试（M5）
+
+`pytest -m integration` 默认 DSN 为 `postgres:secret@127.0.0.1:55432`；compose 超级用户密码见 `.env.example`（默认 `postgres`）。在 compose Postgres 已启动时：
+
+```sh
+# 仓库根目录
+make test-integration-compose
+# 等价于 AS_PG_TEST_DSN=postgresql://postgres:postgres@127.0.0.1:55432/as_config pytest -m integration
+```
+
 ## 宿主机 migrate（可选）
 
 Postgres 映射端口默认 `55432`：

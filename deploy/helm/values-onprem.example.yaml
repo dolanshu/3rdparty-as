@@ -1,0 +1,41 @@
+# On-premises production profile (ADR-0026 / plan.md §4.6).
+# Install: helm upgrade --install as deploy/helm -f deploy/helm/values-onprem.example.yaml \
+#   --set image.repository=... --set sip.peerAllowlist=... --set tls.secretName=...
+#
+# Never commit real secrets. Replace bootstrapDevCredentials with customer Secrets
+# before production (see docs/acceptance/m5-state-stores-runbook.md).
+
+stateStores:
+  enabled: true
+  networkPolicy:
+    enabled: true
+  bootstrapDevCredentials: false
+  postgres:
+    image: "postgres:12.22"
+    database: "as_config"
+    persistence:
+      enabled: true
+      size: "20Gi"
+  redis:
+    image: "redis:7-alpine"
+    port: 6379
+  migrateJob:
+    enabled: true
+    ownerSecretName: "as-config-migrate-owner"  # customer Secret: key AS_CONFIG_OWNER_DSN
+
+# When stateStores.enabled=true, postgres.host / redis.url default to chart Services.
+postgres:
+  port: 5432
+  secretName: ""  # use release credentials Secret or customer Secret
+
+services:
+  configService:
+    enabled: true
+    secretName: ""  # required: customer Secret with AS_CONFIG_DSN + audit HMAC key
+    runtimeRole: as_config_runtime
+
+sip:
+  peerAllowlist: "REPLACE_WITH_S_SBC_CIDRS"
+
+tls:
+  secretName: "REPLACE_WITH_TLS_SECRET"

@@ -14,6 +14,7 @@ from as_console.access import Role
 
 
 def main() -> int:
+    """Create or update M4b-8 Playwright console users via owner DSN (compose dev only)."""
     dsn = os.environ.get("AS_CONFIG_OWNER_DSN")
     if not dsn:
         print("AS_CONFIG_OWNER_DSN must be set.", file=sys.stderr)

@@ -56,6 +56,9 @@ spec:
             - name: sip-tls
               containerPort: {{ $.Values.sip.tlsPort }}
               protocol: TCP
+            - name: health-http
+              containerPort: {{ $.Values.health.port }}
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: {{ include "as.fullname" $ }}-config
@@ -77,7 +80,7 @@ spec:
                   optional: true
             # Assembled here so that no password is ever stored in a ConfigMap.
             - name: CONFIG_DB_URL
-              value: {{ printf "postgresql://$(CONFIG_DB_USER):$(CONFIG_DB_PASSWORD)@%s:%v/%s" $.Values.postgres.host $.Values.postgres.port $.Values.postgres.database | quote }}
+              value: {{ printf "postgresql://$(CONFIG_DB_USER):$(CONFIG_DB_PASSWORD)@%s:%v/%s" (include "as.postgres.host" $) $.Values.postgres.port (include "as.postgres.database" $) | quote }}
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -87,15 +90,24 @@ spec:
             # Per-use-case service name for the OTLP exporter (ADR-0005).
             - name: OTEL_SERVICE_NAME
               value: {{ printf "%s-%s" (include "as.fullname" $) $uc.name | quote }}
+            - name: AS_USE_CASE
+              value: {{ $uc.name | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- if $uc.simulatedActiveCalls }}
+            - name: AS_M5_SIMULATED_ACTIVE_CALLS
+              value: {{ $uc.simulatedActiveCalls | quote }}
+            {{- end }}
           {{- with $uc.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- if $.Values.probes.liveness.enabled }}
-          # Conservative detection parameters only. They say nothing about how
-          # much traffic a Pod can carry (O1 / M6).
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: {{ $.Values.probes.liveness.httpPath | quote }}
               port: {{ $.Values.probes.liveness.portName }}
             initialDelaySeconds: {{ $.Values.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ $.Values.probes.liveness.periodSeconds }}
@@ -103,12 +115,9 @@ spec:
             failureThreshold: {{ $.Values.probes.liveness.failureThreshold }}
           {{- end }}
           {{- if $.Values.probes.readiness.enabled }}
-          # TODO(M5+): a tcpSocket probe only proves the TCP listener accepts
-          # connections. Once the process shell exposes its draining state,
-          # readiness must also fail while draining so the Service stops
-          # routing new calls to it (ADR-0009).
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: {{ $.Values.probes.readiness.httpPath | quote }}
               port: {{ $.Values.probes.readiness.portName }}
             initialDelaySeconds: {{ $.Values.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ $.Values.probes.readiness.periodSeconds }}

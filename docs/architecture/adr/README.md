@@ -39,6 +39,7 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | [0023](0023-redis-call-state-checkpoint.md) | 呼叫恢复方向：Redis 应用层必要状态 checkpoint；不序列化完整 DUM / `SipStack`（D10 仍未通过） | 2 | draft |
 | [0024](0024-console-password-sessions.md) | 控制台角色 + 密码认证与可撤销会话；M4b-6a/6b 工程切片；2026-10-03 维护者签核 accepted | 18 | accepted ✓ |
 | [0025](0025-managed-rule-runtime-bundle.md) | 管理面 `ManagedRule` → 内部 API `ConfigBundle`/`RuleDTO` 无损编译契约（v1：被叫 + 前缀子集） | 13 | draft |
+| [0026](0026-in-cluster-state-stores-proposal.md) | 集群内专用 PG/Redis（非 IMS）；单 chart 合并交付；部分修订 ADR-0013 state 渲染 | 14 / D12 | accepted ✓ |
 
 ## 规则
 

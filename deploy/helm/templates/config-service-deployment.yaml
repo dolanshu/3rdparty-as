@@ -1,6 +1,9 @@
 {{- $config := .Values.services.configService -}}
 {{- if $config.enabled -}}
-{{- $secretName := required "services.configService.secretName is required when configService is enabled (external Secret with AS_CONFIG_DSN and AS_AUDIT_RESOURCE_HMAC_KEY_B64)" $config.secretName -}}
+{{- $secretName := include "as.configServiceRuntimeSecretName" . -}}
+{{- if not $secretName -}}
+{{- fail "services.configService.secretName is required when configService is enabled (or set stateStores.bootstrapDevCredentials for dev/kind)" -}}
+{{- end -}}
 {{- $runtimeRole := required "services.configService.runtimeRole is required when configService is enabled" $config.runtimeRole -}}
 {{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]{0,62}$" $runtimeRole) -}}
 {{- fail "services.configService.runtimeRole must be a PostgreSQL identifier" -}}

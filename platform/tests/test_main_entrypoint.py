@@ -96,7 +96,13 @@ def test_main_returns_zero_after_idle_process_receives_sigterm(
     monkeypatch.setattr(entrypoint.time, "monotonic", clock)
 
     exit_code = entrypoint.main(
-        ["--drain-timeout-seconds", "1.0", "--poll-interval-seconds", "0.1"]
+        [
+            "--drain-timeout-seconds",
+            "1.0",
+            "--poll-interval-seconds",
+            "0.1",
+            "--no-health-server",
+        ]
     )
 
     assert exit_code == 0
@@ -120,7 +126,13 @@ def test_main_returns_nonzero_when_active_calls_do_not_drain(
     monkeypatch.setattr(entrypoint.time, "monotonic", clock)
 
     exit_code = entrypoint.main(
-        ["--drain-timeout-seconds", "0.3", "--poll-interval-seconds", "0.1"]
+        [
+            "--drain-timeout-seconds",
+            "0.3",
+            "--poll-interval-seconds",
+            "0.1",
+            "--no-health-server",
+        ]
     )
 
     assert exit_code != 0
@@ -136,7 +148,7 @@ def test_termination_signal_stops_accepting_new_requests(
     monkeypatch.setattr(entrypoint.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(entrypoint.time, "monotonic", lambda: 0.0)
 
-    assert entrypoint.main([]) == 0
+    assert entrypoint.main(["--no-health-server"]) == 0
 
     assert len(shells) == 1
     assert shells[0].accepts_new_requests() is False

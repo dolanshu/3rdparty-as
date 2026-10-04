@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| 当前进行中的步骤 | **M4 工程关门（§4.2–§4.3，2026-10-04）已完成**：M4b 强制控制台工程切片 + M4b-8 dev HTTPS 证据与维护者签字（`1bca9eee`、`643bdb6` on `cur`）。**下一里程碑：M5**（尚未启动；M5 门禁与 7.2d 到 M5 再核对）。**不**等于 `test-plan` 全 REQ 绿 —— F-13、F-15 真 AS、主叫/正则 v1.1 等见 **§5.4 补测**。证据门槛仍为 `make gate` + 维护者环境 PG integration（**origin CI 全绿非 M4 硬门禁**）。 |
+| 当前进行中的步骤 | **M5 工程关门（2026-10-04，维护者 chat 授权代签）**。**下一里程碑 M6** 未启动。HPA/O1、D3、M7 真 SIP 按 §4.4.3。**不**等于 `test-plan` 全 REQ 绿 —— 见 **§5.4**。 |
 | 设计基线 | 已确认（`architecture/新系统整体架构.md`，决策 1–19） |
 | 卡住后续里程碑的未决项 | §5（含 D11：REQ-F-4 SDP 原始 body 字节恒等的线上证明） |
 | POC 代码的迁移 | 刻意推迟到 M1–M3，且由 [`migration/triage.md`](migration/triage.md) 把关 |
@@ -118,11 +118,11 @@
 |---|---|---|---|---|
 | **M0** | 仓库骨架 | 本结构、守卫、ADR 注册表、CI | **已完成（维护者授权代签）** | §3，外加维护者签字 |
 | **M1** | 甄别与行为基线 | 冻结 POC commit；抓取消息样例与 trace；确认或推翻 `migration/triage.md` 里每个裁决。**无产品代码。** | **已完成（2026-09-28；门禁裁决见 §4.1）** | 每个文件都有一个带证据的裁决；基线已抓取且可复现 |
-| **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | **M2a 已完成；M2b seam 已落（2026-09-28），栈绑定未开始** | 内核守卫绿；能在其上构建用例而不碰 sippy |
+| **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | **M2a 已完成；M2b seam 已落（2026-09-28）**；**D3** Sentinel 接线仍 OPEN；栈绑定未开始（→ M7） | 内核守卫绿；能在其上构建用例而不碰 sippy。**不含** Helm 部署 PG/Redis（那是 **M5 / D12**，见 §4.6） |
 | **M3** | 应用 | `apps/translation` 与 `apps/anti-fraud`；决策模块先做 TDD | **已完成（2026-09-28；门禁裁决见 docs/reviews/m3-gate-review.md）** | 契约用例集对两者都重放绿 |
 | **M4a** | 控制面后端与访问策略 | `services/config-service` 配置治理，以及 `services/console` 的纯访问策略 / 审计判定 | **已交付（2026-09-28）** | 纳入 **M4 工程关门**（§4.3） |
 | **M4b** | 运维控制台 UI（强制） | M4 裁决定义：被叫+前缀、审批、compose HTTPS、fleet、M4b-8 浏览器证据 | **工程关门（2026-10-04）** | 见 §4.3；补测 §5.4；**不**等于 `test-plan` 全 REQ 绿。7.2d → M5。 |
-| **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集 | **工程工作已提前部分交付（2026-09-28–30：Helm / 告警 / 渲染校验 / 缩容保护 / PG 闭环 / 容器镜像）；正式阶段闭合 / 后续顺序受 M4b 把关；真实集群滚动升级与缩容验证仍未完成** | M4b 通过后，在真实集群验证滚动升级不掉呼叫、缩容不掉呼叫，方可关闭 M5 |
+| **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集、控制面集群部署证明（含 **7.2d**）；**D12** 集群内 PG/Redis（ADR-0026） | **工程关门（2026-10-04，维护者授权代签）** | 评审 [`m5-closure-adjudication-2026-10-04.md`](reviews/m5-closure-adjudication-2026-10-04.md)；HPA/O1 → **M6** |
 | **M6** | **容量研究** | 真实 socket 压测 harness；测出 CPS、并发会话、建立时延 —— 按栈分别 | 未开始 | 产出 O1 的答案；在这跑起来之前不假设任何目标 |
 | **M7** | 生产 SIP 集成与验收 | Python 产品决策模块接入 reSIProcate DUM/产品 CallController；完成协议行为和恢复验收 | 未开始（仅有探索性证据；产品集成/验收未开始） | **受 D9、D10、D11、E1/E4/E5 把关。** REQ-NF-1 为硬验收要求；REQ-F-4 SDP 字节恒等须由完整产品路径验收；M6 容量测试仍须使用真实 socket |
 | **M8** | 发布候选 | 带证据的验收运行、文档链完整、统一产品版本 | 未开始 | 逐条验收报告 |
@@ -148,7 +148,7 @@
 - [x] **M4b-7.2b Config-service runtime factory/CLI（code-level engineering slice only）**：提供显式 ASGI factory 与 `as-config-service` Uvicorn factory-mode CLI；runtime 使用 `AS_CONFIG_DSN`、`AS_CONFIG_RUNTIME_ROLE`、`AS_AUDIT_RESOURCE_HMAC_KEY_B64`，单个 PostgreSQL 连接先 `SET ROLE`，再供所有 stores 共用，依赖预配置 runtime role/grants，startup 不执行 schema/migration/provisioning。Bootstrap CLI 单独要求 `AS_CONFIG_OWNER_DSN` 并共享 `AS_CONFIG_SCHEMA`；owner DSN 不属于 runtime Deployment。Focused runtime tests 覆盖配置、连接顺序与失败关闭；不构成部署或 acceptance 证据。
 - [x] **M4b-7.2c Config-service image and Helm control-plane wiring（engineering slice only）**：独立 config-service image 包含 `as-config-service` runtime、`as-platform` direct workspace dependency 与 console assets；Helm 提供默认关闭的 Deployment、ClusterIP Service、可选 ingress-nginx 同源 Ingress 模板，并固定 redirect/force-HTTPS annotations。Deployment 只引用外部 runtime Secret 的 `AS_CONFIG_DSN` 与 audit key，使用预先 provisioned runtime role，不执行 DDL/provisioning；bootstrap owner DSN 不进入 runtime Secret。仅为模板 wiring；Helm render、镜像构建、集群 HTTPS、trusted-proxy 或 browser proof 均未验证，也不代表 acceptance。上述实际验证留在 7.2d。
 - [x] **M4b-7.2c2 Owner-only database setup（engineering slice only）**：新增 `as-config-migrate`，通过 `AS_CONFIG_OWNER_DSN` 建立/验证非 public、独立的 `as_config` schema，调用 managed-rule/change-order/distribution/auth schema setup 与 `PostgresAuditStore.ensure_schema(runtime_role)`，再撤销 `PUBLIC`/runtime 的既有 schema/table/column 权限并只授予 runtime 所需权限。角色必须由 DBA 预先创建；migration 不创建/修改角色、不 `SET ROLE`。Runtime 与 bootstrap schema 默认对齐 `as_config`，web startup 仍无 DDL。Focused migration/runtime/bootstrap unit tests **37 passed**；不构成 DB deployment、Helm render、M4b/M4 或 REQ acceptance。
-- [ ] **M4b-7.2d HTTPS ingress/trusted-proxy deployment validation（M5 硬门禁；M4 不阻塞）**：**2026-10-03 裁决**：正式生产/客户集群 ingress/trusted-proxy 证明与 **M5** 集群验收捆绑，**不是** M4 关门硬门禁。M4/M4b-8 浏览器同源 HTTPS 可用 **compose / 自签证书 / 本地反代** 收集证据（见 §4.2）。7.2d 仍须在未来完成：保留默认 `nginx.ingress.kubernetes.io` annotation prefix；确认 `no-tls-redirect-locations` 不豁免 `/`；客户 TLS Secret；真实客户端 redirect/拒绝与浏览器 credentials 不经 HTTP；显式 proxy IP/CIDR 的 forwarded scheme 信任。在 M5 记录真实 controller/deployment/browser evidence 前保持 OPEN。
+- [x] **M4b-7.2d HTTPS ingress/trusted-proxy（M5，2026-10-04）**：runbook 1–6；`make m5-7.2d-evidence`（L7 308/HTTPS 200 + Playwright 登录）；日志 `artifacts/m5/<date>/7.2d-evidence.log`。**不**等于维护者签字或 REQ 验收。
 - [x] **M4b-7.3a Live decisions on existing ChangeOrders（engineering slice only）**：live table/modal 支持 draft creator 提交既有 draft，以及由不同 approver 批准或拒绝 submitted order；API 禁止 creator 自拒绝。仅是现有 ChangeOrder 的 submit/approve/reject workflow，不提供规则 CRUD/create/edit/write，也不是 M4b/M4 或 REQ acceptance；route-mocked browser checks 与 focused API regression evidence 见 [`acceptance/report.md`](acceptance/report.md)。
 - [x] **M4b-7.3b ManagedRule write/approval integration（M4 被叫+前缀）**：`runtime_bundle`、managed-rules API、live console、`test_postgres_managed_rule_pipeline_integration.py`；compose PG integration 与 M4b-8 浏览器证据（2026-10-03/04）。不等同全 REQ 验收。
 - [ ] **M4b-7.4 Live Call-ID trace**：**不纳入 M4 工程关门**；补测见 **§5.4**（REQ-F-13）。
@@ -210,6 +210,120 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 | 范围 | M4b 强制控制台 + 被叫+前缀 + compose 同源 HTTPS + M4b-8 材料 |
 | 明确不含 | `test-plan` 全 REQ 绿；F-13；F-15 真 AS；主叫/正则 v1.1；7.2d 生产 ingress |
 
+### 4.4 M5 工作计划（2026-10-04；分支 `cur`）
+
+**前提**：M4 工程关门（§4.3）已满足；里程碑表「M4b 通过后」在流程语义上指同一前提。
+
+**关门条件（不变）**：在**真实 Kubernetes 集群**上取得可复现证据——(1) 滚动升级不掉在途呼叫（按 ADR-0009 draining 语义观测）；(2) 缩容不掉在途呼叫（ADR-0010 判据 + draining）；(3) **M4b-7.2d** ingress/trusted-proxy 与浏览器/客户端 HTTPS 行为。HPA **启用**与容量类告警依赖 O1/M6，**不**阻塞 M5 工程关门（见 §4.4.3）。
+
+#### 4.4.1 代码核查快照（2026-10-04；非仅文档）
+
+| 能力 | 状态 | 仓库事实 |
+|---|---|---|
+| Helm AS 工作负载 | **已交付** | `deploy/helm/`；`helm lint` / 默认 `helm template` → 7 对象；`autoscaling.enabled=true` 且无 `minReplicas` → **按设计 fail** |
+| HPA / PDB 模板 | **已交付** | `hpa.yaml` `required` 守卫；默认关闭；无 O1 数字 |
+| 告警规则 | **已交付** | `deploy/alerts/as-alerts.yaml`；比例/状态量，无 CPS/并发绝对值 |
+| ISSU / draining（模板 + 进程壳） | **部分** | Chart：`preStop` + `terminationGracePeriodSeconds`；`ProcessShell` + SIGTERM 单测；**运行时 `active_calls` 恒为 0**（`as_platform.__main__`） |
+| 缩容保护判据（ADR-0010） | **已交付（运维层）** | `plan_scale_down` + unit；`AS_DOWNSCALE_GUARD_*` 已由 `platform/__main__` 读取；无 in-cluster actuator（ADR 允许运维脚本） |
+| `as_active_calls` 指标 seam | **M5 已接线** | Helm metrics 路径 + 模拟计数；真 SIP 计数 **M7** |
+| Readiness vs draining | **已交付** | Deployment `httpGet` `/health/ready`；draining → 503 |
+| PostgreSQL `VersionStore` runtime | **已交付** | `runtime.py` → `PostgresVersionStore`；activation/API 使用；integration 面大于 2026-09 `report.md` M5 段快照 |
+| config-service Helm | **模板已交付** | 默认关闭；**未**纳入 CI 渲染矩阵；7.2d 未 cluster 证明 |
+| 平台 / config-service 镜像 | **部分** | `deploy/docker/Dockerfile` 历史构建证据；config-service 镜像 recipe 在 M4b-7.2c；**须在 M5 重跑 build** |
+| 真实集群 ISSU / 缩容 | **kind 已证据（2026-10-04）** | `m5-issu-scale-evidence.sh` + `issu-scale-evidence.log`（模拟 `active_calls`）；生产集群采证仍客户环境 |
+| CI chart 回归 | **已交付（M5-0c）** | CI ① `chart-check`；本地 `make chart-check` |
+
+#### 4.4.2 已提前交付（2026-09-28–30；勾选表示工件在库，不等于 M5 关门）
+
+- [x] M5-a Helm chart 骨架与 values 契约（ADR-0013；[评审](reviews/m5-a-helm-chart-review-2026-10-04.md) + [H1–H9](reviews/m5-helm-alerts-review.md)）
+- [x] M5-b 告警规则工件（REQ-NF-14；[评审](reviews/m5-b-alerts-review-2026-10-04.md)）
+- [x] M5-c `plan_scale_down` 缩容保护纯函数 + unit（ADR-0010）
+- [x] M5-d `MetricsRegistry` / `CallMetrics` / `as_active_calls` 命名契约（ADR-0005；与 `deploy/alerts/README.md` 对齐）
+- [x] M5-e `PostgresVersionStore` + config-service PG integration 用例（治理闭环；runtime factory 已接线）
+- [x] M5-f 平台容器镜像 + 容器内 SIGTERM draining smoke（`report.md` M5 容器镜像段）
+
+#### 4.4.3 明确后置（不阻塞 §4.5 M5 工程关门）
+
+| 项 | 归属 | 说明 |
+|---|---|---|
+| HPA `minReplicas` / `maxReplicas` / 自定义 `as_active_calls` 阈值 | **M6 后填 values** | O1 实测前禁止猜测（AGENT.md §2、§6） |
+| 容量类告警（CPS / 并发上限） | **M6 后** | `as-alerts.yaml` 已注明；新增 `as.capacity` 组 |
+| D3 Redis Sentinel / 脑裂幂等 | **M2 / O5** | 不纳入 M5 首包除非维护者改计划 |
+| 真实 SIP 负载下的「不掉呼叫」 | **M7 加强** | M5 可用注入/模拟 `active_calls` 或 testbed 占位证明 draining/缩容**机制**；产品路径 E1 仍属 M7 |
+
+#### 4.4.4 M5 implementation checklist（按顺序）
+
+**阶段 0 — 可重复基线**
+
+- [x] **M5-0a** `make gate` 全绿（2026-10-04：`m4b-8-seed-users.py` `main` docstring）
+- [x] **M5-0b** integration 可重复：`make test-integration-compose` → **142 passed, 3 skipped**（compose PG 12.22，`wal_level=replica` 跳过 3 条 publication 用例）
+- [x] **M5-0c** **chart-check**：`make chart-check` / `deploy/helm/scripts/chart-check.sh`；CI ① fast 已纳入
+
+**阶段 1 — 部署工件与 7.2d**
+
+- [x] **M5-1a** 镜像 `as-platform:m5`、`as-config-service:m5`（digest 见 `artifacts/m5/2026-10-04/M5-evidence-summary.md`）
+- [x] **M5-1b** kind `as-m5` + Helm release `as`（translation/anti-fraud Running）
+- [x] **M5-1c** Ingress 模板/对象（[评审](reviews/m5-1c-ingress-template-review-2026-10-04.md)）；关门 4–5 → **M5-7.2d**
+- [x] **M5-1d** config-service Ready + PG（[评审](reviews/m5-1d-config-pg-review-2026-10-04.md)）：kind 默认 **bundled**（§4.6）或 compose `:55432`；生产 Chart 默认不内建库
+
+**阶段 2 — draining / 缩容运维链（可无真实 SIP）**
+
+- [x] **M5-2a** `GET :8080/metrics` → `as_active_calls{pod,use_case}`；周期 `emit_snapshot` 当 OTLP 配置时
+- [x] **M5-2b** HTTP readiness `/health/ready` → 503 when draining（Helm `httpGet`；单测 `test_health_server.py`）
+- [x] **M5-2c** `load_downscale_guard_config()` 在 `as_platform.__main__` 读取 `AS_DOWNSCALE_GUARD_*`
+- [x] **M5-2d** [`m5-downscale-runbook.md`](acceptance/m5-downscale-runbook.md)
+
+**阶段 3 — M5 关门证据**
+
+- [x] **M5-3a** `kubectl rollout restart` anti-fraud — success（kind log）
+- [x] **M5-3b** scale to 1 + `plan_scale_down` 脚本断言（`m5-rollout-scale.sh`）
+- [x] **M5-3c** §4.5 撰写；`m5-helm-alerts-review.md` 工程关门注记；**维护者签字不在此步**（须 7.2d 全项 + 维护者自评）
+
+**跟踪**：M4b checklist **M4b-7.2d** 与 M5 **M5-1c 切片** 同步；**签字前**须勾满 7.2d runbook（含 4–5），不得用 port-forward 顶替 L7 证明。
+
+### 4.5 M5 工程关门（2026-10-04）
+
+| 项 | 记录 |
+|---|---|
+| 证据摘要 | [`acceptance/m5-engineering-closure-2026-10-04.md`](acceptance/m5-engineering-closure-2026-10-04.md)；脚本 `deploy/kind/m5-*.sh` |
+| 门禁 | `make gate`（863+ unit/contract）；`make chart-check`；`make test-integration-compose` |
+| 范围 | §4.4.2 + §4.4.4 全部勾选；平台 health/metrics/draining；kind 滚动/缩容 |
+| 明确不含 | HPA `minReplicas`/自定义阈值（**→ M6**）；D3 Sentinel（**→ M2/O5**）；M7 真 SIP 不掉呼叫（**→ M7**） |
+| kind PG / ingress | **M5-1d**：compose PG + 脚本；维护者签字前跑 `make m5-kind-verify` |
+| 维护者签字 | **Approved 2026-10-04**（chat 授权 AI agent 代签）；见 [裁决](reviews/m5-closure-adjudication-2026-10-04.md)；**不**等于 REQ 验收 |
+
+### 4.6 M5 补交付 — D12 / ADR-0026（2026-10-04 起；**不是 M2**）
+
+**时间线（避免与 M2 混淆）**
+
+| 阶段 | 发生了什么 |
+|------|------------|
+| **M5 原关门（§4.5）** | kind 上 3 个 AS/config Pod；Chart **不内建** PG/Redis；7.2d、draining、metrics |
+| **M5 验收复盘** | 发现 config-service 需 **真实 PG**（占位 DSN → CrashLoop）；compose 宿主机 `:55432` 过渡（**M5-1d**）；并讨论 IMS PG 不可用、Redis/PG 应在 **同 namespace** |
+| **架构裁决** | [ADR-0026](architecture/adr/0026-in-cluster-state-stores-proposal.md) accepted：单 chart、`stateStores`、禁止 IMS PG |
+| **工程补交付（本节）** | Helm `stateStores` 模板 + kind `M5_BUNDLED_STATE=1`；**不改变** M2 定义（M2 仍是 `RedisStateStore` **代码缝**，不是 Helm 装库） |
+
+**与 M2 的分工**
+
+| 主题 | 里程碑 |
+|------|--------|
+| `RedisStateStore` / `StateStore` 契约、进程外状态 **模型** | **M2**（已交付 seam；**D3** Sentinel 仍 OPEN） |
+| Helm 在同一 namespace **渲染** PG+Redis、NetworkPolicy、kind 连线 | **M5 §4.6 / D12** |
+| 产品 SIP 使用 Redis、checkpoint | **M7** / D10 |
+
+**§4.6 checklist**
+
+- [x] ADR-0026 accepted（单 chart 合并，拒绝双 release）
+- [x] `deploy/helm/templates/state-*.yaml` + `values.stateStores` + `chart-check` bundled 矩阵
+- [x] `m5-helm-install.sh` 默认 `M5_BUNDLED_STATE=1`（集群内 PG/Redis + AS 同 ns）
+- [x] 生产 profile：`deploy/helm/values-onprem.example.yaml`；[`m5-state-stores-runbook.md`](acceptance/m5-state-stores-runbook.md)（migrate / 备份 / ISSU 分章）
+- [x] ADR-0013 Amendment 段 + [`新系统整体架构.md`](architecture/新系统整体架构.md) §6.1 落点说明
+- [x] **§4.6 关门复验**（2026-10-04）：`make gate` / `chart-check` / `test-integration-compose` 142 passed；kind `postgres-0`+`redis`+AS+**config-service Ready**；`as-config-migrate`；headless PG Service 修复；ingress 对象已渲染（kind admission webhook 见 runbook）
+- [x] **§217①② + H10**（2026-10-04）：`make m5-issu-scale-evidence` → draining 503 + `plan_scale_down` 允许/拒绝路径；见 `m5-downscale-runbook.md`
+- [x] **ADR-0026 生产轨（工程）**：`state-migrate-job.yaml` + `values-onprem` + runbook HA/PITR/migrate Job（Redis HA 仍 D3）
+- [x] **M5 维护者签字**（2026-10-04；chat 授权代签；依据 task register + adjudication + [`m5-evidence-summary.md`](acceptance/m5-evidence-summary.md)）
+- [x] **M5 工程评审**（2026-10-04）：[`m5-task-register-2026-10-04.md`](reviews/m5-task-register-2026-10-04.md) 逐项 review + 裁决
+
 ---
 
 ## 5. 未决项
@@ -239,6 +353,7 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 | D9 | reSIProcate DUM 到 Python 决策模块的产品集成方式及 adapter 边界未定；上游 `BUILD_PYTHON=ON` 不提供通用 DUM Python 模块。隔离 spike 已证明 CPython native callback、真实 DUM→Python→404/500 和一个两腿 486 分支可行，但未形成产品 API/adapter | M7 实现；K2 | 维护者评审桥接可行性证据并裁决产品 adapter 边界后，才授权实现；仍须补完整 E1、forking 与 final-response race 覆盖。业务决策继续使用 Python |
 | D10 | 当前验收范围按 `docs/acceptance/test-plan.md`：基本呼叫完成 ACK 交换后 kill/restart AS，再由上游发送 in-dialog BYE；replacement 必须将 BYE 路由到对端且 Redis 中完整 dialog record 存在。跨进程 UAC `DialogSetId` + 应用保存字段的窄 re-INVITE hook 通过；fresh DUM 对该已建立 UAS dialog 的同 dialog BYE 返回 481，故当前 baseline 失败。产品两腿映射恢复仍未证明；未发现公开 UAS rehydrate API | M7 / M8；REQ-NF-1 验收 | **不通过 / 未解决，仍阻塞 M7/M8**：REQ-NF-1 保持硬要求，D10 必须通过当前 ACK-established-dialog BYE/Redis baseline。`SipStack` 在进程中途的 pending transaction recovery 尚未验证，但不属于当前 acceptance；若要加入 INVITE/CANCEL/final-response/2xx-ACK recovery，须单独修改/扩展 requirement 与 test plan 并经维护者裁决。用户已选择 Redis 应用层最小 checkpoint 方向并记录于仍为 proposed 的 ADR-0023；初版 `CallStateCheckpointRepository` 仅属 schema-v1 序列化/仓储 groundwork，尚未接入产品 DUM/CallController 恢复；不能将仓储或 UAC hook 当作完整恢复，也不得静默替换 ADR-0019 栈。详见[呼叫状态恢复方案比较](architecture/call-state-recovery-options.md)。 |
 | D11 | 隔离 native DUM 路径已对有限 SDP 样本观察到 body 字节恒等：230/143/233 字节 offer，以及一个不同的 238 字节 answer；这不是完整产品 adapter 或 REQ-F-4 验收 | M7 / M8；REQ-F-4 验收 | 扩大到需求基线、stack 接受的边界变体及完整产品 adapter 路径，以 on-wire capture 比较 body 并完成 review；在此之前不得宣称 REQ-F-4 通过 |
+| D12 | **集群内治理 PG + 运行态 Redis**（**自 M5 kind 验收复盘引出**，非 M2） | **M5 §4.6**；O5 / **D3（仍归 M2 客户端缝）** | [ADR-0026](architecture/adr/0026-in-cluster-state-stores-proposal.md) **accepted**；Helm `stateStores` 骨架已落库；生产 HA/签字见 §4.6 checklist |
 
 **D10 的 M7 阻塞 TODO（依赖顺序；全部完成并有验收证据前保持“不通过 / 未解决”）**：
 
@@ -274,9 +389,7 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 | 主叫 / 正则规则（REQ-F-12 四维 UI） | **v1.1** | M4 live 仅被叫+前缀 |
 | REQ-S-4 / `test-plan` §1.4 **正式全绿** | M8 或维护者单独签收 | 与 §4.3 工程关门分离 |
 | PostgreSQL 16 | 非阻塞 follow-up | 证据基线 12.22 |
-| M4b-7.2d 生产 ingress / trusted-proxy | **M5** | 与 M5 启动时一并验收 |
-
----
+| M4b-7.2d 生产 ingress / trusted-proxy | **M5** | 见 §4.4.4 M5-1c / M4b checklist 7.2d |
 
 ---
 

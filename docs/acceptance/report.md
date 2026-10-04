@@ -166,6 +166,27 @@
 
 ## M5 Helm 与告警（2026-09-28）
 
+> **进行中的 M5 计划与 checklist**：见 [`plan.md`](../plan.md) **§4.4–§4.5**（2026-10-04 起）。下列各节为历史工程快照；关门条件以 §4.4 为准。
+
+### M5 工程关门（2026-10-04）
+
+**维护者签字**：2026-10-04（chat 授权代签）；见 [`reviews/m5-closure-adjudication-2026-10-04.md`](../reviews/m5-closure-adjudication-2026-10-04.md)。**不**等于 REQ 级验收。
+
+| 项 | 结果 |
+|---|---|
+| 计划 | [`plan.md`](../plan.md) §4.5 |
+| 证据 | [`m5-engineering-closure-2026-10-04.md`](m5-engineering-closure-2026-10-04.md) |
+| 集群 | kind `as-m5`：rollout restart + scale；Pod 内 `/metrics` 含 `as_active_calls` |
+| 不含 | HPA/O1 阈值；D3；M7 SIP；ingress 上 config-service **Ready** 需外部 PG |
+
+### M5 阶段 0 基线（2026-10-04）
+
+| 项 | 结果 |
+|---|---|
+| `make gate` | 绿（863+ passed unit/contract，2 skipped） |
+| `make chart-check` | OK（默认 7 对象；config-service + ingress 模板；HPA fail-fast） |
+| `make test-integration-compose` | **142 passed, 3 skipped**（compose PG 12.22；3 条 publication 用例因 `wal_level=replica` 跳过） |
+
 | 项 | 结果 |
 |---|---|
 | 交付 | `deploy/helm/templates/` 9 个模板（按用例遍历 Deployment/Service、ConfigMap/Secret、HPA、PDB、SA、NOTES）；`values.yaml` 扩展；`deploy/alerts/as-alerts.yaml` 8 条规则（两组） |

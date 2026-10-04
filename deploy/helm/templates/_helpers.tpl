@@ -78,3 +78,43 @@ when postgres.secretName is set, otherwise the chart-managed placeholder Secret.
 {{- define "as.postgresSecretName" -}}
 {{- default (printf "%s-credentials" (include "as.fullname" .)) .Values.postgres.secretName -}}
 {{- end -}}
+
+{{/* Effective postgres host (ADR-0026 bundled state). */}}
+{{- define "as.postgres.host" -}}
+{{- if .Values.stateStores.enabled -}}
+{{- if .Values.postgres.host -}}
+{{- .Values.postgres.host -}}
+{{- else -}}
+{{- printf "%s-postgres-0.%s-postgres" (include "as.fullname" .) (include "as.fullname" .) -}}
+{{- end -}}
+{{- else -}}
+{{- .Values.postgres.host -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "as.postgres.database" -}}
+{{- if and .Values.stateStores.enabled (not .Values.postgres.database) -}}
+{{- .Values.stateStores.postgres.database -}}
+{{- else -}}
+{{- .Values.postgres.database -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "as.redis.url" -}}
+{{- if .Values.redis.url -}}
+{{- .Values.redis.url -}}
+{{- else if .Values.stateStores.enabled -}}
+{{- printf "redis://%s-redis:%v/0" (include "as.fullname" .) .Values.stateStores.redis.port -}}
+{{- else -}}
+{{- "" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "as.configServiceRuntimeSecretName" -}}
+{{- $config := .Values.services.configService -}}
+{{- if and .Values.stateStores.enabled .Values.stateStores.bootstrapDevCredentials $config.enabled -}}
+{{- printf "%s-config-runtime" (include "as.fullname" .) -}}
+{{- else -}}
+{{- $config.secretName -}}
+{{- end -}}
+{{- end -}}

@@ -278,3 +278,25 @@ def emit_snapshot(sink: TelemetrySink, registry: MetricsRegistry) -> None:
             )
         except Exception:  # a broken backend must not slow the call path. See ADR-0005
             continue
+
+
+def render_prometheus_text(registry: MetricsRegistry) -> str:
+    """Render the current registry snapshot as Prometheus text exposition format.
+
+    Args:
+        registry: The registry to read.
+
+    Returns:
+        A text document suitable for ``GET /metrics`` scrapers.
+    """
+    lines: list[str] = []
+    for point in registry.snapshot():
+        label_items = ",".join(f'{key}="{value}"' for key, value in sorted(point.labels.items()))
+        label_suffix = f"{{{label_items}}}" if label_items else ""
+        metric_name = point.name.replace(".", "_")
+        if point.kind == MetricKind.COUNTER:
+            lines.append(f"# TYPE {metric_name} counter")
+        else:
+            lines.append(f"# TYPE {metric_name} gauge")
+        lines.append(f"{metric_name}{label_suffix} {point.value}")
+    return "\n".join(lines) + ("\n" if lines else "")

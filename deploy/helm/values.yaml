@@ -87,6 +87,8 @@ image:
 useCases:
   - name: translation
     enabled: true
+    # M5 evidence only: simulates in-flight calls (see m5-downscale-runbook.md).
+    simulatedActiveCalls: null
     # null -> the Deployment renders `replicas: 1` as a PLACEHOLDER so that
     # `helm template` and a dry install produce a valid manifest. That 1 is a
     # rendering fallback, NOT a capacity conclusion: the real replica floor is
@@ -145,8 +147,43 @@ sip:
   # process; set it per customer.
   peerAllowlist: ""
 
-# Runtime state store (Redis + Sentinel) — external, never deployed by this
-# chart (ADR-0002 / ADR-0007).
+# Bundled in-cluster PostgreSQL + Redis (ADR-0026 Option E). When enabled, the
+# chart renders state workloads in the same namespace; postgres.host / redis.url
+# default to cluster Service DNS unless overridden (external-store mode).
+stateStores:
+  enabled: false
+  networkPolicy:
+    enabled: true
+  # Dev/kind only: populate credentials + config-service runtime Secret. Never
+  # use true in customer production values without replacing secrets out-of-band.
+  bootstrapDevCredentials: false
+  devCredentials:
+    postgresSuperuserPassword: "postgres"
+    configOwnerPassword: "as_config_owner_dev"
+    configWebUser: "as_config_web"
+    configWebPassword: "as_config_web_dev"
+    auditHmacKeyB64: "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s="
+  postgres:
+    image: "postgres:12.22"
+    database: "as_config"
+    persistence:
+      enabled: false
+      size: "5Gi"
+  redis:
+    image: "redis:7-alpine"
+    port: 6379
+  # Optional one-shot schema migrate (owner DSN only). Production: set ownerSecretName;
+  # kind/dev: enable with bootstrapDevCredentials (inline DSN, dev passwords only).
+  migrateJob:
+    enabled: false
+    ownerSecretName: ""
+    ownerSecretKey: AS_CONFIG_OWNER_DSN
+    backoffLimit: 2
+    ttlSecondsAfterFinished: 86400
+    annotations: {}
+
+# Runtime state store (Redis + Sentinel) — external when stateStores.enabled is
+# false (ADR-0002 / ADR-0007).
 redis:
   # Direct URL. Prefer Sentinel below in production; this is the dev/simple path.
   url: ""
@@ -158,7 +195,7 @@ redis:
     masters: []
     addresses: []
 
-# Governance store (PostgreSQL) — external, never deployed by this chart
+# Governance store (PostgreSQL) — external when stateStores.enabled is false
 # (ADR-0006 / ADR-0007).
 postgres:
   host: ""
@@ -216,22 +253,26 @@ downscaleGuard:
   enabled: true
   protectWhenActiveCallsAbove: 0
 
+# HTTP health/metrics side channel (M5). Readiness fails while draining (ADR-0009).
+health:
+  port: 8080
+
 # Liveness / readiness probes. Conservative detection parameters only; they say
 # nothing about how much traffic a Pod can carry (O1 / M6).
 probes:
   liveness:
     enabled: true
-    # Port name of the container port to TCP-connect. TLS listener by default:
-    # a tcpSocket probe cannot validate a UDP listener.
-    portName: sip-tls
-    initialDelaySeconds: 20
+    portName: health-http
+    httpPath: /health/live
+    initialDelaySeconds: 5
     periodSeconds: 15
     timeoutSeconds: 3
     failureThreshold: 5
   readiness:
     enabled: true
-    portName: sip-tls
-    initialDelaySeconds: 10
+    portName: health-http
+    httpPath: /health/ready
+    initialDelaySeconds: 3
     periodSeconds: 10
     timeoutSeconds: 3
     failureThreshold: 3

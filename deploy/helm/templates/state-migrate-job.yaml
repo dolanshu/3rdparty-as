@@ -1,0 +1,77 @@
+{{- if and .Values.stateStores.enabled (dig "migrateJob" "enabled" false .Values.stateStores) }}
+{{- $job := .Values.stateStores.migrateJob | default dict -}}
+{{- $config := .Values.services.configService -}}
+{{- if not $config.enabled -}}
+{{- fail "stateStores.migrateJob.enabled requires services.configService.enabled" -}}
+{{- end -}}
+{{- $imageRepo := default .Values.image.repository $config.image.repository -}}
+{{- $imageTag := default .Chart.AppVersion $config.image.tag -}}
+{{- $ownerDsn := "" -}}
+{{- if $job.ownerSecretName -}}
+{{- $ownerDsn = "secret" -}}
+{{- else if .Values.stateStores.bootstrapDevCredentials -}}
+{{- $host := include "as.postgres.host" . -}}
+{{- $db := include "as.postgres.database" . -}}
+{{- $ownerPass := .Values.stateStores.devCredentials.configOwnerPassword -}}
+{{- $ownerDsn = printf "postgresql://as_config_owner:%s@%s:5432/%s" $ownerPass $host $db -}}
+{{- else -}}
+{{- fail "stateStores.migrateJob: set ownerSecretName or bootstrapDevCredentials" -}}
+{{- end -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "as.fullname" . }}-config-migrate
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-migrate
+  {{- with ($job.annotations | default dict) }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ $job.backoffLimit | default 2 }}
+  ttlSecondsAfterFinished: {{ $job.ttlSecondsAfterFinished | default 86400 }}
+  template:
+    metadata:
+      labels:
+        {{- include "as.labels" . | nindent 8 }}
+        app.kubernetes.io/component: config-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: migrate
+          image: {{ printf "%s:%s" $imageRepo $imageTag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["as-config-migrate"]
+          env:
+            - name: AS_CONFIG_SCHEMA
+              value: {{ $config.configSchema | quote }}
+            - name: AS_AUDIT_SCHEMA
+              value: {{ $config.auditSchema | quote }}
+            - name: AS_CONFIG_RUNTIME_ROLE
+              value: {{ required "services.configService.runtimeRole required for migrate job" $config.runtimeRole | quote }}
+            {{- if ($job.ownerSecretName | default "") }}
+            - name: AS_CONFIG_OWNER_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $job.ownerSecretName }}
+                  key: {{ $job.ownerSecretKey | default "AS_CONFIG_OWNER_DSN" }}
+            {{- else }}
+            - name: AS_CONFIG_OWNER_DSN
+              value: {{ $ownerDsn | quote }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+{{- end }}

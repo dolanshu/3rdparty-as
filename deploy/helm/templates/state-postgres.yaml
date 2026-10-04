@@ -1,0 +1,123 @@
+{{- if .Values.stateStores.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "as.fullname" . }}-postgres-init
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+    app.kubernetes.io/component: state-postgres
+data:
+  01-dev-roles.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    owner_password="${AS_CONFIG_OWNER_PASSWORD}"
+    web_password="${AS_CONFIG_WEB_PASSWORD}"
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    CREATE ROLE as_config_runtime NOLOGIN;
+    CREATE ROLE as_config_owner LOGIN PASSWORD '${owner_password}';
+    CREATE ROLE as_config_web LOGIN PASSWORD '${web_password}';
+    GRANT as_config_runtime TO as_config_web;
+    ALTER DATABASE {{ .Values.stateStores.postgres.database }} OWNER TO as_config_owner;
+    EOSQL
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "as.fullname" . }}-postgres
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+    app.kubernetes.io/component: state-postgres
+spec:
+  serviceName: {{ include "as.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "as.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: state-postgres
+  template:
+    metadata:
+      labels:
+        {{- include "as.labels" . | nindent 8 }}
+        app.kubernetes.io/component: state-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.stateStores.postgres.image | quote }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.stateStores.postgres.database | quote }}
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "as.postgresSecretName" . }}
+                  key: POSTGRES_SUPERUSER_PASSWORD
+            - name: AS_CONFIG_OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "as.postgresSecretName" . }}
+                  key: CONFIG_DB_OWNER_PASSWORD
+            - name: AS_CONFIG_WEB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "as.postgresSecretName" . }}
+                  key: CONFIG_DB_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", {{ .Values.stateStores.postgres.database | quote }}]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: init
+          configMap:
+            name: {{ include "as.fullname" . }}-postgres-init
+            defaultMode: 0555
+        {{- if not .Values.stateStores.postgres.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.stateStores.postgres.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.stateStores.postgres.persistence.size | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "as.fullname" . }}-postgres
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+    app.kubernetes.io/component: state-postgres
+spec:
+  # Headless: stable per-pod DNS for StatefulSet (ADR-0026; avoids kind ClusterIP/pg quirks).
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ include "as.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: state-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+{{- end }}

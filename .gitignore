@@ -27,6 +27,14 @@ captures/
 
 # Local scratch (never committed)
 tmp/
+.tools/
+
+# M4b-8 compose TLS material (generate via deploy/compose/scripts/gen-certs.sh)
+deploy/compose/certs/*
+!deploy/compose/certs/.gitkeep
+deploy/kind/certs/*
+!deploy/kind/certs/.gitkeep
+deploy/compose/.env
 
 # Editors, OS and agent session state
 .idea/

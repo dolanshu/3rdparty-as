@@ -1,0 +1,30 @@
+{{- if and .Values.stateStores.enabled .Values.stateStores.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "as.fullname" . }}-state-ingress
+  namespace: {{ include "as.namespace" . }}
+  labels:
+    {{- include "as.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - state-postgres
+          - state-redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: 3rdparty-as
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: {{ .Values.stateStores.redis.port }}
+{{- end }}

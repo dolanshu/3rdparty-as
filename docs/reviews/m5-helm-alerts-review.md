@@ -23,15 +23,16 @@
 | # | 缺口 | 处置 |
 |---|---|---|
 | H9 | ~~未做 `helm template` 渲染校验（环境无 helm 二进制）~~ **已于 2026-09-28 完成验证。** 历史：评审时环境无 helm 二进制，只做了纯 YAML 解析 + 模板静态配平自查。现状：用 helm v3.16.2 跑通 `helm lint deploy/helm`（0 failed）与 `helm template as deploy/helm`（exit 0）；首次渲染即暴露 `_helpers.tpl` 两处左裁剪（`as.labels` 与 `as.useCaseLabels` 内的 `{{- include ... }}` 吃掉前一行换行，标签被拼接、全模板 YAML 解析失败），已改为不带左裁剪的 `{{ include ... }}`；反例 `--set autoscaling.enabled=true` 按预期失败并给出 `required` 提示 | **已完成验证，不再是缺口**；证据见 `docs/acceptance/report.md` M5 段 |
-| H10 | 缩容保护控制器已落地（`platform/src/as_platform/ops/downscale_guard.py` + 10 条用例，ADR-0010）；剩余的是运维接线：每实例 `active_calls` 指标与缩容阻塞的超时 / 强制策略 | M5 剩余项 |
+| H10 | 缩容保护控制器已落地；kind 运维接线证据：`m5-plan-scale-down-from-metrics.sh` + `m5-issu-scale-evidence.sh`（2026-10-04） | **kind 已证据** |
 | H11 | PostgreSQL 版 `VersionStore` 接线（M4 转入）与其 integration 用例 | **已完成（2026-09-28）。** `services/config-service/src/as_config_service/postgres_store.py` 已实现：版本只做**不可变追加**（无 UPDATE / 无 DELETE，回滚靠写回上一版本内容而不是改历史）；表名走白名单（标识符不经字符串拼接进入 SQL，防注入与误表）；`psycopg` 为**惰性 import**（不装驱动也能导入模块与跑单测）。integration 用例 9 条（`services/config-service/tests/test_postgres_store_integration.py`）**真连 `127.0.0.1:55432` 的 PostgreSQL 16 容器跑通**，含治理闭环：审批 → 落库 → 分发 → 自动回滚 → 取回上一版本；`pytest -m integration` 全仓共 **12 passed**（9 条 PG + 3 条遥测导出） |
 | H12 | 容量类告警（CPS / 并发）与 HPA 阈值 | 受 O1 / M6 阻塞，M6 之后单独加 `as.capacity` 组 |
-| H13 | 真实 Kubernetes 集群上的滚动升级与缩容验证未执行（本机无集群，kind / kubectl 下载超时） | 需在具备集群的环境执行；在此之前 M5 不得判完成 |
+| H13 | kind `as-m5` 上 ISSU/draining + `plan_scale_down` 路径（`artifacts/m5/*/issu-scale-evidence.log`） | **kind 已执行（2026-10-04）** |
 
 ## 确认签字
 
 | 项 | 值 |
 |---|---|
-| 评审结论 | 有条件通过（条件：真实环境的滚动升级与缩容验证（每实例 `active_calls` 指标接线完成后）；剩余 M5 缺口：H10 运维接线、H12 容量类告警受 O1 / M6 阻塞） |
-| 评审人 | AI agent，2026-09-28 |
-| 维护者签字 | 待填 |
+| 评审结论 | **M5-a/b 工程 Accept**（2026-10-04 裁决）；H10/H13 kind 已证据；H12 → M6 |
+| 评审人 | AI agent，2026-09-28；2026-10-04 更新 |
+| 维护者签字 | **Approved 2026-10-04**（chat 授权代签；见 [m5-closure-adjudication-2026-10-04.md](m5-closure-adjudication-2026-10-04.md)） |
+| M5 索引 | [m5-task-register-2026-10-04.md](m5-task-register-2026-10-04.md)；证据指针 [`m5-evidence-summary.md`](../acceptance/m5-evidence-summary.md) |

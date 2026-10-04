@@ -1,6 +1,6 @@
 # `deploy/helm/` — 生产交付形态
 
-当前仓库包含 AS workload Helm chart，以及 M4b-7.2c config-service 的代码级 workload 切片（默认关闭）。可选 Ingress 模板仅支持 ingress-nginx，并固定配置重定向及强制 HTTPS；新增 config-service 模板尚未通过 Helm lint/template/render，专用镜像构建及真实 HTTPS ingress/trusted-proxy 部署也未验证。下文 M5 addendum 记录的早期 AS workload chart 渲染证据不覆盖这些新增资源。
+当前仓库包含 AS workload Helm chart，以及 M4b-7.2c config-service 的代码级 workload 切片（默认关闭）。**Chart 回归**：仓库根目录 `make chart-check`（或 `deploy/helm/scripts/chart-check.sh`）对 AS 默认渲染、config-service 开启、ingress 模板路径与 HPA fail-fast 做断言；CI ① fast 层已纳入。真实集群 HTTPS ingress/trusted-proxy（7.2d）仍属 M5 未验收项。
 
 历史计划形态：一个 chart `as/`、每个组件一个 subchart 或 values 块
 （`apps.translation`、`apps.antiFraud`、`services.configService`、`services.console`），外加一个
@@ -38,6 +38,12 @@ kept as-is.
 | `templates/config-service-deployment.yaml` | optional non-root config-service Deployment; disabled by default; references external runtime Secret keys and pre-provisioned runtime role |
 | `templates/config-service-service.yaml` | optional ClusterIP Service for config-service HTTP on port 8000 |
 | `templates/config-service-ingress.yaml` | optional ingress-nginx-only same-origin Ingress for `/` and `/internal/v1`; requires hostname, TLS Secret, proxy headers, and explicit trusted proxy addresses; always redirects and forces HTTPS |
+| `templates/state-postgres.yaml` | optional in-cluster PostgreSQL (`stateStores.enabled`, ADR-0026) |
+| `templates/state-redis.yaml` | optional in-cluster Redis |
+| `templates/state-networkpolicy.yaml` | optional NetworkPolicy for state components |
+| `templates/state-config-runtime-secret.yaml` | dev/kind only: `AS_CONFIG_DSN` when `bootstrapDevCredentials` |
+
+**`stateStores`** (ADR-0026): single chart, same namespace. Default `enabled: false` keeps the AS-only render (7 objects). Production: `-f values-onprem.example.yaml`. Runbook: [`docs/acceptance/m5-state-stores-runbook.md`](../../docs/acceptance/m5-state-stores-runbook.md). `bootstrapDevCredentials` is **kind/dev only**. Sentinel HA remains O5/D3 (M2).
 
 The three config-service templates above are code-level delivery only. Helm lint/template/render and the dedicated Docker image build were blocked by unavailable tooling/registry access; no rendered-chart or deployed-ingress proof is claimed. These additions do not change the existing capacity guards below.
 

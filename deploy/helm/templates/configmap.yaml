@@ -39,10 +39,9 @@ data:
   SIP_TLS_CA_PATH: "/etc/as/tls/ca.crt"
 
   # --- runtime state store (Redis / Sentinel, ADR-0002) ---
-  {{- if and .Values.redis.url (not (contains "@" .Values.redis.url)) }}
-  # Rendered only when the URL carries no credentials. A URL with an embedded
-  # password belongs in the Secret, not here.
-  REDIS_URL: {{ .Values.redis.url | quote }}
+  {{- $redisUrl := include "as.redis.url" . }}
+  {{- if and $redisUrl (not (contains "@" $redisUrl)) }}
+  REDIS_URL: {{ $redisUrl | quote }}
   {{- end }}
   REDIS_SENTINEL_HOSTS: {{ .Values.redis.sentinel.addresses | join "," | quote }}
   REDIS_SENTINEL_MASTER_NAME: {{ .Values.redis.sentinel.masters | first | default "" | quote }}
@@ -50,9 +49,12 @@ data:
   # --- governance store (PostgreSQL, ADR-0006) ---
   # The URL itself is assembled in deployment.yaml from these parts plus the
   # credentials from the Secret, so no password ever lands in a ConfigMap.
-  CONFIG_DB_HOST: {{ .Values.postgres.host | quote }}
+  CONFIG_DB_HOST: {{ include "as.postgres.host" . | quote }}
   CONFIG_DB_PORT: {{ .Values.postgres.port | quote }}
-  CONFIG_DB_NAME: {{ .Values.postgres.database | quote }}
+  CONFIG_DB_NAME: {{ include "as.postgres.database" . | quote }}
+
+  # --- process health (M5 / ADR-0009) ---
+  AS_HEALTH_PORT: {{ .Values.health.port | quote }}
 
   # --- observability (ADR-0005) ---
   # Empty keeps the exporter unconfigured (NoOp sink): telemetry loss is

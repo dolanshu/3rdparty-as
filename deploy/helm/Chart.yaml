@@ -4,4 +4,4 @@ description: 第三方 IMS Application Server —— Helm chart 骨架，随部�
 type: application
 version: 0.0.0-skeleton
 appVersion: "0.0.0"
-# Dependencies: Redis Sentinel, PostgreSQL（均为外部；见 plan.md §4 M5）
+# Optional in-cluster state: stateStores.enabled (ADR-0026). Sentinel HA: O5/D3.

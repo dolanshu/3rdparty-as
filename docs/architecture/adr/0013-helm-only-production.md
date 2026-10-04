@@ -73,7 +73,17 @@
 - [ADR-0010](0010-autoscaling-hpa-downscale-guard.md) 扩缩容 HPA —— 阈值缺失即拒绝渲染的守卫归它消费
 - [ADR-0016](0016-in-boundary-security.md) 边界内安全 —— TLS Secret 挂载热轮换、`peerAllowlist` 空即 fail-closed
 - [ADR-0005](0005-observability-otel.md) OTel 三信号 —— `otlpEndpoint` 空即 NoOp 导出
-- [ADR-0007](0007-data-plane-split.md) 数据面拆分 —— Redis / PostgreSQL 为 chart 之外的外部依赖
-- [ADR-0008](0008-redundancy.md) 冗余 —— 有状态组件的冗余与备份不在 chart 范围内
+- [ADR-0007](0007-data-plane-split.md) 数据面拆分 —— 治理 PG / 运行 Redis 逻辑不变
+- [ADR-0008](0008-redundancy.md) 冗余 —— HA/备份责任见 [ADR-0026](0026-in-cluster-state-stores-proposal.md) runbook
+- [ADR-0026](0026-in-cluster-state-stores-proposal.md)（2026-10-04）—— 修订下文「chart 不部署 PG/Redis」：可选 `stateStores.enabled` 同 chart 渲染；禁止 IMS PG
 - [`../新系统整体架构.md`](../新系统整体架构.md) §0 条目 6
 - 未决项 O1（容量目标 / M6）与 O5 / D3（Redis 拓扑与接线）—— 均**未裁决**，chart 对应 key 保持为空
+
+## Amendment（[ADR-0026](0026-in-cluster-state-stores-proposal.md)，2026-10-04）
+
+**部分修订**本 ADR Decision 最后一条与 Consequences 中「chart 不部署 Redis 与 PostgreSQL」：
+
+- **仍成立**：唯一生产形态是 `deploy/helm/`；不写 Operator；compose 仅 dev；容量 key 拒绝猜测渲染。
+- **修订**：标准 on-prem 可通过 **`stateStores.enabled=true`**（见 `values-onprem.example.yaml`）在**同一 release、同一 namespace** 渲染专用 PostgreSQL 与 Redis；`bootstrapDevCredentials` 仅 kind/dev。
+- **仍成立**：运营商 **IMS 核心库**不得作为 AS 治理 DSN；客户自带托管 PG/Redis 时设 `stateStores.enabled=false` 并填 `postgres.host` / `redis.url`。
+- **备份 / HA**：chart 不替代 ADR-0008 清单；见 `docs/acceptance/m5-state-stores-runbook.md`。
