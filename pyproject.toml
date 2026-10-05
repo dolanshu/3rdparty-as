@@ -74,7 +74,7 @@ extend-exclude = [
   ".venv",
   "build",
   "dist",
-  # Non-product probe scripts excluded from the product gate.
+  # Archived D9/D10 exploratory code/evidence is outside the routine format/lint gate.
   "testbed/simulators/resip-probe/research",
 ]
 

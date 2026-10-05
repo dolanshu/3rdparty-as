@@ -170,6 +170,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         metrics_stop,
     )
 
+    sip_stack_service = None
+    try:
+        from as_platform.runtime.sip_stack_service import SipStackService
+
+        sip_stack_service = SipStackService.from_env(call_source)
+        if sip_stack_service is not None:
+            sip_stack_service.start()
+            logging.info(
+                "SIP runtime listener started on udp port=%s", sip_stack_service.listen_port
+            )
+    except Exception:
+        logging.exception("Failed to start SIP runtime service")
+        return _RUNTIME_ERROR_EXIT_CODE
+
     def request_terminate(_signum: int, _frame: FrameType | None) -> None:
         shell.request_terminate()
 
@@ -188,6 +202,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         logging.exception("The AS process shell failed")
         return _RUNTIME_ERROR_EXIT_CODE
     finally:
+        if sip_stack_service is not None:
+            sip_stack_service.stop()
         metrics_stop.set()
         metrics_thread.join(timeout=2.0)
         if bounded_sink is not None:

@@ -1,0 +1,12 @@
+{
+  "version": "demo-story-a",
+  "rules": [
+    {
+      "rule_id": "demo-translate-86755",
+      "prefix": "+86755",
+      "action": "forward",
+      "target": "sip:downstream@127.0.0.1:5099"
+    }
+  ],
+  "toggles": []
+}

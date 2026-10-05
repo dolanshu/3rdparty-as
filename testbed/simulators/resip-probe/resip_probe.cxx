@@ -2,15 +2,18 @@
 // 目标：验证 reSIProcate DUM 层能正确处理 INVITE/100/180/200/ACK/BYE/CANCEL
 // 与 POC 基线 S1/S4 对拍。本程序**不做媒体处理**（不带 SDP answer）。
 
-#include <atomic>
 #include <chrono>
+#include <atomic>
 #include <csignal>
+#include <cerrno>
+#include <cstring>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <memory>
+#include <pthread.h>
 #include <string>
-#include <thread>
 
 #include "resip/stack/Headers.hxx"
 #include "resip/stack/HeaderFieldValue.hxx"
@@ -20,6 +23,7 @@
 #include "resip/stack/SipMessage.hxx"
 #include "resip/stack/SipStack.hxx"
 #include "resip/stack/Transport.hxx"
+#include "resip/stack/ssl/Security.hxx"
 #include "resip/stack/Uri.hxx"
 #include "resip/dum/AppDialog.hxx"
 #include "resip/dum/AppDialogSet.hxx"
@@ -39,11 +43,8 @@ using namespace std;
 
 // ---------- 全局控制 ----------
 static std::atomic<bool> g_run{true};
-
-static void sigint_handler(int)
-{
-   g_run = false;
-}
+static bool g_tlsEnabledRuntime = false;
+static int g_s1HoldMs = 200;
 
 // ---------- 辅助 ----------
 
@@ -121,12 +122,51 @@ public:
       : InviteSessionHandler(false /* genericOfferAnswer=false */),
         mScenario(Scenario::S1_BasicCall),
         mCanceled(false),
-        mDum(nullptr)
+        mDum(nullptr),
+        mS1ByeScheduled(false),
+        mS1ByeSent(false),
+        mTlsScopeNoteLogged(false)
    {
    }
 
    void setScenario(Scenario s) { mScenario = s; }
    void setDum(DialogUsageManager* dum) { mDum = dum; }
+
+   // Keep the hold timer out of DUM callbacks so the event loop stays responsive.
+   void processScheduledActions()
+   {
+      if (!mS1ByeScheduled || mS1ByeSent)
+      {
+         return;
+      }
+
+      if (std::chrono::steady_clock::now() < mS1ByeDeadline)
+      {
+         return;
+      }
+
+      ClientInviteSessionHandle byeSession = mS1ByeSession;
+      mS1ByeSession = ClientInviteSessionHandle();
+      mS1ByeScheduled = false;
+      mS1ByeSent = true;
+
+      if (!byeSession.isValid())
+      {
+         logStr("S1 hold deadline reached; BYE session handle invalid, skip send");
+         return;
+      }
+
+      // TLS S1 scope note: this probe validates signaling only.
+      // Timed cert-swap evidence is documented in README (2026-10-04).
+      if (g_tlsEnabledRuntime && !mTlsScopeNoteLogged)
+      {
+         mTlsScopeNoteLogged = true;
+         logStr("TLS S1 note: this BYE-hold path validates signaling only; README records one 2026-10-04 testbed-only cert-swap smoke. It does not establish REQ-S-3 (dual-cert overlap, operator PKI/mTLS, or production active-call contract). This log line does not prove reload execution.");
+      }
+
+      logStr("S1 hold deadline reached; sending BYE");
+      byeSession->end();
+   }
 
    ServerInviteSessionHandle mUasSession;  // 保存 UAS session，给 onOffer 调 accept() 用
 
@@ -246,26 +286,13 @@ public:
 
       if (mScenario == Scenario::S1_BasicCall)
       {
-         // hold 一下 → UAC 先发 BYE
-         std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-         // === E4 热轮换尝试 ===
-         // 如果当前开启了 TLS，尝试运行时换证书。
-         // reSIProcate SipStack::addTransport 在启动时将证书加载进 OpenSSL
-         // context，之后没有公开 API 支持重新加载。此处打印尝试结果。
-         static int s_hotRotateAttempted = 0;
-         if (s_hotRotateAttempted++ == 0)
-         {
-            logStr("E4 TLS: 尝试证书热轮换...");
-            // SipStack 没有 reloadCertificate() / updateTransport() 之类 API。
-            // 下面这段注释掉的伪代码说明了"如果有 API 应该怎么写"：
-            //   Transport* tls = g_stack->getTransport(TLS, tlsPort);
-            //   tls->reloadCertificate(newCertFile, newKeyFile);  // 不存在
-            logStr("E4 TLS: reSIProcate 不支持证书热轮换——这是 E4 待验证缺口");
-         }
-
-         logStr("S1: UAC → BYE (end call)");
-         cis->end();
+         mS1ByeSession = cis;
+         mS1ByeDeadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(g_s1HoldMs);
+         mS1ByeScheduled = true;
+         mS1ByeSent = false;
+         cout << "[probe] S1 session established; BYE deadline scheduled"
+              << " (hold-ms=" << g_s1HoldMs << ")" << endl;
       }
    }
 
@@ -281,6 +308,9 @@ public:
                              InviteSessionHandler::TerminatedReason reason,
                              const SipMessage* msg) override
    {
+      mS1ByeSession = ClientInviteSessionHandle();
+      mS1ByeScheduled = false;
+
       const char* reasonStr = "unknown";
       switch (reason)
       {
@@ -351,6 +381,11 @@ private:
    Scenario mScenario;
    bool mCanceled;
    DialogUsageManager* mDum;   // 注入的 DUM 指针，用于 end(DialogSetId)
+   ClientInviteSessionHandle mS1ByeSession;
+   std::chrono::steady_clock::time_point mS1ByeDeadline;
+   bool mS1ByeScheduled;
+   bool mS1ByeSent;
+   bool mTlsScopeNoteLogged;
 };
 
 // ---------- 全局对象 & 自测驱动 ----------
@@ -360,17 +395,21 @@ static DialogUsageManager* g_dum = nullptr;
 static SipStack* g_stack = nullptr;
 
 static void driveSelfTest(const std::string& scenario, int uasPort,
-                          int tlsPort /* -1 = UDP only */)
+                          int tcpPort /* -1 = not used */,
+                          int tlsPort /* -1 = not used */)
 {
-   // 等 UAS 起来（DUM 注册完成）
-   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
    bool useTls = (tlsPort > 0);
+   bool useTcp = !useTls && (tcpPort > 0);
    Data scheme = useTls ? Data("sips") : Data("sip");
-   int port = useTls ? tlsPort : uasPort;
+   int port = useTls ? tlsPort : (useTcp ? tcpPort : uasPort);
    Data targetUri = scheme + ":probe@127.0.0.1:" + Data(port);
+   if (useTcp)
+   {
+      targetUri += ";transport=tcp";
+   }
+   const char* transportLabel = useTls ? "TLS" : (useTcp ? "TCP" : "UDP");
    cout << "\n=== SELF-TEST: UAC → " << targetUri << " (scenario="
-        << scenario << ", transport=" << (useTls ? "TLS" : "UDP") << ") ===" << endl;
+        << scenario << ", transport=" << transportLabel << ") ===" << endl;
 
    try
    {
@@ -401,7 +440,7 @@ static void driveSelfTest(const std::string& scenario, int uasPort,
    catch (std::exception& e)
    {
       cerr << "[UAC] Exception creating/sending INVITE: " << e.what() << endl;
-      g_run = false;
+      g_run.store(false);
    }
 }
 
@@ -412,6 +451,7 @@ int main(int argc, char** argv)
    // 解析参数
    std::string scenario = "S1";   // 默认基本呼叫
    bool externalMode = false;     // true = 只做 UAS，等外部客户端
+   bool tcpEnabled = false;     // true = 同时监听 TCP（与 UDP 并存）
    bool tlsEnabled = false;       // true = 同时监听 TLS
    std::string certFile = "cert.pem";
    std::string keyFile = "key.pem";
@@ -419,16 +459,68 @@ int main(int argc, char** argv)
    {
       std::string arg = argv[i];
       if (arg == "--external") externalMode = true;
+      else if (arg == "--tcp") tcpEnabled = true;
       else if (arg == "--tls") tlsEnabled = true;
       else if (arg == "--cert" && i + 1 < argc) certFile = argv[++i];
       else if (arg == "--key" && i + 1 < argc)  keyFile  = argv[++i];
+      else if (arg == "--hold-ms")
+      {
+         if (i + 1 >= argc)
+         {
+            cerr << "[probe] error: --hold-ms requires an integer value >= 0" << endl;
+            return 1;
+         }
+         std::string holdMsArg = argv[++i];
+         try
+         {
+            size_t parsed = 0;
+            long long holdMs = std::stoll(holdMsArg, &parsed);
+            if (parsed != holdMsArg.size() || holdMs < 0 ||
+                holdMs > static_cast<long long>(std::numeric_limits<int>::max()))
+            {
+               cerr << "[probe] error: --hold-ms must be an integer value in [0, "
+                    << std::numeric_limits<int>::max() << "]" << endl;
+               return 1;
+            }
+            g_s1HoldMs = static_cast<int>(holdMs);
+         }
+         catch (const std::exception&)
+         {
+            cerr << "[probe] error: --hold-ms must be an integer value >= 0" << endl;
+            return 1;
+         }
+      }
       else if (arg == "S1" || arg == "S4" || arg == "S2" || arg == "S3") scenario = arg;
+      else
+      {
+         cerr << "[probe] error: unknown argument: " << arg << endl;
+         cerr << "usage: " << argv[0]
+              << " [S1|S2|S3|S4]"
+              << " [--external]"
+              << " [--tcp]"
+              << " [--tls]"
+              << " [--cert cert.pem --key key.pem]"
+              << " [--hold-ms N]" << endl;
+         return 1;
+      }
    }
+
+   if (tlsEnabled)
+   {
+      if (!std::filesystem::exists(certFile) || !std::filesystem::exists(keyFile))
+      {
+         cerr << "[probe] 错误: TLS 需要 cert.pem 和 key.pem。先跑 ./gen-cert.sh" << endl;
+         return 1;
+      }
+   }
+   g_tlsEnabledRuntime = tlsEnabled;
 
    cout << "=== resip_probe: reSIProcate SIP 验证探针 ===" << endl;
    cout << "scenario = " << scenario
         << "  mode = " << (externalMode ? "external-UAS-only" : "self-test")
-        << "  tls = " << (tlsEnabled ? "on" : "off") << endl;
+        << "  tcp = " << (tcpEnabled ? "on" : "off")
+         << "  tls = " << (tlsEnabled ? "on" : "off")
+         << "  hold-ms = " << g_s1HoldMs << endl;
 
    // 设置场景
    ProbeInviteHandler::Scenario sc = ProbeInviteHandler::Scenario::S1_BasicCall;
@@ -437,36 +529,65 @@ int main(int argc, char** argv)
    else if (scenario == "S3") sc = ProbeInviteHandler::Scenario::S3_Policy603;
    g_handler.setScenario(sc);
 
-   // SIGINT/SIGTERM
-   std::signal(SIGINT, sigint_handler);
-   std::signal(SIGTERM, sigint_handler);
+   // Block process-directed stop/reload signals before creating SipStack or worker threads.
+   // Later-created threads inherit this mask; main loop consumes with sigtimedwait().
+   sigset_t monitoredSignals;
+   if (sigemptyset(&monitoredSignals) != 0 ||
+       sigaddset(&monitoredSignals, SIGINT) != 0 ||
+       sigaddset(&monitoredSignals, SIGTERM) != 0 ||
+       sigaddset(&monitoredSignals, SIGHUP) != 0)
+   {
+      cerr << "[probe] error: failed to initialize monitored signal set" << endl;
+      return 1;
+   }
+   const int maskRc = pthread_sigmask(SIG_BLOCK, &monitoredSignals, nullptr);
+   if (maskRc != 0)
+   {
+      cerr << "[probe] error: pthread_sigmask(SIG_BLOCK) failed: "
+           << std::strerror(maskRc) << endl;
+      return 1;
+   }
 
    // 初始化 reSIProcate 日志：Cout 输出 + None 级别（静默内部日志）
    Log::initialize(Log::Cout /*Type*/, Log::None /*Level*/, Data("resip_probe") /*appName*/);
 
    // 1. 创建 SipStack
-   g_stack = new SipStack();
+   // TLS self-test 需要显式信任本地自签证书；external 模式不注入该 trust。
+   const bool tlsSelfTestMode = tlsEnabled && !externalMode;
+   if (tlsSelfTestMode)
+   {
+      SipStackOptions options;
+      Security* security = new Security();
+      security->addCAFile(Data(certFile.c_str()));
+      options.mSecurity = security;
+      // SipStack(options) 会在 init() 中对 mSecurity 执行 preload()。
+      g_stack = new SipStack(options);
+   }
+   else
+   {
+      g_stack = new SipStack();
+   }
 
    // 2. 添加 UDP transport（port=0 → 内核分配随机端口）
    Transport* udp = g_stack->addTransport(UDP, /*port=*/0, V4);
    int uasPort = udp->port();
    cout << "\n[UAS] 监听 UDP 127.0.0.1:" << uasPort << endl;
 
-   // 2b. 可选：TLS transport（E4 场景）
-   // TODO(E4 热轮换): reSIProcate SipStack 目前没有公开 API 支持运行时
-   // 替换 TLS 证书（addTransport 在启动时加载证书到 OpenSSL context，
-   // 之后无 reload 入口）。如果后续 reSIProcate 提供 SslContext 热更新
-   // 或 addTransport 的 certificateFile 参数重载能力，可以在此处接入。
-   // 当前 probe 目标是 **验证 TLS 能正确收发 SIP 消息**，热轮换作为
-   // 已知短板（ADR-0019 §7 K8）留待后续独立验证。
+   // 2a. 可选：TCP transport（与 UDP 并存；port=0 → 随机端口）
+   int tcpPort = -1;
+   if (tcpEnabled)
+   {
+      Transport* tcp = g_stack->addTransport(TCP, /*port=*/0, V4);
+      tcpPort = tcp->port();
+      cout << "[UAS] 监听 TCP 127.0.0.1:" << tcpPort << endl;
+   }
+
+   // 2b. 可选：TLS transport（S1 只验证信令）
+   // Scope note: a dated testbed-only cert-swap smoke exists (2026-10-04),
+   // but this run does not establish REQ-S-3 or production dual-cert/PKI behavior.
    int tlsPort = -1;
    if (tlsEnabled)
    {
-      if (!std::filesystem::exists(certFile) || !std::filesystem::exists(keyFile))
-      {
-         cerr << "[probe] 错误: TLS 需要 cert.pem 和 key.pem。先跑 ./gen-cert.sh" << endl;
-         return 1;
-      }
       Transport* tls = g_stack->addTransport(
          TLS, /*port=*/0, V4,
          StunDisabled,                   // StunSetting
@@ -487,9 +608,27 @@ int main(int argc, char** argv)
 
    // 4. MasterProfile（UAS 的 From / Contact）
    auto masterProfile = std::make_shared<MasterProfile>();
-   Data contact = "sip:probe@127.0.0.1:" + Data(uasPort);
+   masterProfile->clearSupportedSchemes();
+   masterProfile->addSupportedScheme("sip");
+   if (tlsEnabled)
+   {
+      masterProfile->addSupportedScheme("sips");
+   }
+   const bool useTlsContact = tlsEnabled && (tlsPort > 0);
+   const bool useTcpContact = !useTlsContact && tcpEnabled && (tcpPort > 0);
+   Data contactScheme = useTlsContact ? Data("sips") : Data("sip");
+   int contactPort = useTlsContact ? tlsPort : (useTcpContact ? tcpPort : uasPort);
+   Data contact = contactScheme + ":probe@127.0.0.1:" + Data(contactPort);
+   if (useTcpContact)
+   {
+      contact += ";transport=tcp";
+   }
    masterProfile->setOverrideHostAndPort(Uri(contact));
    masterProfile->setDefaultFrom(NameAddr(contact));
+   const char* contactTransport = useTlsContact ? "TLS" : (useTcpContact ? "TCP" : "UDP");
+   cout << "[UAS] Contact profile: transport="
+        << contactTransport
+        << " uri=" << contact << endl;
    g_dum->setMasterProfile(masterProfile);
 
    // 5. InviteSessionHandler（注入 DUM 指针，handler 内部要用它 end(DialogSetId) 发 CANCEL）
@@ -500,23 +639,68 @@ int main(int argc, char** argv)
    auto factory = std::make_unique<ProbeAppDialogSetFactory>();
    g_dum->setAppDialogSetFactory(std::move(factory));
 
-   // 7. 启动自测子线程（externalMode 则跳过，等外部客户端连）
-   std::thread uacThread;
-   if (!externalMode)
-   {
-      uacThread = std::thread([&]() { driveSelfTest(scenario, uasPort, tlsPort); });
-   }
+   // 7. self-test startup scheduling (main loop thread only)
+   const auto selfTestStartAt = std::chrono::steady_clock::now() +
+      std::chrono::milliseconds(200);
+   bool selfTestStarted = externalMode;
 
    // 8. 主循环
    cout << "\n=== 进入主循环 (Ctrl+C 退出) ===" << endl;
    while (g_run.load())
    {
+      // Drain all pending monitored signals synchronously in main-thread context.
+      while (true)
+      {
+         timespec noWait{0, 0};
+         errno = 0;
+         const int signum = sigtimedwait(&monitoredSignals, nullptr, &noWait);
+         if (signum == -1)
+         {
+            if (errno == EAGAIN || errno == EINTR)
+            {
+               break;
+            }
+            cerr << "[probe] error: sigtimedwait failed: errno=" << errno
+                 << " (" << std::strerror(errno) << ")" << endl;
+            break;
+         }
+
+         if (signum == SIGINT || signum == SIGTERM)
+         {
+            g_run.store(false);
+            continue;
+         }
+         if (signum == SIGHUP)
+         {
+            if (g_tlsEnabledRuntime)
+            {
+               cout << "[probe] SIGHUP received: invoking SipStack::reloadCertificates()" << endl;
+               g_stack->reloadCertificates();
+            }
+            else
+            {
+               cout << "[probe] SIGHUP received: TLS transport is disabled, ignore certificate reload" << endl;
+            }
+         }
+      }
+
+      if (!g_run.load())
+      {
+         break;
+      }
+
+      if (!selfTestStarted && std::chrono::steady_clock::now() >= selfTestStartAt)
+      {
+         selfTestStarted = true;
+         driveSelfTest(scenario, uasPort, tcpPort, tlsPort);
+      }
+
       g_stack->process(/*timeoutMs=*/50);
       while (g_dum->process()) { /* 处理完所有 DUM 事件 */ }
+      g_handler.processScheduledActions();
    }
 
    cout << "\n=== 收到退出信号，清理中 ===" << endl;
-   if (uacThread.joinable()) uacThread.join();
 
    delete g_dum;
    delete g_stack;

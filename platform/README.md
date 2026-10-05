@@ -19,3 +19,18 @@
 ## 状态
 
 仅有骨架。代码通过 `docs/migration/triage.md` 里的甄别驱动迁移进来；绝不整块照搬。
+
+## 进程壳环境变量（SIP / D10 工程）
+
+| 变量 | 说明 |
+|------|------|
+| `AS_ENABLE_SIP_RUNTIME=1` | 启动 `SipStackService`（`ResipRuntimeListener` + 可选恢复） |
+| `AS_SIP_ACCEPT_ALL_INVITES=1` | 测试 harness：原生 DUM 完成 100/180/200 并触发 dialog-established 回调 |
+| `AS_RECOVERY_CASE` | Checkpoint `case` 命名空间（默认 `translation`） |
+| `AS_RECOVERY_CALL_KEYS` | 逗号分隔的 call key；进程启动时经 `RecoveryCoordinator` 异步 restore |
+| `AS_RECOVERY_NATIVE_ON_START` | 默认 `1`；为 `0` 时仅加载 checkpoint 到 `CallController` 而不起 RecoveryTU |
+| `AS_REDIS_URL` | 可选；支持 `redis://` 与 `redis+sentinel://`；未配置 Redis 则 checkpoint 使用 `InMemoryStateStore`（开发） |
+| `AS_REDIS_SENTINEL_HOSTS` | 可选；与 `AS_REDIS_SENTINEL_MASTER` 成对使用（逗号分隔 `host:port`） |
+| `AS_REDIS_SENTINEL_MASTER` | Sentinel 服务名（master set name） |
+| `AS_RECOVERY_CHECKPOINT_TTL_SECONDS` | Checkpoint TTL（默认 3600） |
+| `AS_RESIP_RECOVERY_CHECKPOINT_FILE` | **仅测试**：单文件 adapter 回退路径 |

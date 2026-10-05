@@ -27,7 +27,7 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | 0011 | ~~SIP 栈：双栈，`sippy` 保生产，`go-b2bua` 试点~~ **栈前提被 ADR-0019 推翻**：sippy 退出生产栈；双栈并行框架仍有效 | 8 | superseded-in-part |
 | [0012](0012-cross-implementation-parity.md) | 语言无关契约 + 跨实现对拍作为转正门槛 | 9 | accepted ✓ |
 | [0013](0013-helm-only-production.md) | Helm 是唯一生产形态；compose 仅作开发环境 | 6 | accepted ✓ |
-| [0014](0014-three-layer-testbed.md) | 三层 testbed；真实 socket 压测；不是 v1 交付物 | 16 | accepted ✓ |
+| [0014](0014-three-layer-testbed.md) | 三层 testbed；真实 socket 压测；不是 v1 交付物（**REQ:** [REQ-NF-15](../../requirements/req-nf-15-testbed-performance.md)） | 16 | accepted ✓ |
 | [0015](0015-engineering-discipline.md) | 研发模式：分层 TDD、ADR 制度化、四层 CI 门禁 | 17 | accepted ✓ |
 | [0016](0016-in-boundary-security.md) | 边界内安全：对端白名单、端到端 TLS、控制台鉴权、全量审计。不做 LI、不做计费 | 18 | accepted ✓ |
 | [0017](0017-no-cdr.md) | 不做 CDR：不采集、不投递、不归档 —— 由呼叫轨迹替代 | 4 | accepted ✓ |
@@ -35,7 +35,7 @@ ADR 与它所授权的改动**一起**写，不事后、不最后批量补。没
 | [0019](0019-sip-stack-selection.md) | 生产 SIP 协议栈选型（推翻 0011 的栈前提；选定 reSIProcate；go-b2bua / libre 为备选；rsipstack 因 Rust 不在团队技术栈内被否决） | 8 | **accepted** |
 | [0020](0020-feature-capability-gating.md) | Feature 能力门控：分层（部署级总开关 + 运行态细粒度覆盖），复用配置治理变更流水线 | 19 | accepted ✓ |
 | [0021](0021-runtime-override-granularity.md) | 运行态覆盖的判定粒度与 schema：号段 + 稳定哈希百分比，判定幂等（裁决未决项 D7） | — | accepted ✓ |
-| [0022](0022-resiprocate-b2bua-control.md) | reSIProcate DUM 协议机制之上的产品 `CallController`；语言桥接与状态恢复仍为阻塞项 | 8 | draft |
+| [0022](0022-resiprocate-b2bua-control.md) | reSIProcate DUM 协议机制之上的产品 `CallController`；语言桥接与状态恢复仍为阻塞项 | 8 | **accepted**（2026-10-05 修正案；D10/REQ-NF-1 仍 open） |
 | [0023](0023-redis-call-state-checkpoint.md) | 呼叫恢复方向：Redis 应用层必要状态 checkpoint；不序列化完整 DUM / `SipStack`（D10 仍未通过） | 2 | draft |
 | [0024](0024-console-password-sessions.md) | 控制台角色 + 密码认证与可撤销会话；M4b-6a/6b 工程切片；2026-10-03 维护者签核 accepted | 18 | accepted ✓ |
 | [0025](0025-managed-rule-runtime-bundle.md) | 管理面 `ManagedRule` → 内部 API `ConfigBundle`/`RuleDTO` 无损编译契约（v1：被叫 + 前缀子集） | 13 | draft |

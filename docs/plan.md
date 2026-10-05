@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| 当前进行中的步骤 | **M5 工程关门（2026-10-04，维护者 chat 授权代签）**。**下一里程碑 M6** 未启动。HPA/O1、D3、M7 真 SIP 按 §4.4.3。**不**等于 `test-plan` 全 REQ 绿 —— 见 **§5.4**。 |
+| 当前进行中的步骤 | **M5 工程关门（2026-10-04，维护者 chat 授权代签；已并入 `master`）**。**M2 P0 可复现路径**：仓库根 `make m2-native`（vendor 离线恢复 + 源码构建 + UDP S1 smoke，见 `docs/acceptance/m2-native-build-matrix.md`）。**当前进行：先完成 M2**（M2a 已完成；M2b 当前仅 transport-policy seam 工程切片：支持 IP-only / IP:port（含 IPv6 bracketed endpoint）/ certificate fingerprint token 匹配）。2026-10-04 已完成 reSIProcate tag `resiprocate-1.14.0`（commit `632e215c2ca9aee5416bfe1808851ea6fa380044`）最小构建并在 native probe 验证 S1 UDP/TLS loopback（TLS 在空 HOME 下通过，修复 trust 初始化后无 `503 Certificate Validation Failure`）；同日补充 `--tls` 非 external 自测（本地自签证书）结果：S2 返回 `404 Not Found` 并正常退出，S3 返回 `603 Decline` 并正常退出，S4 触发 UAC `CANCEL` 且 DUM 日志出现 `RemoteCancel`/`LocalCancel` 与 `487` 路径后正常退出（ACK 线包未独立抓取，不宣称已捕获）。同日另完成一次 external raw SIP INVITE over TLS 证据：以 `resip_probe --tls --external` 监听动态端口，`openssl s_client -CAfile ... -verify_ip 127.0.0.1` 校验证书后发送一条 `sips:` INVITE（Via/Call-ID/CSeq/SDP 完整），probe 日志确认收到该 INVITE（`tlsd=127.0.0.1`）并返回 `100 Trying`、`180 Ringing`、`200 OK`。该外部客户端未发送 ACK/BYE，因此该证据是一次 external SIP transaction/early dialog response，不是完整 call/dialog。另有一条 **partial、testbed-only** SIGHUP cert-swap smoke（成功证据为 Contact 修正后的 90 秒 hold run）：一条 active S1 在 hold 期间触发 reload 调用后完成 BYE；该次 UAS 收到 BYE 的日志行包含 `tlsd=127.0.0.1`，且 Request-URI/Contact 指向 TLS listener 端口（`sips:` Contact），随后 `LocalBye`/`RemoteBye` 并正常退出；后续新 TLS 连接在仅信任 cert-B 的客户端上验证到 cert-B；同一进程上的仅信任旧 cert-A 的新连接验证失败（`self signed certificate`）。历史上 Contact 修正前（TLS-mode master-profile Contact 指向 UDP 端口）的 A/B reload 记录已 superseded，不作为 full TLS in-flight active-call 证据。该新增证据仍为窄范围 testbed 证据，不等于 runtime 平台绑定、外部 S-SBC/operator PKI/mTLS、双证书重叠窗口/热轮换验收。reSIProcate 上游已提供 `SipStack::reloadCertificates()`，但当前仍**未完成**平台 SIP transport binding/runtime adapter、TLS/peer-policy 运行时接线、外部 S-SBC 集成及双证书重叠窗口与热轮换验收；REQ-S-2/3（含 REQ-S-3）仍未验收。**M6 工程关门（2026-10-05）**：D8→REQ-NF-15；dev-host O1 正式批次见 [`m6-o1-measurement-report-2026-10-05.md`](acceptance/m6-o1-measurement-report-2026-10-05.md)（**非**对外 O1/SLA）。维护者 M6 里程碑签收仍 open。HPA 阈值、D3、M7 真 SIP 按 §4.4.3。**不**等于 `test-plan` 全 REQ 绿 —— F-13、F-15 真 AS、主叫/正则 v1.1 等见 **§5.4 补测**。证据门槛仍为 `make gate` + 维护者环境 PG integration（**origin CI 全绿非 M4 硬门禁**）。 |
 | 设计基线 | 已确认（`architecture/新系统整体架构.md`，决策 1–19） |
 | 卡住后续里程碑的未决项 | §5（含 D11：REQ-F-4 SDP 原始 body 字节恒等的线上证明） |
 | POC 代码的迁移 | 刻意推迟到 M1–M3，且由 [`migration/triage.md`](migration/triage.md) 把关 |
@@ -112,20 +112,30 @@
 
 ## 4. 里程碑
 
-里程碑是顺序的。每个都以自己的完成定义收尾；上一个没签字，下一个不开始。
+里程碑通常顺序推进。每个都以自己的完成定义收尾；上一个没签字，下一个不开始。维护者于 2026-10-03 授权在 `callload` 并行启动 M6 harness 工程工作；这是并行推进的窄范围例外，不改变其他里程碑的顺序门禁。
+
+**callload → master（2026-10-06）**
+
+| 项 | 记录 |
+|---|---|
+| 状态 | **已合入** — `master` @ `764aa75`（2026-10-06）；详见 [`handoff/2026-10-06-callload-merge-to-master.md`](handoff/2026-10-06-callload-merge-to-master.md) |
+| 合入后入口 | **M8 发布候选**（[`handoff/2026-10-05-milestones-engineering-complete.md`](handoff/2026-10-05-milestones-engineering-complete.md)）；**不**自动闭合 M2/M6/M7 维护者签收 |
+| Demo 口径 | 故事 C 仍受 F10 约束（[`pre-m8-demo-review-plan.md`](handoff/pre-m8-demo-review-plan.md)） |
 
 | # | 里程碑 | 产出 | 状态 | 门禁 |
 |---|---|---|---|---|
 | **M0** | 仓库骨架 | 本结构、守卫、ADR 注册表、CI | **已完成（维护者授权代签）** | §3，外加维护者签字 |
 | **M1** | 甄别与行为基线 | 冻结 POC commit；抓取消息样例与 trace；确认或推翻 `migration/triage.md` 里每个裁决。**无产品代码。** | **已完成（2026-09-28；门禁裁决见 §4.1）** | 每个文件都有一个带证据的裁决；基线已抓取且可复现 |
-| **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | **M2a 已完成；M2b seam 已落（2026-09-28）**；**D3** Sentinel 接线仍 OPEN；栈绑定未开始（→ M7） | 内核守卫绿；能在其上构建用例而不碰 sippy。**不含** Helm 部署 PG/Redis（那是 **M5 / D12**，见 §4.6） |
+| **M2** | 内核 | `platform/`：进程壳、`decide()` 缝、缝后面的 `RedisStateStore`、TLS transport、非阻塞导出的 OTel 三信号、内部 API 契约、feature 开关 seam | **工程完成（2026-10-05），M8 验收：** D3 Sentinel **客户端**接线、产品 `_resip_runtime`、TCP；见 [`m2-milestone-engineering-complete-adjudication-2026-10-05.md`](reviews/m2-milestone-engineering-complete-adjudication-2026-10-05.md)。**非** 维护者签收 / 全 REQ-S 验收 | 内核守卫绿；能在其上构建用例而不碰 sippy。**不含** Helm 部署 PG/Redis（那是 **M5 / D12**，见 §4.6） |
 | **M3** | 应用 | `apps/translation` 与 `apps/anti-fraud`；决策模块先做 TDD | **已完成（2026-09-28；门禁裁决见 docs/reviews/m3-gate-review.md）** | 契约用例集对两者都重放绿 |
 | **M4a** | 控制面后端与访问策略 | `services/config-service` 配置治理，以及 `services/console` 的纯访问策略 / 审计判定 | **已交付（2026-09-28）** | 纳入 **M4 工程关门**（§4.3） |
 | **M4b** | 运维控制台 UI（强制） | M4 裁决定义：被叫+前缀、审批、compose HTTPS、fleet、M4b-8 浏览器证据 | **工程关门（2026-10-04）** | 见 §4.3；补测 §5.4；**不**等于 `test-plan` 全 REQ 绿。7.2d → M5。 |
 | **M5** | 运维 | Helm chart、自定义指标 HPA、缩容保护控制器、draining / ISSU、告警规则集、控制面集群部署证明（含 **7.2d**）；**D12** 集群内 PG/Redis（ADR-0026） | **工程关门（2026-10-04，维护者授权代签）** | 评审 [`m5-closure-adjudication-2026-10-04.md`](reviews/m5-closure-adjudication-2026-10-04.md)；HPA/O1 → **M6** |
-| **M6** | **容量研究** | 真实 socket 压测 harness；测出 CPS、并发会话、建立时延 —— 按栈分别 | 未开始 | 产出 O1 的答案；在这跑起来之前不假设任何目标 |
-| **M7** | 生产 SIP 集成与验收 | Python 产品决策模块接入 reSIProcate DUM/产品 CallController；完成协议行为和恢复验收 | 未开始（仅有探索性证据；产品集成/验收未开始） | **受 D9、D10、D11、E1/E4/E5 把关。** REQ-NF-1 为硬验收要求；REQ-F-4 SDP 字节恒等须由完整产品路径验收；M6 容量测试仍须使用真实 socket |
+| **M6** | **容量研究** | 真实 socket 压测 harness；测出 CPS、并发会话、建立时延 —— 按栈分别 | **工程完成（2026-10-05），M8 验收：** D8→REQ-NF-15；O1 dev-host 正式批次 + 报告；见 [`m6-engineering-complete-adjudication-2026-10-05.md`](reviews/m6-engineering-complete-adjudication-2026-10-05.md)。**非** O1 目标发布/维护者签收 | 产出 O1 的答案；在真实栈正式测量跑起来之前不假设任何目标 |
+| **M7** | 生产 SIP 集成与验收 | Python 产品决策模块接入 reSIProcate DUM/产品 CallController；完成协议行为和恢复验收 | **工程完成（2026-10-05），M8 验收：** E1 S1–S4 contract、D9 FORWARD、D10 checkpoint shell、D11 SDP 工程测试；见 [`handoff/2026-10-05-milestones-engineering-complete.md`](handoff/2026-10-05-milestones-engineering-complete.md)、[`m7-milestone-engineering-complete-adjudication-2026-10-05.md`](reviews/m7-milestone-engineering-complete-adjudication-2026-10-05.md)。**非** REQ-NF-1/E1 全量签收 | REQ-NF-1、operator PKI、维护者签收 → **M8** |
 | **M8** | 发布候选 | 带证据的验收运行、文档链完整、统一产品版本 | 未开始 | 逐条验收报告 |
+
+**M6 状态更新（2026-10-05）**：**M6 工程关门**（[`m6-engineering-complete-adjudication-2026-10-05.md`](reviews/m6-engineering-complete-adjudication-2026-10-05.md)）：REQ-NF-15 关闭 **D8**；`m6-o1-formal-report.sh` 在 dev host 完成 30s/60s×cps10/20 产品路径批次，报告 [`m6-o1-measurement-report-2026-10-05.md`](acceptance/m6-o1-measurement-report-2026-10-05.md)。**不等于**对外 O1 目标发布、HPA 填值或 **M6 维护者里程碑签收**。先行 smoke/micro/60s 证据仍见 [`m6-product-60s-review-2026-10-05.md`](reviews/m6-product-60s-review-2026-10-05.md)。M7 工程尾项见 [`handoff/2026-10-05-m7-engineering-complete.md`](handoff/2026-10-05-m7-engineering-complete.md)。
 
 **M4b-7.2 status clarification（2026-10-03）**：7.2c 含 config-service image recipe、默认关闭的 Helm workload/Ingress wiring；owner-only `as-config-migrate` 是新增的代码级 setup slice，要求 DBA 预先 provision roles，且不会创建/修改角色。Migration 与 bootstrap owner DSN 均是手动操作，不进入 web Pod。Helm render、镜像构建、真实集群、HTTPS、trusted-proxy 与 browser proof 仍归属 7.2d，保持 OPEN。Ingress 使用固定 redirect annotations，但真实 controller 必须保留默认 `nginx.ingress.kubernetes.io` annotation prefix，且 `no-tls-redirect-locations` 不得豁免 `/`；chart 本身不能配置这些 controller-level prerequisites。Helm lint/template 与 Docker image build 未验证；当前无 Helm render、真实集群或浏览器部署证据，不代表 M4b/M4 或 REQ acceptance。
 
@@ -180,7 +190,7 @@ M1 门禁原文：*每个文件都有一个带证据的裁决；基线已抓取�
 | S1 未构造出腿 `Route` 头与任何 `Record-Route` 头 | 这两条派生断言显式 skip 并注明"需 M2 probe 补"；另补了一条基线真正能证明的硬断言：入腿 Route 的 next-hop 正是出腿 Request-URI 的 host:port |
 | 14 个基线文件全部是 CRLF 换行 | 解析器按 CRLF 原样处理，SDP 逐字节比较在原始字节下通过 |
 
-M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容量研究仍按原顺序留在 M6，并使用真实 socket；流量模型与负载生成器决策也留在 M6，不纳入 M4b。M7 在 M6 报告之前不启动。
+M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容量研究仍按原顺序留在 M6，并使用真实 socket；流量模型与负载生成器决策也留在 M6，不纳入 M4b。**2026-10-05：** M6 **工程关门**（harness + D8 + dev-host O1 正式批次报告）；维护者 **M6 里程碑签收**与对外 O1 **目标**仍 open。饱和点、集群多副本与 HPA 阈值不在本关门范围。
 
 ### 4.2 M4 关门裁决（2026-10-03）
 
@@ -307,7 +317,7 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 
 | 主题 | 里程碑 |
 |------|--------|
-| `RedisStateStore` / `StateStore` 契约、进程外状态 **模型** | **M2**（已交付 seam；**D3** Sentinel 仍 OPEN） |
+| `RedisStateStore` / `StateStore` 契约、进程外状态 **模型** | **M2**（已交付 seam + Sentinel **客户端**接线；HA 拓扑仍 **O5**） |
 | Helm 在同一 namespace **渲染** PG+Redis、NetworkPolicy、kind 连线 | **M5 §4.6 / D12** |
 | 产品 SIP 使用 Redis、checkpoint | **M7** / D10 |
 
@@ -332,7 +342,7 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 
 | # | 条目 | 阻塞 | 解决所需 |
 |---|---|---|---|
-| O1 | 容量目标：CPS、并发会话、建立时延预算。**已有量级估计**（见 [`architecture/容量量级估算.md`](architecture/容量量级估算.md)：选型设计目标 ≥500 CPS / ≥20,000 并发对话），但**仍是未决项** —— 数字来自公开统计推算，非实测 | M7 集成容量验收、HPA 阈值（M5） | M6 的实测，在 harness 跑真实 socket 之后；须回收估算文档 §6 的 C1–C7；不再作为 SIP 栈选择依据 |
+| O1 | 容量目标：CPS、并发会话、建立时延预算。**已有量级估计**（见 [`architecture/容量量级估算.md`](architecture/容量量级估算.md)）与 **dev-host 实测草稿**（[`acceptance/m6-o1-measurement-report-2026-10-05.md`](acceptance/m6-o1-measurement-report-2026-10-05.md)，非 SLA） | M7 集成容量验收、HPA 阈值（M5） | **维护者目标裁决仍 open**；C6 1s 峰值已在低 CPS 批次记录；C1–C5/C7 与饱和点待更高保真测量 |
 | O2 | **已选定 reSIProcate C++**（ADR-0019 Accepted）；生产栈方向不变。DUM/controller 集成与 E1/E4/E5 仍未验证 | D9、D10、M7 | ADR-0019 的选型结论不代替集成或需求验收；K2 未解除 |
 | O3 | reSIProcate 生产路径的 SIP 行为验收（E1，S1–S11） | M7 / M8 | native DUM S1/S4 smoke 不是产品 E1；完成集成 spike 后由产品 adapter 通过真实 socket probe 验证 |
 | O4 | 呼叫轨迹保留期 | M4 | 客户合规要求 |
@@ -344,25 +354,26 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 |---|---|---|---|
 | D1 | **Python 3.10 在 2026 年 10 月到达生命周期终点。** 产品锁 3.10 是因为那是 sippy 验证过的版本。 | 该日期之后的任何交付 | 尽早验证 sippy 在 3.11 / 3.12 上的行为；要么迁移，要么在 ADR 里把 EOL 运行时登记为已接受的 risk。这里不定。 |
 | D2 | ~~同一用例的第二个语言实现放置位置~~ **已不适用**：当前产品决策模块保持 Python；reSIProcate 集成边界由 D9 spike 处理 | — | 不启动第二个业务实现；跨实现一致性仍按语言无关契约验证（ADR-0012） |
-| D3 | Redis 客户端与 Sentinel 接线；脑裂窗口下的判决幂等 | M2 | 风险 R5 |
+| D3 | Redis 客户端与 Sentinel 接线；脑裂窗口下的判决幂等 | **M2 客户端接线 resolved（2026-10-05）**；HA 拓扑 **O5**；幂等契约已有 | 风险 R5；[`m2-d3-sentinel-adjudication-2026-10-05.md`](reviews/m2-d3-sentinel-adjudication-2026-10-05.md) |
 | D4 | ~~控制台前端形态：保留 vendored 单包、无构建步骤，还是接受一套工具链~~ **已裁决（2026-10-01）**：使用纯 HTML/CSS/JavaScript，不引入 bundler、build tool 或前端 runtime 依赖 | —（已解决） | 当前 console 尚无 HTTP/runtime 前端；无构建步骤适合简单的 on-premises 交付。M4b-1 只交付可直接打开的静态预览，不代表 M4b 后端、鉴权、持久化、workflow integration 或验收已完成 |
 | D5 | 呼叫轨迹存储：PostgreSQL，还是独立的短保留存储 | M4 | 与 O4 相关 |
 | D6 | testbed 是否必须在 v1 支持客户验收测试 | M8 | 架构文档把它推迟到 v1.1 |
 | D7 | ~~未决~~ **已裁决（2026-09-28）**：粒度固定为号段 + 稳定哈希百分比，schema 与判定幂等见 [ADR-0021](architecture/adr/0021-runtime-override-granularity.md) | M4 | 与 ADR-0020 的分层门控相关，需在控制面设计前定 |
-| D8 | ADR-0014（三层 testbed）在 PRD 中找不到对应的需求编号：PRD 现行 REQ-NF-13 是"OTel 三信号导出"（已由 ADR-0005 承载），没有覆盖"testbed 三层"与"真实 socket 容量压测"。0014 暂以 REQ-NF-13 指向并在 Evidence 注明 | M8 / PRD 维护 | 需维护者裁决：补一条 testbed/容量压测的 REQ，或调整 0014 的指向 |
-| D9 | reSIProcate DUM 到 Python 决策模块的产品集成方式及 adapter 边界未定；上游 `BUILD_PYTHON=ON` 不提供通用 DUM Python 模块。隔离 spike 已证明 CPython native callback、真实 DUM→Python→404/500 和一个两腿 486 分支可行，但未形成产品 API/adapter | M7 实现；K2 | 维护者评审桥接可行性证据并裁决产品 adapter 边界后，才授权实现；仍须补完整 E1、forking 与 final-response race 覆盖。业务决策继续使用 Python |
-| D10 | 当前验收范围按 `docs/acceptance/test-plan.md`：基本呼叫完成 ACK 交换后 kill/restart AS，再由上游发送 in-dialog BYE；replacement 必须将 BYE 路由到对端且 Redis 中完整 dialog record 存在。跨进程 UAC `DialogSetId` + 应用保存字段的窄 re-INVITE hook 通过；fresh DUM 对该已建立 UAS dialog 的同 dialog BYE 返回 481，故当前 baseline 失败。产品两腿映射恢复仍未证明；未发现公开 UAS rehydrate API | M7 / M8；REQ-NF-1 验收 | **不通过 / 未解决，仍阻塞 M7/M8**：REQ-NF-1 保持硬要求，D10 必须通过当前 ACK-established-dialog BYE/Redis baseline。`SipStack` 在进程中途的 pending transaction recovery 尚未验证，但不属于当前 acceptance；若要加入 INVITE/CANCEL/final-response/2xx-ACK recovery，须单独修改/扩展 requirement 与 test plan 并经维护者裁决。用户已选择 Redis 应用层最小 checkpoint 方向并记录于仍为 proposed 的 ADR-0023；初版 `CallStateCheckpointRepository` 仅属 schema-v1 序列化/仓储 groundwork，尚未接入产品 DUM/CallController 恢复；不能将仓储或 UAC hook 当作完整恢复，也不得静默替换 ADR-0019 栈。详见[呼叫状态恢复方案比较](architecture/call-state-recovery-options.md)。 |
-| D11 | 隔离 native DUM 路径已对有限 SDP 样本观察到 body 字节恒等：230/143/233 字节 offer，以及一个不同的 238 字节 answer；这不是完整产品 adapter 或 REQ-F-4 验收 | M7 / M8；REQ-F-4 验收 | 扩大到需求基线、stack 接受的边界变体及完整产品 adapter 路径，以 on-wire capture 比较 body 并完成 review；在此之前不得宣称 REQ-F-4 通过 |
+| D8 | ~~ADR-0014 PRD 追溯缺口~~ **已关闭（2026-10-05）**：[REQ-NF-15](requirements/req-nf-15-testbed-performance.md)；[`d8-req-nf-15-adjudication-2026-10-05.md`](reviews/d8-req-nf-15-adjudication-2026-10-05.md) | — | REQ-NF-15 **全量 test-plan 绿**与 M8 签收仍独立跟踪 |
+| D9 | **已解决（M7 工程，2026-10-05）：** 产品 `_resip_runtime` adapter API（`on_invite` int / forward dict、FORWARD UAC、486 映射、CANCEL 协调）；见 [`platform/src/as_platform/sip/README.md`](../platform/src/as_platform/sip/README.md) | M8 E1 全量 / forking | Forking 与 final-response race 覆盖仍属 **M8 验收**；业务决策继续使用 Python |
+| D10 | **工程已解决（2026-10-05）：** `SipStackService` establish → `CallCheckpointCommit` → Redis；进程壳 harness + recovery TU 切片。REQ-NF-1 **验收** checkbox仍 **M8 维护者**（K8s live baseline） | M8；REQ-NF-1 验收 | ACK-established-dialog BYE/Redis **正式签收**仍为硬要求；UAS 481 风险与 operator 环境见 test-plan。**不等于** mid-transaction recovery 扩展。 |
+| D11 | **工程测试覆盖完成（2026-10-05）：** `test_req_f4_sdp_identity_integration.py` + D11 fixtures；产品 FORWARD 路径 offer 字节 compare | M8；REQ-F-4 **签收** | REQ-F-4 正式通过仍须 M8 review + 更广 corpus；不得单独宣称 REQ 绿 |
 | D12 | **集群内治理 PG + 运行态 Redis**（**自 M5 kind 验收复盘引出**，非 M2） | **M5 §4.6**；O5 / **D3（仍归 M2 客户端缝）** | [ADR-0026](architecture/adr/0026-in-cluster-state-stores-proposal.md) **accepted**；Helm `stateStores` 骨架已落库；生产 HA/签字见 §4.6 checklist |
 
 **D10 的 M7 阻塞 TODO（依赖顺序；全部完成并有验收证据前保持“不通过 / 未解决”）**：
 
-- [ ] **M7.1 产品恢复接入**：实现产品 reSIProcate DUM / `RecoveryTU` 恢复集成，验证 ACK-established UAS/UAC 双腿可由新进程重建。
-- [ ] **M7.2 非阻塞恢复读取**：在 SIP callback 之外完成 Redis lookup，并以非阻塞 continuation 恢复处理；不得在 callback 中等待 Redis。
-- [ ] **M7.3 CallController context restoration**：从完整、已提交的双腿 checkpoint 恢复产品 `CallController` context，并验证同 dialog 新到达 BYE 的路由。
-- [ ] **M7.4 owner 与提交安全**：实现 owner generation/fencing、完整双腿 durable commit acknowledgement，以及依赖 checkpoint 的 SIP side effect 前 write-before-side-effect；旧 owner 不得继续产生 side effect。
-- [ ] **M7.5 checkpoint 生命周期**：为活跃呼叫实现 TTL renewal 和 terminal cleanup，并覆盖续期、终态、重试及 owner 交接行为。
-- [ ] **M7.6 D10 验收**：按当前 `docs/acceptance/test-plan.md` 完成 ACK 后 kill/restart、完整 Redis dialog record、replacement BYE 路由至 peer 的产品路径测试与 review。
+- [x] **M7.1 产品恢复接入**（工程切片，2026-10-05）：`platform/native/resip_recovery/` + `RecoveryStackSession`；D10 **维护者签收仍 pending** — [`m7-1-recovery-tu-review-2026-10-05.md`](reviews/m7-1-recovery-tu-review-2026-10-05.md)。
+- [x] **M7.2 非阻塞恢复读取**（工程切片，2026-10-05）：`recovery_coordinator.py` + 单测；D10 acceptance **pending** — [`m7-2-recovery-coordinator-review-2026-10-05.md`](reviews/m7-2-recovery-coordinator-review-2026-10-05.md)。
+- [x] **M7.3 CallController context restoration**（工程切片，2026-10-05）：`restore_from_checkpoint` / `route_in_dialog_bye` — [`m7-3-call-controller-recovery-review-2026-10-05.md`](reviews/m7-3-call-controller-recovery-review-2026-10-05.md)。
+- [x] **M7.4 owner 与提交安全**（工程切片，2026-10-05）：schema v2 + `CallCheckpointCommit` / `save_if_generation`（ADR-0023 注释）— [`m7-4-checkpoint-commit-review-2026-10-05.md`](reviews/m7-4-checkpoint-commit-review-2026-10-05.md)。
+- [x] **M7.5 checkpoint 生命周期**（工程切片，2026-10-05）：`CallCheckpointLifecycle` — [`m7-5-checkpoint-lifecycle-review-2026-10-05.md`](reviews/m7-5-checkpoint-lifecycle-review-2026-10-05.md)。
+- [x] **M7.6 D10 产品集成测试**（工程切片，2026-10-05）：`test_d10_product_recovery_integration.py`（**非** REQ-NF-1 / 全 D10 签收）— [`m7-6-d10-product-integration-review-2026-10-05.md`](reviews/m7-6-d10-product-integration-review-2026-10-05.md)、[`m7-d10-product-adjudication-2026-10-05.md`](reviews/m7-d10-product-adjudication-2026-10-05.md)。
+- [x] **M7.7 进程壳 + REQ-NF-1 工程 harness**（工程切片，2026-10-05）：`SipStackService`、`test_d10_req_nf1_harness_integration.py`（**非** REQ-NF-1 / 全 D10 签收）— [`m7-process-shell-recovery-review-2026-10-05.md`](reviews/m7-process-shell-recovery-review-2026-10-05.md)、[`d10-req-nf1-harness-review-2026-10-05.md`](reviews/d10-req-nf1-harness-review-2026-10-05.md)、[`m7-d10-third-pass-review-2026-10-05.md`](reviews/m7-d10-third-pass-review-2026-10-05.md)。
 
 本次 4 KiB extension payload、16 KiB checkpoint 与 30-day TTL 上限只是 payload / retention groundwork only，不实现上述恢复、提交或生命周期语义。此 TODO 序列仅覆盖当前 ACK-established-dialog baseline，不把 D10 扩展到崩溃时的 mid-transaction recovery；该可选未来范围须另行获得 requirement 与 test-plan 批准。
 

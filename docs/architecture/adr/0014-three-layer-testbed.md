@@ -3,7 +3,7 @@
 - **Status**: accepted
 - **Date**: 2026-09-30
 - **Decides**: §0 账本条目 16 —— 测试平台：testbed 三层；v1 不作交付物
-- **回应 REQ**: REQ-NF-13（口径见 Evidence 末条备注）
+- **回应 REQ**: [REQ-NF-15](../../requirements/req-nf-15-testbed-performance.md)（2026-10-05，关闭 D8；原 REQ-NF-13 误指向见 Evidence 历史备注）
 
 ---
 
@@ -40,7 +40,7 @@
 
 ### Negative / accepted（负面 / 已接受）
 
-- **本 ADR 不给任何容量数字。** CPS、并发会话、建立时延全部要等 M6 与未决项 O1（`AGENT.md` §2：「M6 实测之前不发布任何容量数字」）。`testbed/load` 目录当前只有 README 与包骨架，harness 属 M6。
+- **本 ADR 不给任何容量数字。** CPS、并发会话、建立时延全部要等 M6 与未决项 O1（`AGENT.md` §2：「M6 实测之前不发布任何容量数字」）。`testbed/load` 在本 ADR 接受时（2026-09-30）是 README 与包骨架状态；截至 2026-10-03，维护者已授权继续 M6 harness engineering，当前为 WIP，已有 loopback socket 测试与一次 user-local SIPp 3.6.0 UAS 互操作 smoke 证据，但仍无 reSIProcate/产品目标实测，也尚未开始真实目标栈容量测量。
 - **testbed 自身有维护成本，且它的失效方式是静默的。** 仿真器必须跟着真实网元行为演进；一旦仿真与真实网元分岔，"仿真通过"就会变成假证据 —— 它仍然绿，但它证明的东西已经不是真的。这个成本没有自动化手段可以消除，只能靠定期对照真实网元行为复习。
 - **v1 不对客户开放 testbed，意味着客户验收测试要用别的手段做。** 这是**交付边界**，必须在方案阶段说清，而不是在验收阶段发现。是否开放由 D6 裁决（M8）。
 - **部分基线尚未抓取。** S5 / S6 / S7a / S8 在 M1 被裁决为"派生基线"（从 `S1-basic-call` 派生断言，不单独抓取）；S10 / S11 仅 README，留待 M2 probe 补。这两条裁决已记在 `docs/plan.md` §3 的 M1 裁决表里，不阻塞本 ADR，但意味着当前基线覆盖是不完整的。
@@ -60,7 +60,7 @@
 ## Evidence（证据）
 
 - `testbed/README.md` 三层表原文：「① 契约 / 单元 | `contracts/` + 每个包的 `tests/` | 决策是对的，且每个实现都一致」；「② 仿真集成 | `simulators/` | AS 能对着一个行为像运营商对等端的东西工作」；「③ 性能 | `load/` | 容量边界到底在哪」。同文件规则原文：**「压测必须走真实 socket。** 直接驱动回调的 harness 测的是业务逻辑，不是容量。」**「v1 不把 testbed 作为交付物交付。** 它是研发资产；客户验收测试能力留到 v1.1。」「这里可以用 SIPp。它是 GPL，仅**内部使用、绝不随产品分发**。」
-- `testbed/load/README.md` 原文：**「压测走真实 socket。** POC 的 harness 直接驱动回调，绕过了 socket 与事件循环 —— 它测的是业务逻辑，不是系统。这种 harness 出来的数字无法回答" CPS 撞墙了没有"，因此也无法决定是否需要 Go（ADR-0014）。」同文件：「按栈：CPS、并发会话、呼叫建立时延 —— 以及最先饱和的资源。这是 O1 与 ADR-0011 的输入；它不是营销数字，在 M6 之前不发布」。
+- `testbed/load/README.md` 原文：**「压测走真实 socket。** POC 的 harness 直接驱动回调，绕过了 socket 与事件循环 —— 它测的是业务逻辑，不是系统。这种 harness 出来的数字无法回答" CPS 撞墙了没有"，因此也无法决定是否需要 Go（ADR-0014）。」同文件：「按栈：CPS、并发会话、呼叫建立时延 —— 以及最先饱和的资源。这是 O1 与 ADR-0011 的输入；它不是营销数字，在 M6 之前不发布」。历史澄清：上述引文反映的是 ADR-0014 于 2026-09-30 被接受时的 README / 栈选型语境；ADR-0019 后续已选定 reSIProcate，因此当前 M6 测量用于 O1 与运维容量规划，不在无新 ADR 的前提下重开栈选型。
 - `AGENT.md` §4 分层图原文：`testbed/ ──may use──▶ platform/ 研发资产，绝不做运行时依赖`；并记「**内核绝不能 import 应用、服务或 testbed。** …… 靠 `platform/tests/test_library_independence.py` 来强制」。
 - `AGENT.md` §2 非目标原文：「**M6 实测之前不发布任何容量数字。** 在真实 socket 压测测出之前，不公布任何 CPS 或并发数字。」§6 测试策略表：「容量 | `performance` | 只用真实 socket。绝不要靠驱动回调来测 —— 那测的是业务逻辑，不是系统（ADR-0014）」。
 - 架构文档 §11.4「测试平台」关键点原文：1.「**性能测试必须从"驱动回调"升级到"真实 socket 压测"**：现有 `CapacityDriver` 直接调回调，绕过 socket 与事件循环，测的是业务逻辑而非系统容量。容量基线不可比，就无法判断"CPS 是否撞墙"、也就无法裁决 Go 是否够用。」2.「**仿真网元是一等资产**……iFC 链与 S-SBC 透明桥接行为必须能被仿真，否则集成测试无处可跑。」4.「⏳ **v1 不把 testbed 当交付物**，只作研发资产；客户验收测试能力留 v1.1。」
@@ -69,7 +69,7 @@
 - `docs/plan.md` §5.2 未决项 D6 原文：「testbed 是否必须在 v1 支持客户验收测试 | M8 | 架构文档把它推迟到 v1.1」；§5.1 O1 原文：「容量目标：CPS、并发会话、建立时延预算……**仍是未决项** …… M6 的实测，在 harness 跑真实 socket 之后」；§4 M6 行：「**容量研究** | 真实 socket 压测 harness；测出 CPS、并发会话、建立时延 —— 按栈分别 | 未开始 | 产出 O1 的答案；在这跑起来之前不假设任何目标」。
 - `docs/plan.md` §3 M1 基线裁决表：S5 / S6 / S7a / S8 **接受为"派生基线"**（从 `S1-basic-call` 派生断言，"重复抓取不增加信息量，只增加维护面"）；S10 / S11 **接受为"M2 probe 补"**（与 PRD §2.4 已知缺口表一致）。派生断言已可执行化：`testbed/simulators/tests/test_derived_baseline.py`（marker `contract`）。
 - `testbed/probe/README.md` 当前状态原文：「**当前状态：两个探针都未执行。** 本环境没有 reSIProcate 的 Python 绑定（构建选项 `BUILD_PYTHON=ON` 未构建）……以退出码 2 响亮失败并打印构建指引，不会静默 skip」；E5 探针「尚未编写，列为后续项」。
-- **REQ 口径备注**：本 ADR 的 `回应 REQ` 写作 REQ-NF-13 是按本次任务书的指定沿用。经核对 PRD v0.2 现行编号，`REQ-NF-13` 的原文是「OTel 三信号导出」（已由 [ADR-0005](0005-observability-otel.md) 承载），PRD 中**目前没有**直接对应"testbed / 容量压测"的 REQ 条目。本 ADR 的实际需求牵引来自 `AGENT.md` §2 / §6 的非目标与测试策略红线，以及未决项 O1 / D6。**建议后续由维护者在 PRD 中补一条 testbed / 容量压测的 REQ，并同步本行编号**；在补齐之前，本行编号不应被当作已核对的需求追溯。
+- **REQ 口径备注（历史）**：2026-09-30 接受时 `回应 REQ` 曾误写作 REQ-NF-13。PRD v0.2 中 REQ-NF-13 为 OTel（[ADR-0005](0005-observability-otel.md)）。**2026-10-05** 已新增 [REQ-NF-15](../../requirements/req-nf-15-testbed-performance.md) 并关闭 plan D8；追溯以 REQ-NF-15 为准。
 
 ## Related（相关）
 

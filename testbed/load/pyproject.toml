@@ -17,6 +17,9 @@ classifiers = [
 
 dependencies = []
 
+[project.scripts]
+as-load = "as_load.__main__:main"
+
 [build-system]
 requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"

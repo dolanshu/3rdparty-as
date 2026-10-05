@@ -77,7 +77,9 @@ make help          # 全部 target
 
 ## 当前状态
 
-**M0 — 仓库骨架。** 结构与治理就位，尚无业务代码：
+**预发布阶段。** M4b/M4 的 engineering closure 已完成；但这不等于 REQ 全量验收通过，当前仍有 acceptance gaps，且 M5 仍为 open。M6 harness 处于 WIP：当前有 loopback socket tests，并有一次 user-local SIPp 3.6.0 UAS 互操作 smoke（INVITE -> 180 -> 200 -> ACK -> BYE -> 200；SIPp: 1 success、0 failure/timeout/retransmission）。该 smoke 不是 reSIProcate/产品目标证据，也不是容量测量；选定生产目标栈的容量测量尚未开始。精确状态与里程碑开放项以 [`docs/plan.md`](docs/plan.md) 为准。
+
+**M0 骨架阶段的历史产物（非当前仓库状态清单）：**
 
 - 目录结构与 uv workspace（7 个成员）
 - 三个结构守卫：依赖方向、布局、版本一致性

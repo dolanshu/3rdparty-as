@@ -1,0 +1,11 @@
+{
+  "version": "demo-story-b",
+  "rules": [
+    {
+      "rule_id": "demo-block-86168",
+      "prefix": "+86168",
+      "action": "block"
+    }
+  ],
+  "toggles": []
+}

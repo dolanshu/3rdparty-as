@@ -3,7 +3,8 @@
 # `make gate` is the same set of checks CI layer ① runs, in the same order.
 # Nothing is committed unless it is green here first (AGENT.md §Git rules).
 
-.PHONY: help sync fmt lint type test test-unit test-integration test-integration-compose test-e2e test-perf chart-check gate
+.PHONY: help sync fmt lint type test test-unit test-integration test-integration-compose test-e2e test-perf chart-check gate \
+	m2-native-restore m2-native-build m2-native-smoke m2-native-smoke-tcp m2-native-smoke-tls-runtime m2-native-smoke-tcp-runtime m2-native m2-platform-resip-build m7-platform-two-leg-build m7-platform-recovery-build
 
 # Matches deploy/compose/.env.example POSTGRES_SUPERUSER_PASSWORD on published port 55432.
 COMPOSE_PG_DSN ?= postgresql://postgres:postgres@127.0.0.1:55432/as_config
@@ -58,5 +59,53 @@ test-e2e: ## ③ end-to-end call flows
 
 test-perf: ## ④ capacity baseline (never part of the commit gate)
 	uv run pytest -m performance -q
+
+m2-native-restore: ## M2 P0: extract bundled reSIProcate vendor source to repo cache
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh restore
+
+m2-native-build: ## M2 P0: cmake-build reSIProcate + resip_probe under .cache/m2-resiprocate
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh build-resip
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh build-probe
+
+m2-native-smoke: ## M2 P0: run resip_probe S1 UDP smoke from native cache build
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh smoke
+
+m2-native-smoke-tcp: ## M2 P2b: run resip_probe S1 TCP smoke from native cache build
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh smoke-tcp
+
+m2-native-smoke-tls-runtime: ## M2 P2d: platform TLS resip_runtime integration smoke (pytest)
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh smoke-tls-runtime
+
+m2-native-smoke-tcp-runtime: ## M2 P2: product TCP resip_runtime integration smoke (pytest)
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh smoke-tcp-runtime
+
+m2-native: m2-native-restore m2-native-build m2-native-smoke ## M2 P0: restore, build, and smoke native probe
+
+m2-platform-resip-build: ## M2 P2c: cmake-build platform _resip_runtime extension
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh build-platform-resip
+
+m7-platform-two-leg-build: ## M7 slice: cmake-build platform _resip_two_leg extension
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh build-platform-two-leg
+
+m7-platform-recovery-build: ## M7 slice: cmake-build platform _resip_recovery extension
+	bash testbed/simulators/resip-probe/scripts/m2-native.sh build-platform-recovery
+
+demo-story-a: ## pre-M8 demo story A (translation + control plane); see scripts/demo-review/README.md
+	bash scripts/demo-review/story-a.sh
+
+demo-story-b: ## pre-M8 demo story B (block 603 + anti-fraud decision)
+	bash scripts/demo-review/story-b.sh
+
+demo-story-c: ## pre-M8 demo story C (Helm / ops / alerts)
+	bash scripts/demo-review/story-c.sh
+
+demo-story-d: ## pre-M8 demo story D (checkpoint / Redis harness)
+	bash scripts/demo-review/story-d.sh
+
+demo-story-e: ## pre-M8 demo story E (capacity smoke + O1 report head)
+	bash scripts/demo-review/story-e.sh
+
+demo-review-all: ## run automated demo stories (best-effort; needs Redis for D)
+	bash scripts/demo-review/run-all-automated.sh
 
 gate: lint type test-unit ## the pre-commit gate: lint, type, then layer ① (unit + contract)

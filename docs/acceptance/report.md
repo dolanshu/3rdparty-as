@@ -247,6 +247,66 @@
 
 **后续项**：E5（状态外置 / 序列化）的探针尚未编写；S5–S11 的基线消息文件仍缺失，对应场景在探针中报 `NO_BASELINE`。
 
+## M2 P0 原生可复现路径（2026-10-04；非 M2 里程碑验收）
+
+| 项 | 结果 |
+|---|---|
+| 交付 | `testbed/simulators/resip-probe/scripts/m2-native.sh` + Makefile `m2-native` / `m2-native-restore` / `m2-native-build` / `m2-native-smoke`；矩阵见 [`m2-native-build-matrix.md`](m2-native-build-matrix.md) |
+| 复现 | 仓库根目录 `make m2-native`：校验 vendor SHA256、离线解压 reSIProcate 1.14.0 @ `632e215c`、CMake 构建 `rutil`/`resip`/`dum`、链接 `resip_probe`，UDP S1 loopback smoke（`probe 退出 OK`） |
+| 边界 | **仅 testbed P0**；不等于平台 SIP adapter/runtime、TLS/peer-policy 运行时接线、REQ-S 验收或 M2 关门；产品 DUM/`CallController`/Python bridge 归 **M7（D9）**，见 [`m2-adapter-boundary-adjudication-2026-10-04.md`](../reviews/m2-adapter-boundary-adjudication-2026-10-04.md) |
+| 评审 | [`m2-p0-native-repro-review-2026-10-04.md`](../reviews/m2-p0-native-repro-review-2026-10-04.md)：**P0 工程切片 Pass**；维护者签字待补 |
+
+**证据日期**：2026-10-04（本地/维护者环境 `make m2-native` + `make gate`；CI `m2-native-smoke` job 以源码构建路径覆盖 ubuntu-latest / OpenSSL 3）。
+
+## M2 transport/runtime engineering closure（2026-10-05）
+
+本节记录 M2 handoff P0–P3 **工程切片**与 P4 **CI/integration 关门切片**的证据汇总。**不是** M2 里程碑验收，**不是** REQ-S-2/3（含 REQ-S-3 dual-cert overlap wire proof）或 operator PKI / S-SBC acceptance。
+
+| 优先级 | 工程切片 | 部分证据 |
+|---|---|---|
+| **P0** | testbed 原生 vendor restore + UDP S1 smoke | `make m2-native-smoke`；CI `m2-native-smoke`；[`m2-p0-adjudication-2026-10-05.md`](../reviews/m2-p0-adjudication-2026-10-05.md) |
+| **P1** | testbed transport vs 产品 DUM 边界 | [`m2-adapter-boundary-adjudication-2026-10-04.md`](../reviews/m2-adapter-boundary-adjudication-2026-10-04.md) |
+| **P2**（partial） | ingress seam；testbed TCP S1；产品 `ResipRuntimeListener` UDP/TLS + fingerprint + plaintext guard | `TransportIngressGate`；`m2-native-smoke-tcp`；`make m2-platform-resip-build`；`test_resip_runtime_integration.py` / `test_resip_runtime_tls_integration.py`；P2b–P2d review/adjudication 2026-10-05 |
+| **P3**（partial） | overlap policy + native reload hook | `TlsRotationState` / `install_with_overlap`；`test_tls_rotation.py`；[`m2-p3-tls-rotation-adjudication-2026-10-05.md`](../reviews/m2-p3-tls-rotation-adjudication-2026-10-05.md) |
+| **P4**（slice） | blocking CI + focused platform integration | CI jobs `m2-native-smoke` + `m2-platform-resip`；`pytest platform/tests/test_resip_runtime_integration.py platform/tests/test_tls_rotation.py`（extension 未构建时 integration 用例 skip，rotation 单元仍跑） |
+
+**明确不含**：D3 Redis Sentinel；完整 REQ-S-2/3 test-plan 验收；产品 TCP transport；operator PKI / 外部 S-SBC mTLS 证据；M2 维护者签字与 **M2 exit**。综合裁决见 [`m2-engineering-closure-adjudication-2026-10-05.md`](../reviews/m2-engineering-closure-adjudication-2026-10-05.md)。
+
+## M7 control-layer engineering closure（2026-10-05）
+
+本节记录 M7 **控制层工程切片**（ADR-0022 accepted 后的延续），含首切片与本次 continuation。**不是** M7 里程碑验收，**不是** D10/REQ-NF-1 通过，**不是** REQ 或 K2 放行。
+
+| 交付物 | 证据 |
+|---|---|
+| 纯 Python `CallController` | `platform/src/as_platform/sip/call_controller.py`；`platform/tests/test_call_controller.py`（gate） |
+| 最小 product 两腿 native | `platform/native/resip_two_leg/`；`make m7-platform-two-leg-build`；`platform/tests/test_resip_two_leg_integration.py`（`-m integration`） |
+| 产品 runtime 接线 | `ResipRuntimeListener`：ingress → `decide()` → `CallController` → SIP status（非 harness `accept_all_invites`）；`platform/tests/test_resip_runtime_call_controller.py` |
+| D10 产品 RecoveryTU（M7.1） | `platform/native/resip_recovery/`；`RecoveryStackSession`；`make m7-platform-recovery-build` |
+| 非阻塞恢复 continuation（M7.2） | `recovery_coordinator.py`；`platform/tests/test_recovery_coordinator.py` |
+| CallController 恢复（M7.3） | `restore_from_checkpoint` / `route_in_dialog_bye`；`test_call_controller_recovery.py` |
+| Owner/commit（M7.4） | Checkpoint schema v2；`CallCheckpointCommit`；`save_if_generation`；`test_call_checkpoint_owner.py` |
+| Checkpoint 生命周期（M7.5） | `CallCheckpointLifecycle`；同上单测 |
+| D10 产品 integration（M7.6） | `test_d10_product_recovery_integration.py`（`-m integration`；**非** REQ-NF-1 签收） |
+| REQ-NF-1 工程 harness（M7.7） | `test_d10_req_nf1_harness_integration.py` + `scripts/d10-req-nf1-harness.sh`；`SipStackService` / `__main__.py`（**非** maintainer 签收） |
+| REQ-NF-1 真 Redis integration（M7.8） | `test_d10_req_nf1_redis_integration.py`（`-m integration`；`AS_REDIS_URL` 或默认 db 15；不可达则 skip；**非** maintainer 签收） |
+| D10 子进程 kill/restart（M7.9） | `test_d10_process_restart_integration.py` + `runtime/_d10_child.py`；Redis + `AS_RECOVERY_CALL_KEYS`（**非** maintainer 签收） |
+| E1 合约守卫（窄） | `test_e1_contract_resip_runtime.py`：S1 accept-all 200 + S2 404（**非** 完整 E1 签收） |
+| FORWARD UAC（产品 runtime） | `_resip_runtime`：Python `{"status":0,"route_target":...}` → 最小 UAC INVITE |
+| D10 诚实状态 | [`m7-d10-status-2026-10-05.md`](../reviews/m7-d10-status-2026-10-05.md) — **仍为不通过/未解决** |
+| M7.1–M7.6 工程裁决 | 各 slice review/adjudication `docs/reviews/m7-*-2026-10-05.md`；汇总 [`m7-d10-product-adjudication-2026-10-05.md`](../reviews/m7-d10-product-adjudication-2026-10-05.md) |
+| M7.8–M7.9 Redis/restart 工程裁决 | [`d10-redis-restart-review-2026-10-05.md`](../reviews/d10-redis-restart-review-2026-10-05.md)、[`d10-redis-restart-adjudication-2026-10-05.md`](../reviews/d10-redis-restart-adjudication-2026-10-05.md) |
+| M7 工程汇总 | [`m7-final-engineering-adjudication-2026-10-05.md`](../reviews/m7-final-engineering-adjudication-2026-10-05.md) — **非** 里程碑 exit |
+
+**明确不含**：完整 plan §5 D10 baseline（维护者签字、无 harness tag seam、统一产品进程模型）；REQ-NF-1 **签收**；D9 adapter API 终裁；完整 E1 S1–S11；fork/CANCEL race；M7 里程碑签字。
+
+**REQ-NF-1 / D10 验收清单（维护者签收，仍为未勾选）：**
+
+- [ ] Kill/restart **shipping** AS（`python -m as_platform`）with real Redis dialog record
+- [ ] Upstream in-dialog BYE → peer BYE → upstream 200 **without** harness-only tag rewrite
+- [ ] Maintainer sign-off recorded in `acceptance/report.md`
+
+可选 CI：`m7-recovery`（RecoveryTU integration）、`m7-two-leg`（两腿 486）；均在 `m2-platform-resip` 之后，native 未构建时 integration 用例 skip。
+
 ## reSIProcate 原生 DUM 探索性证据（2026-09-30；非验收）
 
 本节仅记录探索性 native smoke 与失败结果，不改变历史 M1/M2 验收结论，不构成产品验收、K2 放行或 K2 发布。
@@ -446,6 +506,20 @@ See [`m4b-5-2c-applied-transaction-review-2026-10-01.md`](../reviews/m4b-5-2c-ap
 - **API**：`POST/GET .../distribution`、`POST .../reports`、`POST .../rollback`（与 `test_fleet_api.py` / PG pipeline integration 一致）。
 - **前置**：Operations 登记 enabled 实例；health URL 配置正确时 batch report 触发服务端 probe。
 - **证据**：`node --check services/console/web/console.js`；`make gate`；浏览器 HTTPS 证据仍归 M4b-8 节。
+
+## M6 容量 harness smoke（2026-10-04；工程证据，NOT M6/O1 ACCEPTANCE）
+
+本节记录 M6 step 2：`as_load` 真实 UDP socket 与 native reSIProcate `resip_probe` external UAS 的一次 smoke 级联。**不是**容量测量、**不**发布 O1 数字、**不**构成 M6 关门或 REQ 验收；D8 仍开放。
+
+| 项 | 内容 |
+|---|---|
+| 被测对象 | reSIProcate 1.14.0 @ `632e215c`；`resip_probe --external S1`（native DUM UAS，动态 UDP 端口） |
+| Harness | `stack=resip-probe`，`stack-version=1.14.0-632e215c` |
+| 复现（脚本） | 仓库根：`bash testbed/load/scripts/m6-resip-probe-smoke.sh`（需已构建 probe：`make m2-native-build` 或 `AS_RESIP_PROBE_BIN`） |
+| 复现（pytest） | `uv run pytest testbed/load/tests/test_resip_probe_smoke.py -m integration -q`（probe 缺失则 skip） |
+| 评审 | [`m6-resip-probe-smoke-review-2026-10-04.md`](../reviews/m6-resip-probe-smoke-review-2026-10-04.md)：工程切片 **Pass**；维护者签字待补 |
+
+**边界**：单次 loopback 呼叫、无目标侧 CPU/FD/队列遥测、无饱和点观察；SIPp 3.6.0 smoke 仍仅为通用 UAS 互操作证据，与本次选定栈 smoke 并列，均不得推断 CPS/并发/时延上限。
 
 ## M4b-8 Dev HTTPS same-origin stack（runbook + engineering; NOT signed acceptance）
 

@@ -3,6 +3,20 @@
 本项目的所有重要变更都记录在这里。格式遵循 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)；
 版本遵循 SemVer，`./VERSION` 是产品 release 版本的唯一源头（ADR-0018）。
 
+## [0.2.0] - 未发布（Unreleased）
+
+### 新增（Added）
+
+- 产品 SIP runtime：`AS_SIP_BIND_ADDRESS` / `AS_SIP_ADVERTISED_ADDRESS` 与 `AS_TLS_*` / `AS_PEER_*` 环境变量接缝（`transport_env.py`）。
+- `platform/tests/native_extensions.py`：`AS_REQUIRE_NATIVE_EXTENSIONS=1` 时无 native 扩展则契约测 fail（**GitHub Actions workflow 未更新** — 需 `workflow` scope PAT 方可 push `.github/workflows/ci.yml`）。
+- Demo：故事 C M5 对账话术、故事 B 增加 S4/487 步骤、`run-all-automated` PASS/SKIP/FAIL 汇总。
+
+### 变更（Changed）
+
+- REQ-F-10：下游 408/480/486/503/504 透传至上游（`CallController` + native runtime）。
+- FORWARD 双腿建立后 native 回传真实 UAC checkpoint 字段；恢复 BYE 使用 checkpoint Contact/route_set。
+- `as_load` 支持 `--min-success-rate` / `--max-unresolved` 退出码策略。
+
 ## [0.1.0] - 未发布（Unreleased）
 
 ### 新增（Added）

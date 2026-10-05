@@ -298,6 +298,11 @@ S12 不属于 S1–S11 的 E1 门槛集；它用于验证 §4 E4 与 §3.1 H4。
      4. TCP/TLS 传输层为 reSIProcate 已知短板，生产环境需重点关注 —— 见 K8
      5. C++ 栈引入 C++ 工具链与调试成本 —— 团队需补充 C++ / gdb 能力
      6. probe 完成前 platform 内核的 SIP 适配层暂不开工（K2）
+   - **历史状态注记（2026-10-04）**：
+     1. 上述"M1 阶段补齐"的排期未按原文完成（M1 已关闭时 S12 未完成）。
+     2. S12（TLS 证书热轮换）当前仍为 open。
+     3. 后续 native probe 的 SIGHUP/cert-swap 证据属于 testbed-only smoke，不能单独关闭 E4，也不能视为 REQ-S-3 验收通过。
+     4. 当前状态与后续行动以 `docs/plan.md` 和 `docs/reviews/m2-native-probe-review-2026-10-04.md` 为准。
 6. **同步更新**：`docs/architecture/新系统整体架构.md` 决策 8、ADR 注册表、`docs/SIP_stack_selection.md` 结论节、`platform/pyproject.toml`。
 
 ---

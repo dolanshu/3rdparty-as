@@ -1,7 +1,8 @@
 # ADR-0022: reSIProcate B2BUA control layer
 
-- **Status**: proposed
+- **Status**: accepted
 - **Date**: 2026-09-30
+- **Amended**: 2026-10-05 — M2 product ingress/runtime (`ResipRuntimeListener`, ingress gate, `decide()` on the product UDP/TLS path) exists; **product `CallController` implementation begins in the M7 engineering slice** (`platform/src/as_platform/sip/call_controller.py`). Acceptance does **not** close D10, REQ-NF-1, D9 adapter API selection, or full E1.
 - **Decides**: §0 ledger item 8 — use reSIProcate `SipStack` for transport and transaction processing, DUM above it for UA dialog/`InviteSession` and session-level behavior, and add a product `CallController` above DUM for cross-leg B2BUA business control.
 - **回应 REQ**: REQ-F-1–REQ-F-5, REQ-F-8–REQ-F-11, REQ-NF-1–REQ-NF-4
 

@@ -448,6 +448,14 @@
 
 ---
 
+#### REQ-NF-15：三层 testbed 与真实 socket 容量研究
+
+**业务描述。** 见独立条文 [`req-nf-15-testbed-performance.md`](req-nf-15-testbed-performance.md)：testbed 分 contracts / simulators / load 三层；容量与 O1 研究仅允许真实 socket 压测路径；testbed 为研发资产且不是 v1 交付物。本 REQ 不规定对外 SLA 或营销容量承诺。
+
+**验收标准。** （验收标准见 ../acceptance/test-plan.md §2-REQ-NF-15）
+
+---
+
 ## 4. 安全需求（REQ-S-*）— 新增（推翻 requirements-m1-review Gap 3 裁决）
 
 **说明**：M1 阶段裁决"安全需求由 REQ-NF 隐含覆盖"（requirements-m1-review Gap 3），**现推翻该裁决**。AGENT.md §13 明确说"trunk 是不可信的"，安全语义不能隐含，必须 formalize 为可追溯可验收的 REQ-S-* 条目。

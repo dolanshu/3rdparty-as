@@ -15,6 +15,7 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
 .coverage
 htmlcov/
 
@@ -23,6 +24,7 @@ htmlcov/
 *.pcap
 *.pcapng
 artifacts/
+!docs/acceptance/artifacts/
 captures/
 
 # Local scratch (never committed)

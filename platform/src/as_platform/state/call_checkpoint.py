@@ -16,7 +16,8 @@ from typing import Literal, NoReturn
 
 from .store import StateStore, build_key
 
-_SCHEMA_VERSION = 1  # See ADR-0023
+_SCHEMA_VERSION = 2  # See ADR-0023 (v1 decode supported)
+_SCHEMA_VERSION_V1 = 1
 _MAX_EXTENSION_PAYLOAD_BYTES = 4 * 1024  # See ADR-0023
 _MAX_CHECKPOINT_BYTES = 16 * 1024  # See ADR-0023
 _MAX_CHECKPOINT_TTL_SECONDS = 30 * 24 * 60 * 60  # See ADR-0023
@@ -116,11 +117,19 @@ class CallStateCheckpoint:
     uas_leg: DialogLegCheckpoint
     uac_leg: DialogLegCheckpoint
     extensions: tuple[CheckpointHeaderExtension, ...] = ()
+    owner_generation: int = 0
+    committed: bool = True
 
     def __post_init__(self) -> None:
         """Validate the state and keep the two dialog legs independent."""
         if self.state != "established":
             raise ValueError("only established call checkpoints are supported")
+        if not isinstance(self.owner_generation, int) or isinstance(self.owner_generation, bool):
+            raise ValueError("owner_generation must be an integer")
+        if self.owner_generation < 0:
+            raise ValueError("owner_generation must be non-negative")
+        if not isinstance(self.committed, bool):
+            raise ValueError("committed must be a boolean")
         if not isinstance(self.uas_leg, DialogLegCheckpoint):
             raise ValueError("uas_leg must be a DialogLegCheckpoint")
         if not isinstance(self.uac_leg, DialogLegCheckpoint):
@@ -277,6 +286,8 @@ def _encode_checkpoint(checkpoint: CallStateCheckpoint) -> bytes:
         "uas_leg": _encode_leg(checkpoint.uas_leg),
         "uac_leg": _encode_leg(checkpoint.uac_leg),
         "extensions": _encode_extensions(checkpoint.extensions),
+        "owner_generation": checkpoint.owner_generation,
+        "committed": checkpoint.committed,
     }
     _preflight_json_size(
         payload,
@@ -388,14 +399,28 @@ def _decode_checkpoint(value: bytes) -> CallStateCheckpoint:
     except ValueError as error:
         raise ValueError("stored checkpoint must be valid UTF-8 JSON") from error
 
-    payload = _require_object(
-        raw,
-        {"schema_version", "state", "uas_leg", "uac_leg", "extensions"},
-        "checkpoint",
-    )
+    required_keys = {"schema_version", "state", "uas_leg", "uac_leg", "extensions"}
+    if not isinstance(raw, dict):
+        raise ValueError("checkpoint has an invalid structure")
+    extra_keys = set(raw) - required_keys - {"owner_generation", "committed"}
+    if extra_keys:
+        raise ValueError(f"checkpoint has unexpected keys: {sorted(extra_keys)}")
+    if not required_keys <= set(raw):
+        raise ValueError("checkpoint has an invalid structure")
+    payload = raw
     schema_version = _require_integer(payload["schema_version"], "schema_version")
-    if schema_version != _SCHEMA_VERSION:
+    if schema_version not in (_SCHEMA_VERSION, _SCHEMA_VERSION_V1):
         raise ValueError(f"unsupported checkpoint schema version: {schema_version}")
+    owner_generation = 0
+    committed = True
+    if schema_version >= _SCHEMA_VERSION:
+        owner_generation = _require_integer(payload.get("owner_generation", 0), "owner_generation")
+        if owner_generation < 0:
+            raise ValueError("owner_generation must be non-negative")
+        committed_value = payload.get("committed", False)
+        if not isinstance(committed_value, bool):
+            raise ValueError("committed must be a boolean")
+        committed = committed_value
     state = _require_text(payload["state"], "state")
     if state != "established":
         raise ValueError(f"unsupported checkpoint state: {state}")
@@ -409,6 +434,8 @@ def _decode_checkpoint(value: bytes) -> CallStateCheckpoint:
         uas_leg=_decode_leg(payload["uas_leg"], "uas_leg"),
         uac_leg=_decode_leg(payload["uac_leg"], "uac_leg"),
         extensions=extensions,
+        owner_generation=owner_generation,
+        committed=committed,
     )
 
 
@@ -495,3 +522,107 @@ class CallStateCheckpointRepository:
         checkpoint = _decode_checkpoint(value)
         self._validate_extensions(checkpoint)
         return checkpoint
+
+    def save_if_generation(
+        self,
+        case: str,
+        call_key: str,
+        checkpoint: CallStateCheckpoint,
+        *,
+        expected_generation: int | None,
+    ) -> bool:
+        """Compare-and-swap save on ``owner_generation`` (ADR-0023 fencing seam).
+
+        Returns ``True`` when the write succeeds. When ``expected_generation`` is
+        ``None``, the key must be absent. Otherwise the stored generation must match.
+        """
+        _require_text(case, "case")
+        _require_text(call_key, "call_key")
+        if expected_generation is not None and (
+            not isinstance(expected_generation, int)
+            or isinstance(expected_generation, bool)
+            or expected_generation < 0
+        ):
+            raise ValueError("expected_generation must be a non-negative integer or None")
+        existing = self.load(case=case, call_key=call_key)
+        if expected_generation is None:
+            if existing is not None:
+                return False
+        elif existing is None or existing.owner_generation != expected_generation:
+            return False
+        self.save(case=case, call_key=call_key, checkpoint=checkpoint)
+        return True
+
+
+@dataclass(frozen=True, slots=True)
+class CallCheckpointCommit:
+    """Owner generation bump and durable-commit gate before native SIP side effects.
+
+    See ADR-0023: dependent SIP side effects require ``committed=True`` on the
+    checkpoint record that was durably acknowledged in Redis.
+    """
+
+    checkpoint: CallStateCheckpoint
+
+    def with_bumped_generation(self) -> CallStateCheckpoint:
+        """Return a new checkpoint with generation incremented and ``committed=False``."""
+        return CallStateCheckpoint(
+            state=self.checkpoint.state,
+            uas_leg=self.checkpoint.uas_leg,
+            uac_leg=self.checkpoint.uac_leg,
+            extensions=self.checkpoint.extensions,
+            owner_generation=self.checkpoint.owner_generation + 1,
+            committed=False,
+        )
+
+    def mark_committed(self) -> CallStateCheckpoint:
+        """Return a checkpoint marked committed after a successful durable write."""
+        return CallStateCheckpoint(
+            state=self.checkpoint.state,
+            uas_leg=self.checkpoint.uas_leg,
+            uac_leg=self.checkpoint.uac_leg,
+            extensions=self.checkpoint.extensions,
+            owner_generation=self.checkpoint.owner_generation,
+            committed=True,
+        )
+
+    def require_committed_before_side_effect(self) -> None:
+        """Fail closed when native SIP side effects would depend on an uncommitted record."""
+        if not self.checkpoint.committed:
+            raise RuntimeError(
+                "checkpoint is not committed; durable write must complete before SIP side effects"
+            )
+
+
+class CallCheckpointLifecycle:
+    """TTL renewal and terminal cleanup for active call checkpoints."""
+
+    def __init__(self, repository: CallStateCheckpointRepository) -> None:
+        """Wrap a repository for TTL renew and terminal delete helpers."""
+        self._repository = repository
+        self._store = repository._store
+        self._default_ttl = repository._ttl_seconds
+
+    def renew(self, case: str, call_key: str, ttl_seconds: int | None = None) -> bool:
+        """Re-arm TTL for an existing checkpoint key; returns ``False`` when absent."""
+        _require_text(case, "case")
+        _require_text(call_key, "call_key")
+        key = build_key(case, "call", call_key)
+        if self._store.get(key) is None:
+            return False
+        ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl
+        if (
+            not isinstance(ttl, int)
+            or isinstance(ttl, bool)
+            or ttl <= 0
+            or ttl > _MAX_CHECKPOINT_TTL_SECONDS
+        ):
+            raise ValueError("ttl_seconds must be a positive integer no greater than 2592000")
+        self._store.expire(key, float(ttl))
+        return True
+
+    def mark_terminal_and_delete(self, case: str, call_key: str) -> None:
+        """Remove the checkpoint after the call reaches a terminal state."""
+        _require_text(case, "case")
+        _require_text(call_key, "call_key")
+        self._store.delete(build_key(case, "call", call_key))

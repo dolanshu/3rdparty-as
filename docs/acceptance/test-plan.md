@@ -300,6 +300,13 @@ chart 固定的 redirect annotations 只作用于 chart Ingress 对象，不能�
   - 证书到期 30 天内
 - [ ] 手动触发上述任一条件，断言 Alertmanager 正确发出告警（通知通道待定，M2 冻结）
 
+### REQ-NF-15 验收标准
+- [ ] PRD 与 [`req-nf-15-testbed-performance.md`](../requirements/req-nf-15-testbed-performance.md) 存在且 ADR-0014 `回应 REQ` 指向 REQ-NF-15（D8 追溯）
+- [ ] `testbed/load/` harness 经真实 UDP socket 驱动被测栈（`as_load` integration 测试在 CI `integration` 层通过）
+- [ ] 容量研究证据包含 `summary.json`（含 `c6_windows` 1s/100s）与目标侧 `resources.json` 快照；禁止用驱动回调冒充容量测量（ADR-0014）
+- [ ] M6 O1 内部测量报告记录 dev-host 正式批次与局限；**不**将报告数字作为 SLA 或对外营销容量
+- [ ] 生产集群多副本饱和点、HPA 阈值与 `performance` marker 阻塞 CI —— **M8** 或维护者单独裁决前保持 open
+
 ---
 
 ## §3 安全需求（REQ-S-*）
