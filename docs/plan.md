@@ -118,7 +118,7 @@
 
 | 项 | 记录 |
 |---|---|
-| 状态 | **已合入** — `master` @ `764aa75`（2026-10-06）；详见 [`handoff/2026-10-06-callload-merge-to-master.md`](handoff/2026-10-06-callload-merge-to-master.md) |
+| 状态 | **已合入** — `master` @ `139d299`（2026-10-06，squash；**无** workflow 变更）；详见 [`handoff/2026-10-06-callload-merge-to-master.md`](handoff/2026-10-06-callload-merge-to-master.md) |
 | 合入后入口 | **M8 发布候选**（[`handoff/2026-10-05-milestones-engineering-complete.md`](handoff/2026-10-05-milestones-engineering-complete.md)）；**不**自动闭合 M2/M6/M7 维护者签收 |
 | Demo 口径 | 故事 C 仍受 F10 约束（[`pre-m8-demo-review-plan.md`](handoff/pre-m8-demo-review-plan.md)） |
 

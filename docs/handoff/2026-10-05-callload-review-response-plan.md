@@ -119,7 +119,7 @@
 | F1 | P0 | 已修复 | agent | `transport_env` + `runtime_module.cxx` |
 | F7 | P0 | 已修复 | agent | `test_transport_env.py` |
 | F10 | P0 | 已修复 | agent | story-c + pre-m8 §故事 C |
-| F9 | P1 | 已修复 | agent | CI `m2-platform-resip` + `native_extensions.py` |
+| F9 | P1 | 部分修复 | agent | `native_extensions.py`；**blocking CI job 未上 origin**（需 PAT `workflow` scope） |
 | F4 | P1 | 已修复 | agent | `test_call_controller.py` |
 | F3 | P1 | 已修复 | agent | FORWARD `uac_leg` native 回调 |
 | F2 | P1 | 已修复 | agent | `recovery_module.cxx` |

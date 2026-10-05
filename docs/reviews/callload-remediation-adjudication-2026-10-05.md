@@ -30,4 +30,4 @@
 | 工程修复（上表） | 已记录；F8 开放、F6 部分 |
 | F9 CI workflow | **未 push** — `.github/workflows/ci.yml` 保持 `origin/master`；blocking job 待 PAT `workflow` scope |
 | 维护者 merge 清单 | [`../handoff/2026-10-06-callload-merge-to-master.md`](../handoff/2026-10-06-callload-merge-to-master.md) |
-| 合入 master @ SHA | **`764aa75`**（2026-10-06；工程合入 `4b4566b`） |
+| 合入 master @ SHA | **`139d299`**（2026-10-06；squash，不含 `.github/workflows/ci.yml`） |

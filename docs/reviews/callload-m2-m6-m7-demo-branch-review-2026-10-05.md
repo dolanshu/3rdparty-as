@@ -11,7 +11,7 @@
 | Gap 状态 | 18 条：**已修复 15**；**部分修复 1**（F6）；**未闭合 1**（F8）；**维护者项 1**（F11，非工程队列）。 |
 | 门禁状态 | 本机实测 `make gate`（修复后）：**964 passed, 2 skipped**（仅剩 derived-baseline 待 M2 probe）；E1/恢复契约在 CI `m2-platform-resip` 下 `AS_REQUIRE_NATIVE_EXTENSIONS=1` 阻塞。 |
 | 主干分歧 | `master` 领先本分支 1 个提交 `04afc5a`（M5 全链评审，结论「不通过」）；**F10 内容面**已在 pre-m8 / story-c 收窄；merge 前须 `merge master` 拉入该评审文件（见 [`../handoff/2026-10-06-callload-merge-to-master.md`](../handoff/2026-10-06-callload-merge-to-master.md)）。 |
-| 合入 master | **已完成（2026-10-06）** — `master` @ `764aa75`；见 [`../handoff/2026-10-06-callload-merge-to-master.md`](../handoff/2026-10-06-callload-merge-to-master.md)。**不等于**里程碑签收。 |
+| 合入 master | **已完成（2026-10-06）** — `master` @ `139d299`；见 [`../handoff/2026-10-06-callload-merge-to-master.md`](../handoff/2026-10-06-callload-merge-to-master.md)。**不等于**里程碑签收。 |
 | 维护者签收 | 无。本记录不构成 M2/M6/M7 里程碑退出，也不构成 REQ/test-plan 验收。 |
 
 ---

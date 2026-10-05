@@ -1,6 +1,6 @@
 # callload → master 合并准备（2026-10-06）
 
-> **状态（2026-10-06）**：**已合入** — `master` @ `764aa75`（工程 fast-forward `4b4566b`）；见 §6 执行记录。  
+> **状态（2026-10-06）**：**已合入** — `master` @ `139d299`（squash；**未**变更 `.github/workflows/ci.yml`）；见 §6 执行记录。  
 > **范围**：维护者将 `callload` 工程切片合入 `master` 前的检查清单与口径（历史记录保留）。  
 > **依据**：[`2026-10-05-callload-review-response-plan.md`](2026-10-05-callload-review-response-plan.md)、[`callload-remediation-adjudication-2026-10-05.md`](../reviews/callload-remediation-adjudication-2026-10-05.md)、[`cross-milestone-final-adjudication-2026-10-05.md`](../reviews/cross-milestone-final-adjudication-2026-10-05.md)。
 
