@@ -15,7 +15,7 @@
 | `make gate` on `callload` | 964 passed, 2 skipped |
 | `merge callload` → `master` | **fast-forward** → `4b4566b` |
 | 收尾 `764aa75` | CI 仅 `master` 触发 + 合入记录文档 |
-| `origin` push | **未执行** — 维护者按需 `git push origin master` |
+| `origin` push | 首次因 PAT 无 **`workflow` scope** 被拒；**已去掉** `.github/workflows/ci.yml` 变更后 squash 重推 |
 
 ## 6b. 维护者签收（可选补签）
 

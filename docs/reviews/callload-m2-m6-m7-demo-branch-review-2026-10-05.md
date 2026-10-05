@@ -220,7 +220,7 @@ SKIP 原因分布：
 | F6 | 本评审；ingress/resip_runtime | connection 只注册不注销 | 采纳 | 上限 + 终止注销 | **部分修复** | 缺 transport close 回调 | major |
 | F7 | 本评审；sip_stack_service | from_env 不加载 TLS/peer | 采纳 | `transport_env.py` | **已修复** | `test_transport_env.py` | major |
 | F8 | 本评审；runtime_module.cxx | cout/cerr 非结构化 | 采纳 | Python JSON 回调或宏 | **未闭合** | M8 前 | major |
-| F9 | 本评审；CI/gate skip | native 不测仍绿 | 采纳 | CI job + `AS_REQUIRE_NATIVE_EXTENSIONS` | **已修复** | `.github/workflows/ci.yml` | major |
+| F9 | 本评审；CI/gate skip | native 不测仍绿 | 采纳 | CI job + `AS_REQUIRE_NATIVE_EXTENSIONS` | **部分修复** | `native_extensions.py`；origin workflow 未变 | major |
 | F10 | 本评审；story-c / M5 评审 | Demo 与 M5 未对账 | 采纳（内容） | 故事 C L1 话术 | **已修复** | pre-m8 + story-c 横幅 | major |
 | F11 | 本评审；提交粒度 | Conventional Commits | 维护者 | 历史不重组 | **维护者** | — | major |
 | F12 | 本评审；as_load | 退出码误导 | 采纳 | `--min-success-rate` 等 | **已修复** | `as_load/__main__.py` | minor |
