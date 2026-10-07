@@ -119,11 +119,17 @@ name = "as-simulators"
 version = "0.1.0"
 source = { editable = "testbed/simulators" }
 dependencies = [
+    { name = "as-load" },
     { name = "as-platform" },
+    { name = "as-translation" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "as-platform", editable = "platform" }]
+requires-dist = [
+    { name = "as-load", editable = "testbed/load" },
+    { name = "as-platform", editable = "platform" },
+    { name = "as-translation", editable = "apps/translation" },
+]
 
 [[package]]
 name = "as-translation"

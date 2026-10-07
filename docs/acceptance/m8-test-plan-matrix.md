@@ -62,7 +62,7 @@
 
 | req_id | test_plan_ref | milestone | phase | evidence | status | signed_by |
 |---|---|---|---|---|---|---|
-| REQ-NF-1 | §2 kill 重启状态不丢 | M7 | C/D | `test_d10_product_recovery_integration.py` 1 passed（ACK-established-dialog 工程切片，非 REQ 签收）；`test_d10_req_nf1_harness_integration.py` 工程 harness 存在。plan §5.2 D10："REQ-NF-1 验收 checkbox 仍 M8 维护者（K8s live baseline）"。live 证据归 Phase D（D-2：`docs/acceptance/artifacts/m8/<date>/` 待填） | blocked | 维护者待签 |
+| REQ-NF-1 | §2 kill 重启状态不丢 | M7 | C/D | 工程 harness 见 `test_d10_product_recovery_integration.py`（1 passed）等。客户 K8s live 为 **restriction**（2026-10-07，Close 前不测客户集群）：[`m8-environment-evidence.md`](m8-environment-evidence.md) D-2。不能签 pass | blocked | 维护者待签 |
 | REQ-NF-2 | §2 双 Deployment 隔离 | 横切 | C | 架构 ADR-0002（每用例独立进程/Deployment）；`make chart-check` OK（模板形状）。live kill translation 不影响 anti-fraud 验证待 K8s 环境（Phase D），不签 pass | open | 维护者待签 |
 | REQ-NF-3 | §2 HPA 扩缩 + 容量数字 | M5 | B/C | **Blocked**：test-plan 带固定容量数字（500 active_calls 阈值、1000 并发、3→≥5 副本）与 AGENT §2"M6 前不发布容量数字"冲突。指到 plan §5.1 **O1**：维护者目标裁决仍 open，M6 O1 报告为非 SLA 实测。待维护者改写验收口径或标 N/A | blocked | 维护者待签 |
 | REQ-NF-4 | §2 滚动升级零丢失 | M5 | C/D | 内核 5.5 draining 单测在 gate 978 passed 内；M7 进程壳 harness 为工程切片。**带真实 SIP 话务**的滚动验证需 live 环境，归 Phase D（待填）；未验证前不签 pass | blocked | 维护者待签 |
@@ -83,8 +83,8 @@
 | req_id | test_plan_ref | milestone | phase | evidence | status | signed_by |
 |---|---|---|---|---|---|---|
 | REQ-S-1 | §3 白名单 | 横切 | C | 白名单逻辑存在（`platform/src/as_platform/sip/ingress.py` 等含 allowlist/peer 引用的文件，gate 978 passed 覆盖）；白名单变更走审批（F-14 联动）。REQ 签收待 M8 评审（M2 REQ-S-* 工程覆盖 + 维护者 M2 退出） | open | 维护者待签 |
-| REQ-S-2 | §3 AS↔S-SBC TLS + 运营商 PKI | M2 | C/D | TLS 相关集成测试存在（`test_resip_runtime_tls_integration.py` 等在 gate 内）；**运营商 PKI 签发链验证 + 明文拒绝 live 证明**无环境。指到 Phase D（D-1：`docs/acceptance/artifacts/m8/<date>/req-s-*/` 脱敏待填） | blocked | 维护者待签 |
-| REQ-S-3 | §3 证书轮换无损 | M2 | C/D | 同 S-2：live 轮换窗口验证需运营商 PKI 环境。指到 Phase D（D-1，待填）；新旧并存/旧证拒绝/无重启三条均未取证，不签 pass | blocked | 维护者待签 |
+| REQ-S-2 | §3 AS↔S-SBC TLS + 运营商 PKI | M2 | C/D | 本地 TLS 工程测试在 gate 内。运营商 PKI + 外网 S-SBC 为 **restriction**（2026-10-07，Close 前不联调）：[`m8-environment-evidence.md`](m8-environment-evidence.md) D-1。不能签 pass | blocked | 维护者待签 |
+| REQ-S-3 | §3 证书轮换无损 | M2 | C/D | 真实对端上的运营商证书轮换窗口为 **restriction**（2026-10-07，同 D-1）。测试证书上的轮换不代替本条。不能签 pass | blocked | 维护者待签 |
 | REQ-S-4 | §3 RBAC + 审计不可篡改 | M4/M4b | C | config-service 审计/鉴权套件（`test_audit_store.py`、`test_auth.py` 等）在 `make gate` 978 passed 内；M4b-6b 为工程切片。plan §5.4 明确 REQ-S-4 正式全绿归 M8 或维护者单独签收，待签 | open | 维护者待签 |
 
 ## §4 治理签收（REQ-G-*）
@@ -113,8 +113,8 @@
 
 | req_id | test_plan_ref | milestone | phase | evidence | status | signed_by |
 |---|---|---|---|---|---|---|
-| D12/O5-HA | §2 NF-1/NF-9/NF-10（生产 Redis/PG HA） | M5 | B/C | ADR-0026 accepted；Helm `stateStores` 骨架已落库（`make chart-check` OK）。生产 HA（Sentinel/PG 流复制+PITR）签字为**有条件范围**，待 Phase B 维护者划定（plan §4 B-1…B-3 + §5 O5/D12）；未覆盖写 defer | open | 维护者待签 |
-| ADR-0008-演练 | 架构 ADR-0008 跨站点 | — | C/D/E | 站内零单点设计已接受；跨站点切换**演练**无证据。按维护者意见取证或 defer：M8 总审 defer 须维护者授权并写入 plan §5 行或 ADR（plan §5 ADR-0008 行） | blocked | 维护者待签 |
+| D12/O5-HA | §2 NF-1/NF-9/NF-10（生产 Redis/PG HA） | M5 | B/C | ADR-0026 accepted；Helm `stateStores` 骨架已落库。**生产** Redis/PG HA 为 **restriction**（2026-10-07）：Close 前无客户生产拓扑。kind bundled state 不是本条。不能签 pass | open | 维护者待签 |
+| ADR-0008-演练 | 架构 ADR-0008 跨站点 | — | C/D/E | 跨站点切换演练为 **restriction**（2026-10-07）：Close 前无客户/生产双站点。不能签 pass。见 [`m8-environment-evidence.md`](m8-environment-evidence.md) | blocked | 维护者待签 |
 | D6-testbed验收 | test-plan 外（D6） | — | D | plan §5.2 D6：testbed 是否须 v1 支持客户验收，架构推迟到 v1.1，待维护者拍板（v1 vs v1.1）。归 Phase D（D-3） | blocked | 维护者待签 |
 | NA-主叫/正则 | §1.4 F-12 四维 UI（主叫/正则） | — | — | plan §5.4：属 **v1.1**，M4 live 仅被叫+前缀。M8 不验收，永不记 pass | n-a | 维护者待签 |
 | NA-PM/AM/UM | §2 NF-13/NF-14 外 | — | — | plan §5.3：完整产品需求未补齐，M8 仅含 REQ-NF-13/14 工程切片。M8 不验收 | n-a | 维护者待签 |
@@ -125,7 +125,7 @@
 
 - pass：9（NF-6、NF-8、NF-11、NF-12、G-1、G-2、G-3、G-4、KERNEL-§5；其中 G-1/G-2/G-3 为 pass-机制，逐变更评审仍需维护者）
 - fail：0
-- blocked：12（F-13、5.4-F-13、F-15、5.4-F-15真AS、NF-1、NF-3、NF-4、NF-7、S-2、S-3、ADR-0008-演练、D6-testbed验收；每项均已指到 plan §5 编号/O1/v1.1/Phase D）
+- blocked：12（F-13、5.4-F-13、F-15、5.4-F-15真AS、NF-1、NF-3、NF-4、NF-7、S-2、S-3、ADR-0008-演练、D6-testbed验收）。其中 NF-1、S-2、S-3、ADR-0008-演练于 2026-10-07 标为 Close 前 **restriction**（真实客户网络不做），状态词仍是 blocked，不能签 pass。D12/O5-HA 仍计在 open，同样是 restriction。
 - n-a：4（主叫/正则 v1.1、PM/AM/UM、D1、D10 极端扩展；均附理由，永不记 pass）
 - open：24（F-1/2/3/4/5/6/7/8/9/10/11/12/14/16、NF-2/5/9/10/13/14/15、S-1/S-4、D12/O5-HA；每项均有工程证据 + 待维护者 M8 退出评审签收的明确理由，无未解释 open）
 

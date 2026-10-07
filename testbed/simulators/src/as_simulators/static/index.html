@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>IMS 模拟平台</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header>
+    <h1>IMS 模拟平台</h1>
+    <p class="banner">非运营商 PKI</p>
+    <p class="note">测试工具不登录。本页不挂产品控制台，也不使用产品登录会话。</p>
+  </header>
+  <main>
+    <form id="run">
+      <fieldset>
+        <legend>呼叫类型</legend>
+        <div id="scenarios"></div>
+      </fieldset>
+      <label>传输
+        <select name="transport">
+          <option value="udp">UDP</option>
+          <option value="tcp">TCP</option>
+          <option value="tls">TLS</option>
+        </select>
+      </label>
+      <label>目标 CPS <input name="cps" type="number" min="0.1" step="0.1" value="1"></label>
+      <label>持续时间（秒） <input name="duration_seconds" type="number" min="0.1" step="0.1" value="2"></label>
+      <label>保持时间（秒） <input name="hold_seconds" type="number" min="0" step="0.1" value="2"></label>
+      <label>最大并发呼叫 <input name="workers" type="number" min="1" step="1" value="32"></label>
+      <p>
+        <button type="submit">启动</button>
+        <button type="button" id="stop">停止</button>
+      </p>
+    </form>
+    <section>
+      <h2>当次结果</h2>
+      <p id="capacity" class="note"></p>
+      <p id="status"></p>
+      <p id="request" class="note"></p>
+      <table>
+        <thead>
+          <tr>
+            <th>类型</th>
+            <th>发出</th>
+            <th>接通</th>
+            <th>失败</th>
+            <th>响应码</th>
+            <th>建立时延 p50 (ms)</th>
+            <th>建立时延 p95 (ms)</th>
+          </tr>
+        </thead>
+        <tbody id="buckets"></tbody>
+        <tfoot id="total"></tfoot>
+      </table>
+      <p id="extra"></p>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

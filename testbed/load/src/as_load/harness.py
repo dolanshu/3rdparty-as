@@ -16,7 +16,6 @@ import math
 import os
 import platform
 import resource
-import socket
 import subprocess
 import threading
 import time
@@ -27,6 +26,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from as_load.sip_client import SipClient
 
 HARNESS_VERSION = "0.1.0"
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -56,6 +57,9 @@ class LoadConfig:
     stack_name: str
     stack_version: str
     output_dir: Path
+    transport: str = "udp"
+    tls_ca_file: Path | None = None
+    scenarios: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate run inputs before any socket activity begins."""
@@ -80,6 +84,15 @@ class LoadConfig:
             raise ValueError("stack_name must identify the target stack")
         if not self.stack_version.strip():
             raise ValueError("stack_version must identify the target version")
+        if self.transport not in {"udp", "tcp", "tls"}:
+            raise ValueError("transport must be udp, tcp or tls")
+        if self.transport == "tls" and self.tls_ca_file is None:
+            raise ValueError("tls transport requires tls_ca_file")
+        if self.scenarios:
+            from as_load.scenarios import scenario_by_id
+
+            for scenario_id in self.scenarios:
+                scenario_by_id(scenario_id)
 
 
 class _Evidence:
@@ -99,6 +112,10 @@ class _Evidence:
         self.active_sessions = 0
         self.peak_sessions = 0
         self.unresolved_sessions = 0
+        self.scenario_invites: Counter[str] = Counter()
+        self.scenario_finals: dict[str, Counter[str]] = {}
+        self.scenario_latencies: dict[str, list[float]] = {}
+        self.response_codes: Counter[str] = Counter()
 
     def record(
         self, kind: str, *, attempt_id: str, payload: bytes | None = None, **fields: Any
@@ -163,12 +180,31 @@ class _Evidence:
         with self._lock:
             self.dialog_ack_sent_ns.append(sent_ns)
 
+    def note_scenario_invite(self, scenario_id: str | None) -> None:
+        """Count one transmitted INVITE toward a call-type bucket."""
+        if scenario_id is None:
+            return
+        with self._lock:
+            self.scenario_invites[scenario_id] += 1
+
+    def note_final(self, scenario_id: str | None, status: int, latency_ms: float | None) -> None:
+        """Count one final INVITE response. Latency is recorded only for 2xx."""
+        code = str(status)
+        with self._lock:
+            self.response_codes[code] += 1
+            if scenario_id is None:
+                return
+            bucket = self.scenario_finals.setdefault(scenario_id, Counter())
+            bucket[code] += 1
+            if latency_ms is not None:
+                self.scenario_latencies.setdefault(scenario_id, []).append(latency_ms)
+
 
 class UnsupportedDialogTargetError(ValueError):
     """Raised when dialog routing cannot be safely derived from SIP headers."""
 
 
-def run_load(config: LoadConfig) -> dict[str, Any]:
+def run_load(config: LoadConfig, stop_event: threading.Event | None = None) -> dict[str, Any]:
     """Run the configured UDP SIP load and write raw and derived evidence.
 
     Every scheduled call is retained in the event log, including calls dropped
@@ -189,6 +225,8 @@ def run_load(config: LoadConfig) -> dict[str, Any]:
         evidence = _Evidence(stream, origin_ns)
         with ThreadPoolExecutor(max_workers=config.workers, thread_name_prefix="as-load") as pool:
             for index in range(planned_attempts):
+                if stop_event is not None and stop_event.is_set():
+                    break
                 attempt_id = f"{index + 1:08d}"
                 scheduled_ns = origin_ns + index * interval_ns
                 remaining = (scheduled_ns - time.perf_counter_ns()) / 1_000_000_000
@@ -231,23 +269,40 @@ def _run_call(
     attempt_id: str,
     workers: threading.BoundedSemaphore,
 ) -> None:
-    """Run one INVITE / ACK / hold / BYE exchange using a connected UDP socket."""
+    """Run one INVITE / ACK / hold / BYE exchange on the configured transport.
+
+    The INVITE is written once. This function does not retransmit.
+    """
+    from as_load.scenarios import scenario_for_attempt
+    from as_load.sip_client import open_client
+
     call_id = f"{uuid.uuid4()}@as-load"
     local_tag = uuid.uuid4().hex[:16]
     branch = f"z9hG4bK{uuid.uuid4().hex}"
     cseq = 1
     uri_host = f"[{config.host}]" if ":" in config.host else config.host
-    request_uri = f"sip:load@{uri_host}:{config.port}"
+    scenario = scenario_for_attempt(config.scenarios, int(attempt_id) - 1)
+    called = scenario.called_user if scenario is not None else "load"
+    calling = scenario.calling_user if scenario is not None else "load"
+    scenario_id = None if scenario is None else scenario.scenario_id
+    request_uri = f"sip:{called}@{uri_host}:{config.port}"
+    pai = None if scenario is None else f"<sip:{calling}@localhost>"
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
-            client.settimeout(config.timeout_seconds)
-            client.connect((config.host, config.port))
-            local_host, local_port = client.getsockname()[:2]
-            local_contact = f"<sip:load@{local_host}:{local_port};transport=udp>"
-            via = f"SIP/2.0/UDP {local_host}:{local_port};branch={branch};rport"
+        client = open_client(
+            host=config.host,
+            port=config.port,
+            transport=config.transport,
+            timeout=config.timeout_seconds,
+            tls_ca_file=config.tls_ca_file,
+        )
+        try:
+            local_host, local_port = client.local_address()
+            token = {"udp": "UDP", "tcp": "TCP", "tls": "TLS"}[config.transport]
+            local_contact = f"<sip:load@{local_host}:{local_port};transport={config.transport}>"
+            via = f"SIP/2.0/{token} {local_host}:{local_port};branch={branch};rport"
             _, request_sent_by = _parse_top_via_value(via)
-            from_value = f"<sip:load@localhost>;tag={local_tag}"
-            to_value = f"<sip:load@{uri_host}>"
+            from_value = f"<sip:{calling}@localhost>;tag={local_tag}"
+            to_value = f"<sip:{called}@{uri_host}>"
             invite = _request(
                 "INVITE",
                 request_uri,
@@ -259,8 +314,10 @@ def _run_call(
                 SDP_OFFER,
                 branch=branch,
                 contact=local_contact,
+                pai=pai,
             )
             invite_sent_ns = _send(client, invite, evidence, attempt_id, "INVITE")
+            evidence.note_scenario_invite(scenario_id)
             final = _wait_for_response(
                 client,
                 evidence,
@@ -277,6 +334,7 @@ def _run_call(
                 return
             status, response_headers, final_response_ns = final
             if not 200 <= status < 300:
+                evidence.note_final(scenario_id, status, None)
                 transaction_ack = _request(
                     "ACK",
                     request_uri,
@@ -294,6 +352,7 @@ def _run_call(
                 )
                 return
             latency_ms = (final_response_ns - invite_sent_ns) / 1_000_000
+            evidence.note_final(scenario_id, status, latency_ms)
             # See ADR-0014: count establishment at correlated INVITE 2xx reception on the wire.
             evidence.record_established(attempt_id, latency_ms, final_response_ns)
             unresolved_recorded = False
@@ -406,6 +465,8 @@ def _run_call(
                     f"bye_sip_{bye_response[0]}",
                     detail="dialog end state is unknown without a correlated 2xx BYE",
                 )
+        finally:
+            client.close()
     except (OSError, ValueError) as error:
         evidence.record_error(attempt_id, "socket_or_protocol", f"{type(error).__name__}: {error}")
     finally:
@@ -425,6 +486,7 @@ def _request(
     branch: str | None = None,
     contact: str | None = None,
     route_set: tuple[str, ...] = (),
+    pai: str | None = None,
 ) -> bytes:
     """Build a minimal SIP request; ACK to a 2xx gets a fresh branch."""
     request_branch = branch or f"z9hG4bK{uuid.uuid4().hex}"
@@ -436,16 +498,19 @@ def _request(
         f"To: {to_value}\r\n"
         f"Call-ID: {call_id}\r\n"
         f"CSeq: {cseq} {method}\r\n"
+        + (f"P-Asserted-Identity: {pai}\r\n" if pai else "")
         + (f"Contact: {contact}\r\n" if contact is not None else "")
         + "".join(f"Route: {route}\r\n" for route in route_set)
-        + "Content-Type: application/sdp\r\n"
+        # An empty ACK/BYE must not claim application/sdp. The product profile
+        # only accepts that type on INVITE, and answers other methods with 415.
+        + ("Content-Type: application/sdp\r\n" if body else "")
         + f"Content-Length: {len(body)}\r\n\r\n"
     ).encode("ascii")
     return headers + body
 
 
 def _send(
-    client: socket.socket,
+    client: SipClient,
     payload: bytes,
     evidence: _Evidence,
     attempt_id: str,
@@ -464,7 +529,7 @@ def _send(
 
 
 def _wait_for_response(
-    client: socket.socket,
+    client: SipClient,
     evidence: _Evidence,
     attempt_id: str,
     call_id: str,
@@ -476,7 +541,7 @@ def _wait_for_response(
     """Receive until a matching final response arrives or socket timeout expires."""
     while True:
         try:
-            payload = client.recv(MAX_DATAGRAM_BYTES)
+            payload = client.recv()
         except TimeoutError:
             return None
         received_ns = evidence.record("datagram_received", attempt_id=attempt_id, payload=payload)
@@ -645,7 +710,7 @@ def _parse_top_via_value(top_via: str) -> tuple[str, tuple[str, int | None]]:
     if len(tokens) != 2:
         raise ValueError("top Via transport or sent-by is malformed")
     protocol, sent_by_text = tokens
-    if protocol.upper() != "SIP/2.0/UDP":
+    if protocol.upper() not in {"SIP/2.0/UDP", "SIP/2.0/TCP", "SIP/2.0/TLS"}:
         raise ValueError("top Via protocol is malformed")
     sent_by = _parse_sent_by(sent_by_text)
 
@@ -771,9 +836,16 @@ def _parse_address_uri(value: str, header_name: str) -> str:
 
 
 def _parse_sip_uri(uri: str) -> tuple[str, int, dict[str, str | None]]:
-    if not uri.lower().startswith("sip:") or any(character.isspace() for character in uri):
-        raise ValueError("only valid SIP/UDP dialog URIs are supported")
-    address = uri[4:].split("?", 1)[0]
+    lowered = uri.lower()
+    if lowered.startswith("sips:"):
+        address = uri[5:]
+    elif lowered.startswith("sip:"):
+        address = uri[4:]
+    else:
+        raise ValueError("only sip: and sips: dialog URIs are supported")
+    if any(character.isspace() for character in uri):
+        raise ValueError("only sip: and sips: dialog URIs are supported")
+    address = address.split("?", 1)[0]
     authority, separator, parameter_text = address.partition(";")
     host_port = authority.rsplit("@", 1)[-1]
     if host_port.startswith("["):
@@ -806,7 +878,7 @@ def _parse_sip_uri(uri: str) -> tuple[str, int, dict[str, str | None]]:
             if not name:
                 raise ValueError("invalid SIP URI parameter")
             parameters[name.lower()] = parameter_value.lower() if equals else None
-    if parameters.get("transport") not in (None, "udp"):
+    if parameters.get("transport") not in (None, "udp", "tcp", "tls"):
         raise ValueError("dialog URI requests an unsupported transport")
     unsupported_parameters = sorted(set(parameters).difference({"transport", "lr"}))
     if unsupported_parameters:
@@ -819,7 +891,7 @@ def _parse_sip_uri(uri: str) -> tuple[str, int, dict[str, str | None]]:
 def _dialog_routing(
     remote_target: str, route_set: tuple[str, ...]
 ) -> tuple[str, tuple[str, ...], str]:
-    """Apply RFC dialog routing for the harness's supported SIP/UDP URI subset."""
+    """Apply RFC dialog routing for sip: and sips: URIs this harness can send."""
     _parse_sip_uri(remote_target)
     if not route_set:
         return remote_target, (), remote_target
@@ -838,12 +910,9 @@ def _dialog_routing(
     return first_route_uri, strict_routes, first_route_uri
 
 
-def _connect_uri(client: socket.socket, uri: str) -> None:
+def _connect_uri(client: SipClient, uri: str) -> None:
     host, port, _ = _parse_sip_uri(uri)
-    candidates = socket.getaddrinfo(host, port, type=socket.SOCK_DGRAM)
-    if not candidates:
-        raise OSError(f"no UDP address found for SIP next hop {host}")
-    client.connect(candidates[0][4])
+    client.reconnect(host, port)
 
 
 def _make_summary(
@@ -873,13 +942,18 @@ def _make_summary(
             "finished_at_utc": datetime.now(timezone.utc).isoformat(),
             "host": config.host,
             "port": config.port,
-            "transport": "UDP",
+            "transport": config.transport.upper(),
             "target_stack": config.stack_name,
             "target_stack_version": config.stack_version,
             "harness_version": HARNESS_VERSION,
             "git_commit": _git_commit(),
             "source_provenance": _source_provenance(),
-            "config": {**asdict(config), "output_dir": str(config.output_dir)},
+            "config": {
+                **asdict(config),
+                "output_dir": str(config.output_dir),
+                "tls_ca_file": None if config.tls_ca_file is None else str(config.tls_ca_file),
+                "scenarios": list(config.scenarios),
+            },
         },
         "host": {
             "os": platform.platform(),
@@ -920,6 +994,12 @@ def _make_summary(
             "configured injection duration; c6_windows are event-time distributions"
         ),
         "setup_latency_ms": _distribution(evidence.latencies_ms),
+        "response_code_distribution": dict(sorted(evidence.response_codes.items())),
+        "by_scenario": _scenario_summary(evidence),
+        "capacity_commitment": False,
+        "capacity_note": (
+            "Counts and latencies describe this run only. They are not a published capacity target."
+        ),
         "error_distribution": dict(sorted(evidence.errors.items())),
         "c6_window_method": (
             "C6 attempted-call CPS uses successfully transmitted INVITE datagrams; "
@@ -949,6 +1029,30 @@ def _make_summary(
         },
         "evidence_files": {"events": "events.jsonl", "summary": "summary.json"},
     }
+
+
+def _scenario_summary(evidence: _Evidence) -> dict[str, dict[str, Any]]:
+    """Bucket sent invites, final codes, failures and setup latency by call type."""
+    scenario_ids = sorted(
+        set(evidence.scenario_invites)
+        | set(evidence.scenario_finals)
+        | set(evidence.scenario_latencies)
+    )
+    report: dict[str, dict[str, Any]] = {}
+    for scenario_id in scenario_ids:
+        codes = dict(sorted(evidence.scenario_finals.get(scenario_id, Counter()).items()))
+        sent = int(evidence.scenario_invites.get(scenario_id, 0))
+        finals = sum(codes.values())
+        established = sum(count for code, count in codes.items() if code.startswith("2"))
+        report[scenario_id] = {
+            "invites_sent": sent,
+            "final_responses": finals,
+            "established": established,
+            "failed": sent - established,
+            "response_codes": codes,
+            "setup_latency_ms": _distribution(evidence.scenario_latencies.get(scenario_id, [])),
+        }
+    return report
 
 
 def _c6_coverage_ns(

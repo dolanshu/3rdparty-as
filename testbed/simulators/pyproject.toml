@@ -19,7 +19,12 @@ classifiers = [
 # test speak identical protocol behaviour.
 dependencies = [
   "as-platform",
+  "as-translation",
+  "as-load",
 ]
+
+[project.scripts]
+as-simulators = "as_simulators.__main__:main"
 
 [build-system]
 requires = ["hatchling>=1.25"]
@@ -30,3 +35,5 @@ packages = ["src/as_simulators"]
 
 [tool.uv.sources]
 as-platform = { workspace = true }
+as-translation = { workspace = true }
+as-load = { workspace = true }

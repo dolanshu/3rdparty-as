@@ -137,6 +137,14 @@ def test_certificate_is_ignored_when_absent() -> None:
     assert authorize_peer(_peer("10.0.0.9"), policy) is False
 
 
+def test_cidr_allowlist_authorises_an_address_inside_the_prefix() -> None:
+    """Helm peer allowlists are IPs or CIDRs. A prefix hit authorises any port."""
+    policy = _policy({"192.168.0.0/16"})
+
+    assert authorize_peer(_peer("192.168.8.4", port=40000), policy) is True
+    assert authorize_peer(_peer("10.0.0.1"), policy) is False
+
+
 def test_empty_policy_denies_everything() -> None:
     """Fail-closed: a policy that whitelists nothing authorises nobody."""
     empty = _policy(set(), set())

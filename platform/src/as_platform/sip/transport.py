@@ -50,9 +50,9 @@ class PeerPolicy:
     """The whitelist a peer is checked against (ADR-0016).
 
     Attributes:
-        allowed_addresses: Source peers we accept traffic from, as either
-            plain addresses (``10.0.0.1``) or endpoint tokens
-            (``10.0.0.1:5061``).
+        allowed_addresses: Source peers we accept traffic from, as plain
+            addresses (``10.0.0.1``), endpoint tokens (``10.0.0.1:5061``), or
+            CIDR prefixes (``192.168.0.0/16``).
         allowed_certificate_ids: Peer certificate fingerprint identifiers we
             accept (for example, precomputed SHA-256 tokens from the future TLS
             binding). Under mTLS this is the stronger of the two dimensions,
@@ -225,6 +225,27 @@ def _canonical_allowed_endpoint_token(token: str) -> str | None:
     return _canonical_endpoint_token(raw_host, port)
 
 
+def _address_in_allowed_cidr(peer_ip: str | None, tokens: frozenset[str]) -> bool:
+    """Whether ``peer_ip`` falls in any CIDR token of the allowlist.
+
+    Tokens without ``/`` are ignored here; exact addresses are matched elsewhere.
+    A malformed CIDR does not authorise anyone.
+    """
+    if peer_ip is None:
+        return False
+    address = ipaddress.ip_address(peer_ip)
+    for token in tokens:
+        if "/" not in token:
+            continue
+        try:
+            network = ipaddress.ip_network(token, strict=False)
+        except ValueError:
+            continue
+        if address in network:
+            return True
+    return False
+
+
 def authorize_peer(peer: PeerIdentity, policy: PeerPolicy) -> bool:
     """Authorise one peer against one whitelist.
 
@@ -263,6 +284,7 @@ def authorize_peer(peer: PeerIdentity, policy: PeerPolicy) -> bool:
     canonical_plain_address_hit = peer_ip is not None and any(
         _canonical_ip_literal(token) == peer_ip for token in policy.allowed_addresses
     )
+    cidr_hit = _address_in_allowed_cidr(peer_ip, policy.allowed_addresses)
     canonical_endpoint_hit = any(
         _canonical_allowed_endpoint_token(token) == endpoint for token in policy.allowed_addresses
     )
@@ -271,5 +293,6 @@ def authorize_peer(peer: PeerIdentity, policy: PeerPolicy) -> bool:
         or canonical_plain_address_hit
         or endpoint in policy.allowed_addresses
         or canonical_endpoint_hit
+        or cidr_hit
     )
     return address_hit or certificate_hit

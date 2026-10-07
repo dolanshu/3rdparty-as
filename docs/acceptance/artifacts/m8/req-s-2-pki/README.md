@@ -1,6 +1,6 @@
-# REQ-S-2 现场证据（待维护者环境采证）
+# REQ-S-2 现场证据（restriction：Close 前不采证）
 
-> **状态**：待采证。本目录当前无证据文件，占位说明而已。
+> **状态**：restriction（2026-10-07）。Close 前不做真实运营商 S-SBC / 运营商 PKI 采证。本目录保持空白。
 > 需求：`docs/acceptance/test-plan.md` §3 REQ-S-2；记录：`docs/acceptance/m8-environment-evidence.md` D-1。
 
 ## 采证时应提交的文件（脱敏）

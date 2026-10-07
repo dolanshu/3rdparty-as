@@ -20,7 +20,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from as_platform.decision import Decision, RuleSet, decide
+from as_platform.decision import Decision, DecisionAction, RuleSet, decide
 from as_platform.sip.adapter import SipRequestView, to_decision_request
 from as_platform.sip.call_controller import (
     CallController,
@@ -136,6 +136,33 @@ def invite_callback_result(
     return 500
 
 
+def _hooked_decision(decision: Decision, called_number: str, transport: str) -> Decision:
+    """Replace a forward target when ``AS_SIP_ROUTE_HOOK`` names a use-case module.
+
+    The kernel does not import applications. A use case (translation) supplies
+    ``route_target(decision, called_number, transport)`` and this callback loads
+    it by the environment name. Absent hook, or a hook that returns ``None``,
+    leaves ``decision.target`` unchanged.
+    """
+    name = os.environ.get("AS_SIP_ROUTE_HOOK", "").strip()
+    if not name:
+        return decision
+    if decision.action not in {DecisionAction.FORWARD, DecisionAction.TRANSLATE}:
+        return decision
+    module = importlib.import_module(name)
+    route = module.route_target(decision, called_number, transport)
+    if route is None:
+        return decision
+    if not isinstance(route, str) or not route.strip():
+        raise TypeError("AS_SIP_ROUTE_HOOK route_target must return a SIP URI or None")
+    return Decision(
+        action=decision.action,
+        target=route.strip(),
+        reason_code=decision.reason_code,
+        matched_rule_id=decision.matched_rule_id,
+    )
+
+
 def controller_effects_for_inbound_invite(
     controller: CallController,
     inbound_call_id: str,
@@ -179,6 +206,10 @@ class ResipRuntimeListener:
         bind_address: str = "127.0.0.1",
         advertised_address: str = "127.0.0.1",
         on_connection_closed: Callable[[str], None] | None = None,
+        enable_udp: bool = True,
+        udp_port: int = 0,
+        tcp_port: int = 0,
+        tls_port: int = 0,
     ) -> None:
         """Configure gate, rules, and optional clock injection for decide().
 
@@ -207,11 +238,19 @@ class ResipRuntimeListener:
             bind_address: Local socket bind address passed to the native stack.
             advertised_address: Contact/SDP address advertised to peers.
             on_connection_closed: Optional hook when a transport connection closes (connection_id).
+            enable_udp: Bind a UDP listener. ``False`` leaves TCP or TLS as the contact.
+            udp_port: UDP bind port. ``0`` asks the kernel for an ephemeral port.
+            tcp_port: TCP bind port. ``0`` is ephemeral. Ignored when TCP is off.
+            tls_port: TLS bind port. ``0`` is ephemeral. Ignored when TLS is off.
         """
         self._gate = gate
         self._rules = rules
         self._tls_only = tls_only
         self._enable_tcp = enable_tcp
+        self._enable_udp = enable_udp
+        self._udp_port = udp_port
+        self._tcp_port_config = tcp_port
+        self._tls_port_config = tls_port
         self._accept_all_invites = accept_all_invites
         self._early_cancel_harness = early_cancel_harness
         self._call_controller = call_controller if call_controller is not None else CallController()
@@ -270,7 +309,7 @@ class ResipRuntimeListener:
         )
         request_client_certificate = bool(seam.peer_policy.allowed_certificate_ids)
         return {
-            "enable_udp": not self._tls_only,
+            "enable_udp": self._enable_udp and not self._tls_only,
             "enable_tcp": self._enable_tcp and not self._tls_only,
             "enable_tls": enable_tls,
             "tls_only": self._tls_only,
@@ -283,6 +322,9 @@ class ResipRuntimeListener:
             "ca_path": tls.ca_path or "",
             "bind_address": self._bind_address,
             "advertised_address": self._advertised_address,
+            "udp_port": self._udp_port,
+            "tcp_port": self._tcp_port_config,
+            "tls_port": self._tls_port_config,
         }
 
     def _on_invite(
@@ -308,6 +350,11 @@ class ResipRuntimeListener:
 
         view = sip_summary_to_view(sip_summary)
         decision = decide(to_decision_request(view, self._received_at()), self._rules)
+        try:
+            decision = _hooked_decision(decision, view.called_number, transport)
+        except Exception:
+            logging.exception("SIP route hook failed")
+            return 500
         effects = controller_effects_for_inbound_invite(
             self._call_controller,
             view.call_id,

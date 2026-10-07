@@ -39,6 +39,14 @@ _DEFAULT_RECOVERY_CASE = "translation"
 _DEFAULT_CHECKPOINT_TTL_SECONDS = 3600
 
 
+def _listen_port(*names: str) -> int:
+    for name in names:
+        raw = os.environ.get(name, "").strip()
+        if raw:
+            return int(raw)
+    return 0
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
     if raw is None:
@@ -90,6 +98,11 @@ class SipStackServiceConfig:
     recovery_call_keys: tuple[str, ...]
     enable_native_restore_on_start: bool
     listen: SipListenConfig
+    enable_tcp: bool = False
+    enable_udp: bool = True
+    udp_port: int = 0
+    tcp_port: int = 0
+    tls_port: int = 0
 
 
 class SipStackService:
@@ -141,6 +154,9 @@ class SipStackService:
         rules = load_ruleset_from_env()
         listen = load_sip_listen_config_from_env()
         gate = TransportIngressGate(load_transport_seam_from_env())
+        enable_tcp = _env_flag("AS_SIP_ENABLE_TCP") or bool(
+            os.environ.get("SIP_LISTEN_PORT", "").strip()
+        )
         config = SipStackServiceConfig(
             recovery_case=os.environ.get("AS_RECOVERY_CASE", _DEFAULT_RECOVERY_CASE).strip()
             or _DEFAULT_RECOVERY_CASE,
@@ -148,6 +164,11 @@ class SipStackService:
             recovery_call_keys=_recovery_call_keys(),
             enable_native_restore_on_start=_env_flag("AS_RECOVERY_NATIVE_ON_START", default=True),
             listen=listen,
+            enable_tcp=enable_tcp,
+            enable_udp=not _env_flag("AS_SIP_DISABLE_UDP"),
+            udp_port=_listen_port("AS_SIP_UDP_PORT", "SIP_LISTEN_PORT"),
+            tcp_port=_listen_port("AS_SIP_TCP_PORT", "SIP_LISTEN_PORT") if enable_tcp else 0,
+            tls_port=_listen_port("AS_SIP_TLS_PORT", "SIP_TLS_LISTEN_PORT"),
         )
         return cls(
             active_calls=active_calls,
@@ -292,6 +313,11 @@ class SipStackService:
             received_at=self._now,
             bind_address=self._config.listen.bind_address,
             advertised_address=self._config.listen.advertised_address,
+            enable_tcp=self._config.enable_tcp,
+            enable_udp=self._config.enable_udp,
+            udp_port=self._config.udp_port,
+            tcp_port=self._config.tcp_port,
+            tls_port=self._config.tls_port,
             on_dialog_established=self._on_dialog_established,
             on_dialog_terminated=self._on_dialog_terminated
             if self._config.accept_all_invites

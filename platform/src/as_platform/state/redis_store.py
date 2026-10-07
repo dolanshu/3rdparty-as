@@ -266,11 +266,11 @@ def load_redis_store_from_env(
 ) -> RedisStateStore | None:
     """Build a :class:`RedisStateStore` from platform environment variables.
 
-    Reads ``AS_REDIS_URL`` when set. Otherwise uses ``AS_REDIS_SENTINEL_HOSTS``
-    and ``AS_REDIS_SENTINEL_MASTER``. Returns ``None`` when neither path is
-    configured.
+    Reads ``AS_REDIS_URL`` when set, otherwise the chart's ``REDIS_URL``.
+    Otherwise uses ``AS_REDIS_SENTINEL_HOSTS`` and ``AS_REDIS_SENTINEL_MASTER``.
+    Returns ``None`` when neither path is configured.
     """
-    url = os.environ.get("AS_REDIS_URL", "").strip()
+    url = os.environ.get("AS_REDIS_URL", "").strip() or os.environ.get("REDIS_URL", "").strip()
     if url:
         return RedisStateStore.from_url(url, namespace, now)
     hosts = os.environ.get("AS_REDIS_SENTINEL_HOSTS", "").strip()

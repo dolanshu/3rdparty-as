@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ims-sim
+description: Test IMS simulation platform. Not a product chart.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

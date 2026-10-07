@@ -20,6 +20,7 @@
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 
+#include "resip/stack/MessageDecorator.hxx"
 #include "resip/stack/Contents.hxx"
 #include "resip/stack/SecurityTypes.hxx"
 #include "resip/stack/ssl/Security.hxx"
@@ -45,6 +46,48 @@
 #include "rutil/Log.hxx"
 
 using namespace resip;
+
+// A mixed UDP/TCP/TLS stack advertises one Contact. In-dialog requests follow
+// that Contact once the last Route is popped, so a TLS dialog must name the
+// TLS port or the next hop opens TLS against the cleartext listener.
+class TransportContactDecorator : public MessageDecorator
+{
+public:
+   void decorateMessage(SipMessage& message, const Tuple& source, const Tuple&,
+                        const Data&) override
+   {
+      if (!message.isResponse() || !message.exists(h_Contacts) ||
+          message.header(h_Contacts).empty() || source.getType() != TLS || source.getPort() <= 0)
+      {
+         return;
+      }
+      Uri& uri = message.header(h_Contacts).front().uri();
+      mSaved = uri;
+      mRewritten = true;
+      uri.scheme() = "sips";
+      uri.port() = source.getPort();
+      if (uri.exists(p_transport))
+      {
+         uri.remove(p_transport);
+      }
+   }
+
+   void rollbackMessage(SipMessage& message) override
+   {
+      if (!mRewritten || !message.exists(h_Contacts) || message.header(h_Contacts).empty())
+      {
+         return;
+      }
+      message.header(h_Contacts).front().uri() = mSaved;
+      mRewritten = false;
+   }
+
+   MessageDecorator* clone() const override { return new TransportContactDecorator(); }
+
+private:
+   Uri mSaved;
+   bool mRewritten{false};
+};
 
 namespace
 {
@@ -75,6 +118,9 @@ struct TransportConfig
    std::string caPath;
    std::string bindAddress{"127.0.0.1"};
    std::string advertisedAddress{"127.0.0.1"};
+   int udpPort{0};
+   int tcpPort{0};
+   int tlsPort{0};
 };
 
 struct ListenerState
@@ -382,6 +428,32 @@ bool parseTransportConfig(PyObject* configObject, TransportConfig& config)
    {
       return false;
    }
+
+   auto readPort = [&](const char* key, int& target) -> bool {
+      PyObject* value = PyDict_GetItemString(configObject, key);
+      if (value == nullptr || value == Py_None)
+      {
+         return true;
+      }
+      if (!PyLong_Check(value))
+      {
+         PyErr_SetString(PyExc_TypeError, "transport config port values must be int");
+         return false;
+      }
+      const long port = PyLong_AsLong(value);
+      if (port < 0 || port > 65535)
+      {
+         PyErr_SetString(PyExc_ValueError, "transport config port out of range");
+         return false;
+      }
+      target = static_cast<int>(port);
+      return true;
+   };
+   if (!readPort("udp_port", config.udpPort) || !readPort("tcp_port", config.tcpPort) ||
+       !readPort("tls_port", config.tlsPort))
+   {
+      return false;
+   }
    if (PyDict_GetItemString(configObject, "advertised_address") == nullptr &&
        config.advertisedAddress == "127.0.0.1" && config.bindAddress != "127.0.0.1")
    {
@@ -529,6 +601,8 @@ PyObject* buildSipSummary(const SipMessage& message)
    }
    return dict;
 }
+
+PyObject* buildRouteSetList(const SipMessage& message);
 
 PyObject* buildEstablishedLegDict(const SipMessage& message,
                                   const std::string& peerContact,
@@ -965,7 +1039,7 @@ public:
          {
             std::cerr << "RESIP_RUNTIME_FORWARD_ERROR message=" << error.what() << std::endl;
             session->reject(500);
-            mForwardActive = false;
+            mForwardActive = !mInboundByOutboundCallId.empty();
             return;
          }
       }
@@ -987,8 +1061,17 @@ public:
       }
       mOutboundDialogSet =
          std::make_unique<DialogSetId>(clientSession->getDialogId().getDialogSetId());
+      const std::string outgoingCallId = message.header(h_CallId).value().c_str();
+      const auto inbound = mInboundByOutboundCallId.find(outgoingCallId);
+      if (inbound != mInboundByOutboundCallId.end() && inbound->second.isValid())
+      {
+         const std::string inboundCallId = inbound->second->getCallId().c_str();
+         mOutboundByInboundCallId.insert_or_assign(
+            inboundCallId,
+            OutboundLeg{clientSession->getDialogId().getDialogSetId(), outgoingCallId});
+      }
       std::cout << "RESIP_RUNTIME_UAC_NEW_SESSION outgoing_call_id="
-                << message.header(h_CallId).value().c_str() << std::endl;
+                << outgoingCallId << std::endl;
    }
 
    void onFailure(ClientInviteSessionHandle, const SipMessage& message) override
@@ -1011,9 +1094,11 @@ public:
       }
 
       const int upstreamStatus = mapUpstreamFailureStatus(downstreamStatus);
+      const std::string inboundCallId = inbound->second->getCallId().c_str();
       inbound->second->reject(upstreamStatus);
       mInboundByOutboundCallId.erase(inbound);
-      mForwardActive = false;
+      mOutboundByInboundCallId.erase(inboundCallId);
+      mForwardActive = !mInboundByOutboundCallId.empty();
       std::cout << "RESIP_RUNTIME_UAS_FAILURE_MAPPED outgoing_call_id=" << outgoingCallId
                 << " downstream_status=" << downstreamStatus
                 << " upstream_status=" << upstreamStatus << std::endl;
@@ -1028,6 +1113,30 @@ public:
    void onTerminated(InviteSessionHandle session, TerminatedReason reason,
                     const SipMessage* message) override
    {
+      if (reason == RemoteBye && message != nullptr)
+      {
+         const std::string inboundCallId = message->header(h_CallId).value().c_str();
+         const auto outbound = mOutboundByInboundCallId.find(inboundCallId);
+         if (outbound != mOutboundByInboundCallId.end() && mDum != nullptr)
+         {
+            const DialogSetId dialogSetId = outbound->second.dialogSetId;
+            const std::string outgoingCallId = outbound->second.outboundCallId;
+            mOutboundByInboundCallId.erase(outbound);
+            try
+            {
+               mDum->end(dialogSetId);
+               std::cout << "RESIP_RUNTIME_OUTBOUND_BYE_FORWARD inbound_call_id="
+                         << inboundCallId << " outgoing_call_id=" << outgoingCallId
+                         << std::endl;
+            }
+            catch (const std::exception& error)
+            {
+               std::cerr << "RESIP_RUNTIME_OUTBOUND_BYE_ERROR message=" << error.what()
+                         << std::endl;
+            }
+         }
+      }
+
       if (mForwardActive && reason == RemoteCancel && message != nullptr && mDum != nullptr &&
           mInviteMessage != nullptr)
       {
@@ -1094,8 +1203,8 @@ public:
          mHarnessLocalTag = inbound->second->getDialogId().getLocalTag().c_str();
          mOutboundAnswerMessage = std::make_unique<SipMessage>(message);
          mPendingEstablishedNotify = true;
-         mForwardActive = false;
          mInboundByOutboundCallId.erase(inbound);
+         mForwardActive = !mInboundByOutboundCallId.empty();
          std::cout << "RESIP_RUNTIME_UAS_ANSWER_RELAYED outgoing_call_id=" << outgoingCallId
                    << std::endl;
       }
@@ -1158,8 +1267,15 @@ private:
    bool mNotifiedEstablished{false};
    bool mPendingEstablishedNotify{false};
    bool mForwardActive{false};
+   struct OutboundLeg
+   {
+      DialogSetId dialogSetId;
+      std::string outboundCallId;
+   };
+
    std::unique_ptr<DialogSetId> mOutboundDialogSet;
    std::map<std::string, ServerInviteSessionHandle> mInboundByOutboundCallId;
+   std::map<std::string, OutboundLeg> mOutboundByInboundCallId;
    std::unique_ptr<SipMessage> mOutboundInviteMessage;
    std::unique_ptr<SipMessage> mOutboundAnswerMessage;
 };
@@ -1226,7 +1342,7 @@ void runListener(ListenerState* state)
       if (config.enableUdp)
       {
          Transport* udpTransport =
-            stack.addTransport(UDP, 0, V4, StunDisabled, bindAddress);
+            stack.addTransport(UDP, config.udpPort, V4, StunDisabled, bindAddress);
          if (udpTransport == nullptr)
          {
             throw std::runtime_error("addTransport(UDP) returned null");
@@ -1241,7 +1357,8 @@ void runListener(ListenerState* state)
       int tcpPort = 0;
       if (config.enableTcp)
       {
-         Transport* tcpTransport = stack.addTransport(TCP, 0, V4, StunDisabled, bindAddress);
+         Transport* tcpTransport =
+            stack.addTransport(TCP, config.tcpPort, V4, StunDisabled, bindAddress);
          if (tcpTransport == nullptr)
          {
             throw std::runtime_error("addTransport(TCP) returned null");
@@ -1267,7 +1384,7 @@ void runListener(ListenerState* state)
          }
          Transport* tlsTransport = stack.addTransport(
             TLS,
-            0,
+            config.tlsPort,
             V4,
             StunDisabled,
             bindAddress,
@@ -1319,7 +1436,7 @@ void runListener(ListenerState* state)
                                  (config.tlsOnly || !config.enableUdp);
       const bool useTcpContact =
          !useTlsContact && config.enableTcp && tcpPort > 0 && !config.enableUdp;
-      if (useTlsContact)
+      if (config.enableTls && tlsPort > 0)
       {
          profile->addSupportedScheme("sips");
       }
@@ -1333,6 +1450,7 @@ void runListener(ListenerState* state)
       }
       profile->setOverrideHostAndPort(Uri(contact));
       profile->setDefaultFrom(NameAddr(contact));
+      profile->setOutboundDecorator(std::make_shared<TransportContactDecorator>());
       dum.setMasterProfile(profile);
       dum.setInviteSessionHandler(&handler);
       dum.setAppDialogSetFactory(std::make_unique<MinimalAppDialogSetFactory>());

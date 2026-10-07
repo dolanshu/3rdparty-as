@@ -8,13 +8,33 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from as_load.harness import DEFAULT_TIMEOUT_SECONDS, LoadConfig, run_load
+from as_load.scenarios import FIRST_EDITION
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse a reproducible load profile, execute it, and print a summary."""
     parser = argparse.ArgumentParser(description="Run a real-UDP SIP load measurement")
     parser.add_argument("--host", required=True, help="SIP endpoint host or IP")
-    parser.add_argument("--port", required=True, type=int, help="SIP endpoint UDP port")
+    parser.add_argument("--port", required=True, type=int, help="SIP endpoint port")
+    parser.add_argument(
+        "--transport",
+        choices=("udp", "tcp", "tls"),
+        default="udp",
+        help="transport used toward the simulated S-CSCF",
+    )
+    parser.add_argument(
+        "--tls-ca",
+        type=Path,
+        default=None,
+        help="PEM test CA for --transport tls; not an operator PKI",
+    )
+    parser.add_argument(
+        "--scenario",
+        action="append",
+        default=[],
+        choices=tuple(item.scenario_id for item in FIRST_EDITION),
+        help="first-edition call type; repeat to enable several",
+    )
     parser.add_argument(
         "--cps", required=True, type=float, help="scheduled INVITE attempts per second"
     )
@@ -62,6 +82,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         stack_name=args.stack,
         stack_version=args.stack_version,
         output_dir=args.out,
+        transport=args.transport,
+        tls_ca_file=args.tls_ca,
+        scenarios=tuple(args.scenario),
     )
     summary = run_load(config)
     counts = summary["counts"]
@@ -72,6 +95,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     counts["success_rate"] = success_rate
     print(json.dumps(counts, sort_keys=True))
     print(f"evidence: {args.out.resolve()}")
+    if args.scenario:
+        finals = sum(int(value) for value in summary.get("response_code_distribution", {}).values())
+        sent = int(counts.get("invite_datagrams_sent", 0))
+        if sent <= 0 or finals < sent:
+            return 1
+        return 0
     if established <= 0:
         return 1
     if args.min_success_rate is not None and success_rate < args.min_success_rate:

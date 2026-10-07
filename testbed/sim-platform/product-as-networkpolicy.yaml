@@ -1,0 +1,81 @@
+# The product chart does not carry a simulator policy. This object is applied
+# only in the M7.1 kind lab: SIP reaches the product AS only from the simulated
+# S-SBC, and the AS opens SIP only toward the south S-SBC.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: product-sip-from-ssbc
+  namespace: as-sut
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/use-case: translation
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ims-sim
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ssbc-south
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ims-sim
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ssbc-north
+      ports:
+        - port: 5060
+          protocol: UDP
+        - port: 5060
+          protocol: TCP
+        - port: 5061
+          protocol: TCP
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ims-sim
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ssbc-north
+      ports:
+        - port: 5060
+          protocol: UDP
+        - port: 5060
+          protocol: TCP
+        - port: 5061
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ims-sim
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ssbc-south
+      ports:
+        - port: 5060
+          protocol: UDP
+        - port: 5060
+          protocol: TCP
+        - port: 5061
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: state-redis
+      ports:
+        - port: 6379
+          protocol: TCP

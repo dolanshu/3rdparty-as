@@ -34,11 +34,7 @@
 - **当前状态（2026-10-06 本环境实测）**：本环境**无运营商 PKI lab、无外网 S-SBC 对端**，无法执行上述采证。
   本地仅有工程侧 TLS 集成测试在 `make gate` 内通过（属工程切片，**不是** REQ-S-2/S-3 现场验收）。
   未执行、未见证任何运营商签发链验证与明文拒绝 live 证明——如实记录为缺口，不补编造数据。
-- **结论：明确 defer**（plan §4 Phase D taxonomy：通过 / 有条件通过 / 明确 defer）。
-  - defer 内容：运营商 PKI lab + 外网 S-SBC / mTLS 联调 run 由维护者排期；在 M8 窗口内未完成。
-  - 影响：REQ-S-2 / REQ-S-3 尾项在签收矩阵中**继续保持 blocked**；M8 不得宣称 S-2/S-3 全绿。
-  - 后续：维护者排期后按本文件 §0 约定在 `docs/acceptance/artifacts/m8/<date>/req-s-{2,3}*/` 落脱敏证据，
-    或在 M8 总审中书面接受风险并写入 `docs/plan.md` §5 对应行 / ADR。
+- **结论：restriction（2026-10-07）**。维护者确认：本项目 Close 之前不会有真实运营商 S-SBC 联调，也不会有客户 K8s 测试。D-1 不再排期采证。REQ-S-2 的「运营商 PKI 签发链」和 REQ-S-3 在真实对端上的轮换窗口，Close 前不能签 pass。M7.1 已工程关门：测试 CA 上的 TLS 呼叫已在 kind 跑通。明文 5060 仍是第一版可选传输，没有做成「只要 TLS 就拒绝明文」。运营商 PKI 签发链仍属本条 restriction。
 
 ## D-2 客户 K8s REQ-NF-1 live 基线（kill / restart / BYE）
 
@@ -56,11 +52,7 @@
   - `platform/tests/test_d10_req_nf1_redis_integration.py`、`platform/tests/test_d10_process_restart_integration.py`
   - 矩阵头注：`test_d10_product_recovery_integration.py → 1 passed`（ACK-established-dialog 工程切片）。
   以上均不构成 REQ-NF-1 live 签收——如实区分，不冒充。
-- **结论：明确 defer**。
-  - defer 内容：客户 K8s live kill/restart/BYE 基线待维护者协调客户环境后采证；在 M8 窗口内未完成。
-  - 影响：REQ-NF-1 在签收矩阵中**继续保持 blocked**；M8 不得宣称 NF-1 通过。
-  - 后续：采证后按 §0 约定落 `docs/acceptance/artifacts/m8/<date>/req-nf-1-live/` 脱敏证据，
-    或在 M8 总审中有条件通过并列出 defer 清单（须维护者授权）。
+- **结论：restriction（2026-10-07）**。Close 之前不做客户 K8s 上的 kill / restart / BYE。REQ-NF-1 的客户集群条款 Close 前不能签 pass。自有 kind 上的工程 harness 仍然只是工程切片。M7.1 模拟平台若在实验室集群里杀 Pod，也不等于本条。
 
 ## D-3 D6 testbed 是否 v1 客户验收（维护者裁决 pending）
 
@@ -74,9 +66,26 @@
     (b) 客户要求 v1 → D-3 转为采证任务，证据落 `docs/acceptance/artifacts/m8/<date>/` 并补 ADR 或 `plan.md` §5 行。
   - 在裁决前：D6 在矩阵中**继续保持 blocked**；M8 总审前须有终态（关闭或采证计划），不得以 open 状态签字。
 
+## 同样的 restriction：其他必须真实客户网络的条目
+
+核对 `test-plan.md` §1–§4 后，Close 前同样不能靠客户网络采证、因此同样标 restriction 的还有：
+
+| 条目 | 为什么算真实客户网络 |
+|---|---|
+| **ADR-0008 跨站点切换演练** | 要两个客户/生产站点，不是实验室单集群 |
+| **D12 / O5 生产 Redis 与 PostgreSQL HA** | 要客户生产拓扑上的 Sentinel / 流复制 / PITR。kind 里的 bundled state 不是这条 |
+
+下面这些提到集群、S-SBC 或 live，但**不**标成同一条 restriction：它们要的是实验室或仿真，不是客户的网。
+
+| 条目 | 处置 |
+|---|---|
+| REQ-NF-2、REQ-NF-4、REQ-NF-9 | 自有 kind / 实验室集群即可，不要求客户集群 |
+| REQ-NF-5 | 仿真 S-SBC 已在 M7.1 做成透明桥（无 Kamailio）。不是运营商 S-SBC |
+| REQ-S-2 里「SIP 走 TLS、明文被拒绝」 | M7.1 已用测试 CA 跑通 TLS 呼叫。明文 5060 仍可选，未签「明文被拒绝」。运营商 PKI 签发链仍属 D-1 restriction |
+| REQ-NF-3、REQ-NF-13、REQ-NF-14、REQ-F-13、REQ-F-15 | 缺的是口径、监控后端或产品能力，不是客户 IMS / 客户 K8s |
+
 ## 与 M8 退出的关系
 
-- D-1、D-2 为**明确 defer**：对应 REQ-S-2 / REQ-S-3 / REQ-NF-1 在矩阵中保持 `blocked`；
-  按 RC 计划 §3 第 3 项，M8 签字时须在总审中列出 defer 清单（须维护者授权），**不得宣称 M8 全绿**。
-- D-3 为**裁决 pending**：须维护者在 M8 总审前给出 v1/v1.1 结论；本文件建议 v1.1 仅供参考，不生效力。
-- 本文件创建的 `docs/acceptance/artifacts/m8/` 占位 README 均为"待采证"状态，不含任何伪造证据。
+- D-1、D-2、ADR-0008 演练、D12/O5 生产 HA 为 **restriction**：Close 前不采证，矩阵里保持 `blocked` 或 `open`，不能签 pass。M7.1 模拟平台不解除这些限制。
+- D-3 仍是裁决 pending；本文件对 v1.1 的建议不生效力。
+- `docs/acceptance/artifacts/m8/` 下 D-1/D-2 目录保持空白。状态是 restriction，不是待采证。

@@ -1,0 +1,13 @@
+namespace: as-sut
+
+components:
+  scscf: false
+  ssbcNorth: false
+  ssbcSouth: false
+  uas: false
+  ui: false
+  sut: true
+
+peers:
+  ssbcNorth: ssbc-north.ims-sim.svc.cluster.local
+  ssbcSouth: ssbc-south.ims-sim.svc.cluster.local

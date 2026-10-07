@@ -21,6 +21,11 @@ metadata:
     {{- include "as.useCaseLabels" $ctx | nindent 4 }}
 spec:
   type: ClusterIP
+  {{- if $.Values.sip.serviceHeadless }}
+  # SIP must see the pod address. A ClusterIP hides it, and on kind/Calico UDP
+  # to that address does not reach the listener.
+  clusterIP: None
+  {{- else }}
   # See the header: affinity is a belt; the Redis session table is the braces.
   sessionAffinity: ClientIP
   sessionAffinityConfig:
@@ -28,6 +33,7 @@ spec:
       # Bounds how long a given client IP keeps its affinity. A stickiness
       # timeout, unrelated to any capacity figure (O1 / M6).
       timeoutSeconds: 3600
+  {{- end }}
   selector:
     {{- include "as.useCaseSelectorLabels" $ctx | nindent 4 }}
   ports:
@@ -35,6 +41,10 @@ spec:
       port: {{ $.Values.sip.port }}
       targetPort: sip-udp
       protocol: UDP
+    - name: sip-tcp
+      port: {{ $.Values.sip.port }}
+      targetPort: sip-tcp
+      protocol: TCP
     - name: sip-tls
       port: {{ $.Values.sip.tlsPort }}
       targetPort: sip-tls

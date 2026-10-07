@@ -1,0 +1,45 @@
+# Product process for the M7.1 kind lab. The native SIP extension is built on the
+# host (make m2-platform-resip-build) and staged into .image-native by kind-up.sh,
+# because the published product image does not yet carry _resip_runtime.
+# bullseye matches the host libssl 1.1 the extension was linked against.
+FROM python:3.10-slim-bullseye
+
+# The base image already ships libssl1.1. libc-ares2 is the extra the host-built
+# reSIProcate libraries need. Leave security.debian.org alone; rewriting it to
+# a generic mirror 404s bullseye-security.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libc-ares2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home --shell /usr/sbin/nologin as-runtime
+
+COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /bin/uv
+
+WORKDIR /src
+COPY pyproject.toml uv.lock ./
+COPY platform platform
+COPY apps/translation apps/translation
+COPY apps/anti-fraud apps/anti-fraud
+COPY services/config-service services/config-service
+COPY services/console services/console
+COPY testbed/simulators/pyproject.toml testbed/simulators/pyproject.toml
+COPY testbed/simulators/src testbed/simulators/src
+COPY testbed/simulators/README.md testbed/simulators/README.md
+COPY testbed/load/pyproject.toml testbed/load/pyproject.toml
+COPY testbed/load/src testbed/load/src
+COPY testbed/load/README.md testbed/load/README.md
+
+ENV UV_HTTP_TIMEOUT=180
+RUN uv sync --frozen --no-dev --package as-translation \
+    && mkdir -p /opt/resip-runtime
+
+COPY testbed/sim-platform/.image-native/ /opt/resip-runtime/
+RUN chmod -R a+rX /opt/resip-runtime
+
+ENV PATH="/src/.venv/bin:${PATH}" \
+    LD_LIBRARY_PATH="/opt/resip-runtime" \
+    AS_RESIP_RUNTIME_BUILD="/opt/resip-runtime" \
+    PYTHONUNBUFFERED=1
+
+USER 10001
+EXPOSE 5060/udp 5060/tcp 5061/tcp 8080/tcp
+ENTRYPOINT ["python", "-m", "as_platform"]

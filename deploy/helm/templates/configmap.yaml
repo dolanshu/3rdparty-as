@@ -27,6 +27,7 @@ data:
   # --- SIP signalling plane ---
   SIP_LISTEN_ADDR: {{ .Values.sip.listenAddr | quote }}
   SIP_LISTEN_PORT: {{ .Values.sip.port | quote }}
+  SIP_TLS_LISTEN_PORT: {{ .Values.sip.tlsPort | quote }}
   # S-SBC allowlist. Empty is fail-closed on purpose: anything able to
   # impersonate the S-SBC can inject calls (ADR-0016).
   SIP_PEER_ALLOWLIST: {{ .Values.sip.peerAllowlist | quote }}
@@ -68,3 +69,6 @@ data:
   # a capacity threshold: see the O1 / M6 note in README.md.
   AS_DOWNSCALE_GUARD_ENABLED: {{ .Values.downscaleGuard.enabled | quote }}
   AS_DOWNSCALE_GUARD_PROTECT_ABOVE: {{ .Values.downscaleGuard.protectWhenActiveCallsAbove | quote }}
+  {{- range $key, $value := .Values.runtime.extraEnv }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

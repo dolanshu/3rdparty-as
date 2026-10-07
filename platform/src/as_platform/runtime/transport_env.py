@@ -34,7 +34,9 @@ class SipListenConfig:
 
 def load_sip_listen_config_from_env() -> SipListenConfig:
     """Resolve bind and advertised addresses (REQ-NF-9 / S-SBC facing)."""
-    bind = os.environ.get("AS_SIP_BIND_ADDRESS", _DEFAULT_BIND).strip() or _DEFAULT_BIND
+    bind = os.environ.get("AS_SIP_BIND_ADDRESS", "").strip()
+    if not bind:
+        bind = os.environ.get("SIP_LISTEN_ADDR", "").strip() or _DEFAULT_BIND
     advertised_raw = os.environ.get("AS_SIP_ADVERTISED_ADDRESS", "").strip()
     if advertised_raw:
         advertised = advertised_raw
@@ -49,11 +51,24 @@ def load_sip_listen_config_from_env() -> SipListenConfig:
 
 def load_transport_seam_from_env() -> TransportSeam:
     """Build :class:`TransportSeam` from ``AS_TLS_*`` and ``AS_PEER_*`` variables."""
+    chart_tls = _env_flag("SIP_TLS_ENABLED")
     cert = os.environ.get("AS_TLS_CERT_PATH", "").strip()
     key = os.environ.get("AS_TLS_KEY_PATH", "").strip()
     ca = os.environ.get("AS_TLS_CA_PATH", "").strip() or None
-    tls_requested = _env_flag("AS_TLS_ENABLE") or bool(cert or key)
-    require_client = _env_flag("AS_TLS_REQUIRE_CLIENT_CERT", default=True)
+    if chart_tls:
+        if not cert:
+            cert = os.environ.get("SIP_TLS_CERT_PATH", "").strip()
+        if not key:
+            key = os.environ.get("SIP_TLS_KEY_PATH", "").strip()
+        if ca is None:
+            ca = os.environ.get("SIP_TLS_CA_PATH", "").strip() or None
+    tls_requested = _env_flag("AS_TLS_ENABLE") or chart_tls or bool(cert or key)
+    if os.environ.get("AS_TLS_REQUIRE_CLIENT_CERT") is not None:
+        require_client = _env_flag("AS_TLS_REQUIRE_CLIENT_CERT", default=True)
+    elif os.environ.get("SIP_TLS_REQUIRE_CLIENT_CERT") is not None:
+        require_client = _env_flag("SIP_TLS_REQUIRE_CLIENT_CERT", default=True)
+    else:
+        require_client = True
 
     if tls_requested and (not cert or not key):
         raise ValueError(
@@ -69,6 +84,8 @@ def load_transport_seam_from_env() -> TransportSeam:
     )
 
     allowed_addresses = _split_csv("AS_PEER_ALLOWED_ADDRESSES")
+    if not allowed_addresses:
+        allowed_addresses = _split_csv("SIP_PEER_ALLOWLIST")
     allowed_fps = _split_csv("AS_PEER_ALLOWED_CERT_FINGERPRINTS")
     if not allowed_addresses and not allowed_fps:
         listen = load_sip_listen_config_from_env()

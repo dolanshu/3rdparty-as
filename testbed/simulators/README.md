@@ -11,3 +11,11 @@
 依赖 `as-platform` 的原因。
 
 研发与 CI 资产。**不是 v1 交付物**（ADR-0014）。
+
+M7.1 的仿真路径在 `as_simulators`：透明桥接的 S-CSCF / S-SBC、调用产品 `decide()` 的被测 SIP 前端、被叫，以及不登录的测试页。本地：
+
+```sh
+uv run python -m as_simulators serve
+```
+
+kind 安装脚本和 chart 在 `testbed/sim-platform/`。那份 chart 不是 `deploy/helm`。页面标明测试 CA 不是运营商 PKI，当次计数不是容量承诺。

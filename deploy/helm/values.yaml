@@ -135,6 +135,12 @@ services:
       host: ""
       tlsSecretName: ""
 
+# Extra process environment. Empty in the shipped values. A lab install may set
+# keys the process already reads (AS_ENABLE_SIP_RUNTIME, AS_RULESET_JSON, …).
+# Those keys are not simulator switches; they stay out of this file.
+runtime:
+  extraEnv: {}
+
 # SIP listener settings. Ports are protocol constants (5060/5061), not capacity
 # figures.
 sip:
@@ -146,6 +152,9 @@ sip:
   # control, not a routing hint. Empty must be treated as fail-closed by the
   # process; set it per customer.
   peerAllowlist: ""
+  # false keeps a ClusterIP. A lab that needs the S-SBC to address the pod
+  # directly sets this true in its own values file, not here.
+  serviceHeadless: false
   # Testbed-only escape hatch for the H-4 fail-closed guard in
   # templates/deployment.yaml (M5.1 minimal). Default false: production renders
   # fail when peerAllowlist is empty. See ADR-0016.

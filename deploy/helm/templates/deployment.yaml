@@ -59,6 +59,9 @@ spec:
             - name: sip-udp
               containerPort: {{ $.Values.sip.port }}
               protocol: UDP
+            - name: sip-tcp
+              containerPort: {{ $.Values.sip.port }}
+              protocol: TCP
             - name: sip-tls
               containerPort: {{ $.Values.sip.tlsPort }}
               protocol: TCP
@@ -159,11 +162,14 @@ spec:
         - name: tls-certs
           secret:
             secretName: {{ $.Values.tls.secretName }}
-            defaultMode: 0400
+            # Group-readable so the non-root runtime (fsGroup below) can load
+            # the chain. 0440 is not world-readable.
+            defaultMode: 0440
       {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
+        fsGroup: 10001
 {{- end }}
 {{- end }}

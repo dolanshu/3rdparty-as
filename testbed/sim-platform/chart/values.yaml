@@ -1,0 +1,38 @@
+# Testbed chart. It is not deploy/helm and it is not installed with the product.
+namespace: ims-sim
+
+image:
+  repository: ims-sim
+  tag: dev
+  pullPolicy: IfNotPresent
+
+# Which processes this release starts. A second release in as-sut enables only sut.
+components:
+  scscf: true
+  ssbcNorth: true
+  ssbcSouth: true
+  uas: true
+  ui: true
+  sut: false
+
+networkPolicy:
+  enabled: true
+  # Call load may open SIP only toward the simulated S-CSCF.
+  simNamespace: ims-sim
+  # The system under test accepts SIP only from the simulated S-SBC.
+  sutNamespace: as-sut
+
+sip:
+  udpPort: 5060
+  tcpPort: 5060
+  tlsPort: 5061
+
+ui:
+  port: 8088
+
+peers:
+  scscf: scscf
+  ssbcNorth: ssbc-north
+  ssbcSouth: ssbc-south
+  uas: uas
+  sut: as-sut-translation.as-sut.svc.cluster.local

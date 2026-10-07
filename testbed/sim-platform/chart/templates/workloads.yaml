@@ -1,0 +1,470 @@
+{{- if .Values.components.scscf }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scscf
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: scscf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: scscf
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ims-sim
+        app.kubernetes.io/component: scscf
+    spec:
+      containers:
+        - name: scscf
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["run", "--role", "scscf", "--advertise", "scscf.{{ .Values.namespace }}.svc.cluster.local", "--next-host", {{ .Values.peers.ssbcNorth | quote }}]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: AS_SIM_TLS_CERT
+              value: /tls/server.crt
+            - name: AS_SIM_TLS_KEY
+              value: /tls/server.key
+            - name: AS_SIM_TLS_CA
+              value: /tls/ca.crt
+          ports:
+            - name: sip-udp
+              containerPort: {{ .Values.sip.udpPort }}
+              protocol: UDP
+            - name: sip-tcp
+              containerPort: {{ .Values.sip.tcpPort }}
+              protocol: TCP
+            - name: sip-tls
+              containerPort: {{ .Values.sip.tlsPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: ims-sim-test-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scscf
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: scscf
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: scscf
+  ports:
+    - name: sip-udp
+      port: {{ .Values.sip.udpPort }}
+      protocol: UDP
+    - name: sip-tcp
+      port: {{ .Values.sip.tcpPort }}
+      protocol: TCP
+    - name: sip-tls
+      port: {{ .Values.sip.tlsPort }}
+      protocol: TCP
+{{- end }}
+{{- if .Values.components.ssbcNorth }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ssbc-north
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: ssbc-north
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: ssbc-north
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ims-sim
+        app.kubernetes.io/component: ssbc-north
+    spec:
+      containers:
+        - name: ssbc-north
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["run", "--role", "ssbc-north", "--advertise", "ssbc-north.{{ .Values.namespace }}.svc.cluster.local", "--next-host", {{ .Values.peers.sut | quote }}]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: AS_SIM_TLS_CERT
+              value: /tls/server.crt
+            - name: AS_SIM_TLS_KEY
+              value: /tls/server.key
+            - name: AS_SIM_TLS_CA
+              value: /tls/ca.crt
+          ports:
+            - name: sip-udp
+              containerPort: {{ .Values.sip.udpPort }}
+              protocol: UDP
+            - name: sip-tcp
+              containerPort: {{ .Values.sip.tcpPort }}
+              protocol: TCP
+            - name: sip-tls
+              containerPort: {{ .Values.sip.tlsPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: ims-sim-test-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ssbc-north
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: ssbc-north
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: ssbc-north
+  ports:
+    - name: sip-udp
+      port: {{ .Values.sip.udpPort }}
+      protocol: UDP
+    - name: sip-tcp
+      port: {{ .Values.sip.tcpPort }}
+      protocol: TCP
+    - name: sip-tls
+      port: {{ .Values.sip.tlsPort }}
+      protocol: TCP
+{{- end }}
+{{- if .Values.components.ssbcSouth }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ssbc-south
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: ssbc-south
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: ssbc-south
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ims-sim
+        app.kubernetes.io/component: ssbc-south
+    spec:
+      containers:
+        - name: ssbc-south
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["run", "--role", "ssbc-south", "--advertise", "ssbc-south.{{ .Values.namespace }}.svc.cluster.local", "--next-host", {{ .Values.peers.uas | quote }}]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: AS_SIM_TLS_CERT
+              value: /tls/server.crt
+            - name: AS_SIM_TLS_KEY
+              value: /tls/server.key
+            - name: AS_SIM_TLS_CA
+              value: /tls/ca.crt
+          ports:
+            - name: sip-udp
+              containerPort: {{ .Values.sip.udpPort }}
+              protocol: UDP
+            - name: sip-tcp
+              containerPort: {{ .Values.sip.tcpPort }}
+              protocol: TCP
+            - name: sip-tls
+              containerPort: {{ .Values.sip.tlsPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: ims-sim-test-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ssbc-south
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: ssbc-south
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: ssbc-south
+  ports:
+    - name: sip-udp
+      port: {{ .Values.sip.udpPort }}
+      protocol: UDP
+    - name: sip-tcp
+      port: {{ .Values.sip.tcpPort }}
+      protocol: TCP
+    - name: sip-tls
+      port: {{ .Values.sip.tlsPort }}
+      protocol: TCP
+{{- end }}
+{{- if .Values.components.uas }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uas
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: uas
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: uas
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ims-sim
+        app.kubernetes.io/component: uas
+    spec:
+      containers:
+        - name: uas
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["run", "--role", "uas", "--advertise", "uas.{{ .Values.namespace }}.svc.cluster.local"]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: AS_SIM_TLS_CERT
+              value: /tls/server.crt
+            - name: AS_SIM_TLS_KEY
+              value: /tls/server.key
+            - name: AS_SIM_TLS_CA
+              value: /tls/ca.crt
+          ports:
+            - name: sip-udp
+              containerPort: {{ .Values.sip.udpPort }}
+              protocol: UDP
+            - name: sip-tcp
+              containerPort: {{ .Values.sip.tcpPort }}
+              protocol: TCP
+            - name: sip-tls
+              containerPort: {{ .Values.sip.tlsPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: ims-sim-test-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: uas
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: uas
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: uas
+  ports:
+    - name: sip-udp
+      port: {{ .Values.sip.udpPort }}
+      protocol: UDP
+    - name: sip-tcp
+      port: {{ .Values.sip.tcpPort }}
+      protocol: TCP
+    - name: sip-tls
+      port: {{ .Values.sip.tlsPort }}
+      protocol: TCP
+{{- end }}
+{{- if .Values.components.ui }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: call-load
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: call-load
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: call-load
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ims-sim
+        app.kubernetes.io/component: call-load
+    spec:
+      containers:
+        - name: ui
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - run
+            - --role
+            - ui
+            - --next-host
+            - {{ .Values.peers.scscf | quote }}
+            - --ui-host
+            - "0.0.0.0"
+            - --ui-port
+            - {{ .Values.ui.port | quote }}
+          env:
+            - name: AS_SIM_TLS_CA
+              value: /tls/ca.crt
+          ports:
+            - name: http
+              containerPort: {{ .Values.ui.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: ims-sim-test-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ims-sim-ui
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: call-load
+spec:
+  selector:
+    app.kubernetes.io/component: call-load
+  ports:
+    - name: http
+      port: {{ .Values.ui.port }}
+      targetPort: http
+{{- end }}
+{{- if .Values.components.sut }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sut
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: sut
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: sut
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ims-sim
+        app.kubernetes.io/component: sut
+    spec:
+      containers:
+        - name: sut
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - run
+            - --role
+            - sut
+            - --advertise
+            - "sut.{{ .Values.namespace }}.svc.cluster.local"
+            - --next-host
+            - {{ .Values.peers.ssbcSouth | quote }}
+            - --allow-peer-host
+            - {{ .Values.peers.ssbcNorth | quote }}
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: AS_SIM_TLS_CERT
+              value: /tls/server.crt
+            - name: AS_SIM_TLS_KEY
+              value: /tls/server.key
+            - name: AS_SIM_TLS_CA
+              value: /tls/ca.crt
+          ports:
+            - name: sip-udp
+              containerPort: {{ .Values.sip.udpPort }}
+              protocol: UDP
+            - name: sip-tcp
+              containerPort: {{ .Values.sip.tcpPort }}
+              protocol: TCP
+            - name: sip-tls
+              containerPort: {{ .Values.sip.tlsPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: ims-sim-test-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sut
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ims-sim
+    app.kubernetes.io/component: sut
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: sut
+  ports:
+    - name: sip-udp
+      port: {{ .Values.sip.udpPort }}
+      protocol: UDP
+    - name: sip-tcp
+      port: {{ .Values.sip.tcpPort }}
+      protocol: TCP
+    - name: sip-tls
+      port: {{ .Values.sip.tlsPort }}
+      protocol: TCP
+{{- end }}

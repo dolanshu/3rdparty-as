@@ -1,6 +1,6 @@
-# REQ-NF-1 live 现场证据（待维护者环境采证）
+# REQ-NF-1 live 现场证据（restriction：Close 前不采证）
 
-> **状态**：待采证。本目录当前无证据文件，占位说明而已。
+> **状态**：restriction（2026-10-07）。Close 前不做客户 K8s live kill/restart/BYE 采证。本目录保持空白。
 > 需求：`docs/acceptance/test-plan.md` §2 REQ-NF-1；`docs/plan.md` §5.2 D10；
 > 记录：`docs/acceptance/m8-environment-evidence.md` D-2。
 > 工程 harness（非 live 验收）见 `platform/tests/test_d10_product_recovery_integration.py`、

@@ -1,0 +1,50 @@
+# Lab install of deploy/helm into namespace as-sut.
+# Production values stay empty of these rules. This file is not a customer install.
+namespace: as-sut
+nameOverride: as-sut
+
+image:
+  repository: as-sut
+  tag: dev
+  pullPolicy: IfNotPresent
+
+useCases:
+  - name: translation
+    enabled: true
+    replicaCount: null
+    resources: {}
+  # First-edition F1/F2 are kernel FORWARD/BLOCK on the translation process.
+  # A second process would bind the same SIP ports.
+  - name: anti-fraud
+    enabled: false
+
+sip:
+  listenAddr: "0.0.0.0"
+  port: 5060
+  tlsPort: 5061
+  # kind pod subnet (kind-calico.yaml). NetworkPolicy still admits only ssbc-north.
+  peerAllowlist: "192.168.0.0/16"
+  serviceHeadless: true
+  allowEmptyAllowlistForTest: false
+
+tls:
+  enabled: true
+  secretName: as-sut-test-tls
+  requireClientCertificate: false
+
+stateStores:
+  enabled: true
+  bootstrapDevCredentials: true
+
+runtime:
+  extraEnv:
+    AS_ENABLE_SIP_RUNTIME: "1"
+    AS_SIP_ROUTE_HOOK: as_translation.outbound
+    AS_SIP_ADVERTISED_ADDRESS: as-sut-translation.as-sut.svc.cluster.local
+    AS_SIP_NEXT_HOP: ssbc-south.ims-sim.svc.cluster.local
+    AS_SIP_NEXT_HOP_PORT: "5060"
+    AS_SIP_NEXT_HOP_TLS_PORT: "5061"
+    AS_RESIP_RUNTIME_BUILD: /opt/resip-runtime
+    LD_LIBRARY_PATH: /opt/resip-runtime
+    AS_RULESET_JSON: '[{"rule_id":"t1-plus86","prefix":"+86138","action":"translate","target":"sip:uas@south"},{"rule_id":"t5-forward","prefix":"+15550001","action":"forward","target":"sip:uas@south"},{"rule_id":"f1-allow","prefix":"+15550002","action":"forward","target":"sip:uas@south"},{"rule_id":"f2-block","prefix":"+15550003","action":"block"}]'
+    AS_TRANSLATION_RULES_JSON: '[{"rule_id":"t1-plus86","prefix":"+86138","strip_prefix":"+86","add_prefix":"0"}]'

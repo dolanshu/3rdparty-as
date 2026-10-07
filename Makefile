@@ -4,7 +4,7 @@
 # Nothing is committed unless it is green here first (AGENT.md §Git rules).
 
 .PHONY: help sync fmt lint type test test-unit test-integration test-integration-compose test-e2e test-perf chart-check gate gate-strict \
-	m2-native-restore m2-native-build m2-native-smoke m2-native-smoke-tcp m2-native-smoke-tls-runtime m2-native-smoke-tcp-runtime m2-native m2-platform-resip-build m7-platform-two-leg-build m7-platform-recovery-build
+	m2-native-restore m2-native-build m2-native-smoke m2-native-smoke-tcp m2-native-smoke-tls-runtime m2-native-smoke-tcp-runtime m2-native m2-platform-resip-build m7-platform-two-leg-build m7-platform-recovery-build m71-sim
 
 # Matches deploy/compose/.env.example POSTGRES_SUPERUSER_PASSWORD on published port 55432.
 COMPOSE_PG_DSN ?= postgresql://postgres:postgres@127.0.0.1:55432/as_config
@@ -89,6 +89,9 @@ m7-platform-two-leg-build: ## M7 slice: cmake-build platform _resip_two_leg exte
 
 m7-platform-recovery-build: ## M7 slice: cmake-build platform _resip_recovery extension
 	bash testbed/simulators/resip-probe/scripts/m2-native.sh build-platform-recovery
+
+m71-sim: ## M7.1 local SIP path, load scenarios, and chart policy text
+	uv run pytest platform/tests/test_udp_retransmission_contract.py testbed/load/tests/test_scenarios.py testbed/load/tests/test_no_retransmit.py testbed/load/tests/test_harness.py testbed/simulators/tests -q
 
 demo-story-a: ## pre-M8 demo story A (translation + control plane); see scripts/demo-review/README.md
 	bash scripts/demo-review/story-a.sh
