@@ -87,3 +87,5 @@
 - **修订**：标准 on-prem 可通过 **`stateStores.enabled=true`**（见 `values-onprem.example.yaml`）在**同一 release、同一 namespace** 渲染专用 PostgreSQL 与 Redis；`bootstrapDevCredentials` 仅 kind/dev。
 - **仍成立**：运营商 **IMS 核心库**不得作为 AS 治理 DSN；客户自带托管 PG/Redis 时设 `stateStores.enabled=false` 并填 `postgres.host` / `redis.url`。
 - **备份 / HA**：chart 不替代 ADR-0008 清单；见 `docs/acceptance/m5-state-stores-runbook.md`。
+
+- **Amendment 2026-10-06（M5.1 最小集）**：正文 Decision / Consequences 中"chart 不部署 PG/Redis"已由本 Amendment 段取代（`stateStores.enabled=true` 可选同 chart 渲染）；Helm 唯一生产形态与容量拒绝猜测渲染保持不变。

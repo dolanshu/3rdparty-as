@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import importlib
 import importlib.machinery
+import json
+import logging
 import os
 import sys
 import time
@@ -28,11 +30,45 @@ from as_platform.sip.call_controller import (
     StartOutboundInvite,
 )
 from as_platform.sip.ingress import TransportIngressGate, reject_plaintext_when_tls_required
+from as_platform.sip.resip_runtime_log_contract import (
+    ResipRuntimeLogEvent,
+    parse_resip_runtime_log_line,
+)
 from as_platform.sip.transport import PeerIdentity, TransportSeam
 
 _INGRESS_DENIED_STATUS = 403
 _FORWARD_WIRE_STATUS = 0
 _DEFAULT_BUILD_DIR = Path(__file__).resolve().parents[3] / "native" / "resip_runtime" / "build"
+
+# Native worker console lines bypass Python logging (see ADR-0019); forwarders
+# emit them as JSON here so REQ-NF-13 assertions hang on stable records.
+# See ADR-0005.
+_native_log = logging.getLogger(__name__ + ".native")
+
+
+def emit_native_log_event(
+    line: str,
+    *,
+    timestamp: float | None = None,
+    trace_id: str | None = None,
+) -> ResipRuntimeLogEvent | None:
+    """Parse one ``RESIP_RUNTIME_*`` console line and emit its JSON log record."""
+    event = parse_resip_runtime_log_line(line)
+    if event is None:
+        return None
+    nf13 = event.to_nf13_fields()
+    record = {
+        "timestamp": timestamp if timestamp is not None else time.time(),
+        "level": nf13["level"],
+        "trace_id": trace_id if trace_id is not None else nf13["trace_id"],
+        "call_id": nf13["call_id"],
+        "direction": nf13["direction"],
+        "method": nf13["method"],
+        "native_event": event.event,
+        "native_fields": event.fields,
+    }
+    _native_log.info(json.dumps(record, sort_keys=True))
+    return event
 
 
 def _extension_build_dir() -> Path:

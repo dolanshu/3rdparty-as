@@ -146,6 +146,10 @@ sip:
   # control, not a routing hint. Empty must be treated as fail-closed by the
   # process; set it per customer.
   peerAllowlist: ""
+  # Testbed-only escape hatch for the H-4 fail-closed guard in
+  # templates/deployment.yaml (M5.1 minimal). Default false: production renders
+  # fail when peerAllowlist is empty. See ADR-0016.
+  allowEmptyAllowlistForTest: false
 
 # Bundled in-cluster PostgreSQL + Redis (ADR-0026 Option E). When enabled, the
 # chart renders state workloads in the same namespace; postgres.host / redis.url
@@ -211,8 +215,10 @@ postgres:
 tls:
   enabled: true
   # Secret holding tls.crt / tls.key / ca.crt. Always externally managed
-  # (customer PKI); the chart only references it. Empty renders no TLS mount —
-  # fix it before install rather than shipping a broken trust anchor.
+  # (customer PKI); the chart only references it. Empty with enabled=true is a
+  # render-time failure (H-3 fail-closed, see templates/deployment.yaml), not
+  # a skipped mount — fix it before install rather than shipping a broken
+  # trust anchor.
   secretName: ""
   requireClientCertificate: true
 

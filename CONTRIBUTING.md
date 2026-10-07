@@ -21,14 +21,19 @@ make gate          # 提交前门禁，顺序同 CI 第①层
 
 ## 门禁（The gate）
 
-| 层 | 命令 | 运行时机 |
-|---|---|---|
-| ① fast | `make test-unit` | 每次 push 和 PR |
-| ② integration | `make test-integration` | 在 ① 之后 |
-| ③ e2e | `make test-e2e` | 在 ② 之后 |
-| ④ performance | `make test-perf` | 仅 nightly 和 tag |
+`make gate` 四步固定（AGENT.md §9）：`ruff format --check` → `ruff check` → `mypy` → pytest（unit/contract 层）。AST 扫描**不在** `make gate` 内；`make gate-strict` = gate 四步 + AST 扫描（`scripts/ci/check_adr_annotations.py`，REQ-G-3，ADR-0015）。
 
-`make gate` = lint + type + ①②③。本地门禁不绿，什么都不能提交。
+| 层 | 命令 | 运行时机 | 是否阻塞 |
+|---|---|---|---|
+| ① fast | `make test-unit` + `chart-check` + `gate-strict` 扫描 | 每次 push 和 PR | 阻塞 |
+| ② integration | `make test-integration` | 在 ① 之后 | 阻塞 |
+| native | CI job `m2-platform-resip` / `m2-native-smoke` / `m7-recovery` / `m7-two-leg` | 在 ① 之后 | 阻塞 |
+| ③ e2e | `make test-e2e` | 在 ② 之后 | 非阻塞（0 用例；首个 e2e 用例的里程碑必须改为阻塞，ADR-0015） |
+| ④ performance | `make test-perf` | 仅 nightly、tag、手动 | 运行即阻塞（M6 起已有用例） |
+
+合并门禁清单：`fast`（含 chart-check 与 gate-strict 扫描）+ `m2-platform-resip` + `m2-native-smoke` + `m7-recovery` + `m7-two-leg` + `integration` 全绿；`e2e` 在首个 e2e 用例落地前保持 `continue-on-error`；`performance` 只在 nightly/tag/手动运行时阻塞。
+
+本地门禁不绿，什么都不能提交。
 本地门禁**不是** CI：绝不要把本地重跑冒充成 CI 结果。
 
 ## 新增一个 workspace 成员

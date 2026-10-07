@@ -119,6 +119,8 @@ struct ListenerState
          peerFingerprintsByEndpoint[endpointKey] = fingerprint;
       }
       static constexpr std::size_t kMaxPeerFingerprints = 2048;
+      // See ADR-0019: no native transport-close callback is wired, so entries
+      // are reaped here by cap eviction (dialog-end cleanup is Python-side).
       while (peerFingerprints.size() > kMaxPeerFingerprints && !peerFingerprints.empty())
       {
          peerFingerprints.erase(peerFingerprints.begin());

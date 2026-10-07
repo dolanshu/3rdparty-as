@@ -8,6 +8,12 @@ Capacity: this template never encodes a capacity assumption. When
 fallback so the manifest is valid, explicitly NOT a conclusion about how much
 traffic one Pod carries. Those numbers come from M6 (O1, docs/plan.md §5.1).
 */}}
+{{- if and $.Values.tls.enabled (not $.Values.tls.secretName) }}
+{{- fail "tls.enabled=true requires tls.secretName (customer PKI Secret with tls.crt/tls.key/ca.crt). Set tls.secretName, or tls.enabled=false for plaintext testbed only. See ADR-0016" -}}
+{{- end }}
+{{- if and (not $.Values.sip.peerAllowlist) (not $.Values.sip.allowEmptyAllowlistForTest) }}
+{{- fail "sip.peerAllowlist is empty: fail-closed per ADR-0016 (anything able to impersonate the S-SBC could inject calls). Set sip.peerAllowlist to the operator S-SBC CIDRs, or sip.allowEmptyAllowlistForTest=true for testbed only. See ADR-0016" -}}
+{{- end }}
 {{- range $uc := .Values.useCases }}
 {{- if $uc.enabled }}
 {{- $ctx := dict "Release" $.Release "Chart" $.Chart "Values" $.Values "useCase" $uc.name }}

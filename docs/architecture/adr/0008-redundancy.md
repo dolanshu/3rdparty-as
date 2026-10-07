@@ -84,3 +84,8 @@
 - [ADR-0007](0007-data-plane-split.md) 数据面拆分 —— Redis 与 PostgreSQL 各自的冗余与备份对象
 - [`../新系统整体架构.md`](../新系统整体架构.md) §6.1 Redundancy、§12.1 未决项 O5、§12.2 风险 R5
 - 未决项 O5（N+1 vs N+M / M5 / 客户 SLA）与 D3（Redis 接线与脑裂窗口）—— 均**未裁决**，本 ADR 不替其做决定
+
+## Amendment 2026-10-06（M5.1 最小集；相对 ADR-0026 的 SPoF 缺口登记）
+
+- 本 ADR 要求的"站点内零单点"（Redis Sentinel 1 主 2 从 3 哨兵 + PG 流复制 + 备份 + PITR）与 ADR-0026 标准路径实际渲染的单副本内建状态存储（PostgreSQL StatefulSet `replicas: 1`、Redis Deployment `replicas: 1`）**存在缺口**：内建路径是单点，生产 HA 按 runbook 声明为 customer-owned（见 `docs/acceptance/m5-state-stores-runbook.md`）。
+- 本 Amendment 只登记缺口，不放宽本站点内零单点要求；生产 HA 的最终形态与验收口径推迟到 **M8 退出评审**（O5 客户 SLA 裁决），届时或接受 customer-owned HA，或补 Sentinel/流复制实现。跨站点切换演练（A-2）同样 defer，见 `docs/reviews/m5-req-acceptance-review-2026-10-06.md`。（REQ-NF-1， REQ-NF-3；ADR-0026；plan §5.1 O5/D12。）

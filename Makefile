@@ -3,7 +3,7 @@
 # `make gate` is the same set of checks CI layer ① runs, in the same order.
 # Nothing is committed unless it is green here first (AGENT.md §Git rules).
 
-.PHONY: help sync fmt lint type test test-unit test-integration test-integration-compose test-e2e test-perf chart-check gate \
+.PHONY: help sync fmt lint type test test-unit test-integration test-integration-compose test-e2e test-perf chart-check gate gate-strict \
 	m2-native-restore m2-native-build m2-native-smoke m2-native-smoke-tcp m2-native-smoke-tls-runtime m2-native-smoke-tcp-runtime m2-native m2-platform-resip-build m7-platform-two-leg-build m7-platform-recovery-build
 
 # Matches deploy/compose/.env.example POSTGRES_SUPERUSER_PASSWORD on published port 55432.
@@ -109,3 +109,6 @@ demo-review-all: ## run automated demo stories (best-effort; needs Redis for D)
 	bash scripts/demo-review/run-all-automated.sh
 
 gate: lint type test-unit ## the pre-commit gate: lint, type, then layer ① (unit + contract)
+
+gate-strict: gate ## gate plus the REQ-G-3 ADR annotation scan (ADR-0015; also a blocking CI step in job ①)
+	uv run python scripts/ci/check_adr_annotations.py

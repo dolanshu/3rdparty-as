@@ -7,15 +7,24 @@
 
 ### 新增（Added）
 
+- M8 发布候选执行计划：[`docs/handoff/2026-10-06-m8-release-candidate-plan.md`](docs/handoff/2026-10-06-m8-release-candidate-plan.md)（阶段 A→E、`plan.md` §0/§4 入口更新）。
 - 产品 SIP runtime：`AS_SIP_BIND_ADDRESS` / `AS_SIP_ADVERTISED_ADDRESS` 与 `AS_TLS_*` / `AS_PEER_*` 环境变量接缝（`transport_env.py`）。
 - `platform/tests/native_extensions.py`：`AS_REQUIRE_NATIVE_EXTENSIONS=1` 时无 native 扩展则契约测 fail（**GitHub Actions workflow 未更新** — 需 `workflow` scope PAT 方可 push `.github/workflows/ci.yml`）。
 - Demo：故事 C M5 对账话术、故事 B 增加 S4/487 步骤、`run-all-automated` PASS/SKIP/FAIL 汇总。
+- 阻塞式 native CI jobs（`m2-platform-resip` / `m2-native-smoke` / `m7-*`，缺 `_resip_runtime` 即 fail）+ `chart-check` / `gate-strict` 进 CI ①（F9 workflow-ready-locally；origin push 待维护者 PAT）。
+- `resip_runtime_log_contract`（`RESIP_RUNTIME_*` 字段契约）+ 13 例契约测试 + NF-13 映射（F8）。
+- Helm H-1…H-4 fail-closed（secret key 补全 / stateStores 生产组合 fail / `tls.secretName` 空 fail / `peerAllowlist` 空 fail）+ chart-check onprem 矩阵；kind 脚本 fail-closed（K-1/K-2）。
+- HLD/LLD M5 delta + ADR-0008 SPoF 缺口 amendment + ADR-0013 amendment 注记。
+- M8 签收矩阵（`m8-test-plan-matrix.md`）+ 环境证据（`m8-environment-evidence.md`）+ 退出评审（`m8-exit-review-2026-10-06.md`）；M8 RC 不宣称全绿，签字待维护者。
 
 ### 变更（Changed）
 
 - REQ-F-10：下游 408/480/486/503/504 透传至上游（`CallController` + native runtime）。
 - FORWARD 双腿建立后 native 回传真实 UAC checkpoint 字段；恢复 BYE 使用 checkpoint Contact/route_set。
 - `as_load` 支持 `--min-success-rate` / `--max-unresolved` 退出码策略。
+- M5 关门含义降级为工程关门（非 REQ 验收）；M5 REQ 级不通过，10 项 defer（见 `m5-req-acceptance-review-2026-10-06.md`，拟新增 plan §5 行 M5D-1…M5D-6 由维护者落定）。
+- performance CI 层自 M6 首个用例起阻塞；e2e 层仍 `continue-on-error`（0 tests）。
+- `m2-platform-resip` 缺 `_resip_runtime` 时 integration 用例 fail（非 skip）。
 
 ## [0.1.0] - 未发布（Unreleased）
 

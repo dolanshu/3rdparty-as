@@ -1,4 +1,98 @@
-# 验收报告（Acceptance Report）— 3rdparty-as
+# 验收报告（Acceptance Report）— 3rdparty-as · M8 发布候选（2026-10-06）
+
+> 状态：**M8 发布候选（RC 就绪，待维护者退出签字）**——不宣称全绿，不构成关门结论，不含维护者签名。
+> 日期：2026-10-06
+> 执行：AI agent（维护者缺席期间用户指令 self-decision；本章所有签字均为**维护者待签**）
+> 依据：[`2026-10-06-m8-release-candidate-plan.md`](../handoff/2026-10-06-m8-release-candidate-plan.md)（RC 计划 §3 退出条件 / §4 阶段 A–E / §5 未决项处置）、[`plan.md`](../plan.md) §4（M8 定义）/ §5（O/D 未决项）
+
+## 0. M8 发布候选（2026-10-06）
+
+### 0.1 范围：M8 是什么 / 不是什么（RC 计划 §1）
+
+| M8 是 | M8 不是 |
+|---|---|
+| 带证据的 REQ / test-plan 签收运行（矩阵见 [`m8-test-plan-matrix.md`](m8-test-plan-matrix.md)） | 新功能里程碑（不默认扩 PRD 范围） |
+| 维护者里程碑退出（M1/M2/M6/M7）与 M8 自身签收的收口 | 重做 M2–M7 工程关门（工程关门已完成，见 `plan.md` §4） |
+| 本报告升级为 M8 发布候选主报告（历史正文保留为附录，不改写） | 对外 SLA / 商用 O1 数字发布（仍受 AGENT.md §2、plan §5.1 O1 约束） |
+| VERSION / CHANGELOG 统一产品版本（F15；本 RC：VERSION 维持 `0.2.0`，不 bump） | Pre-M8 全量客户 Demo（故事 C 仍受 F10 约束，L1 口径） |
+| M5 REQ 级证据口径收敛（工程关门 ≠ REQ 验收，见 §0.4） | 推翻 2026-10-04 M5 工程关门（维持并降级其含义，见 §0.4） |
+
+完成定义（`plan.md` §4）：逐条验收报告 + 文档链完整 + 统一产品版本——其中"逐条验收"以签收矩阵终态 + 维护者签字为准；本 RC 仅达到"RC 就绪"，未达到"关门"。
+
+### 0.2 进入基线（entry baseline）
+
+- 基线 commit：`master` @ `8d1c5cd`（2026-10-06；含 callload 合入 `139d299`；另有 Phase A 工作区改动待维护者检视，见 `git status`）。
+- `make gate`：**978 passed, 2 skipped**（exit 0；2 skip 均为 `test_derived_baseline.py` Route/Record-Route probe 缺口，见矩阵 F-5 行）。
+- callload M2/M6/M7 工程切片已合入 `master`（[`handoff/2026-10-06-callload-merge-to-master.md`](../handoff/2026-10-06-callload-merge-to-master.md)）；合入不自动闭合 M2/M6/M7 维护者签收。
+
+### 0.3 Phase A 小结：门禁与证据基础设施
+
+- **F9（A-1）**：origin blocking native CI 为 **workflow-ready-locally**——`.github/workflows/ci.yml` 已含 `m2-platform-resip` / `chart-check` / `m2-native-smoke` / `m7-*` 阻塞式 jobs（缺 `_resip_runtime` 即 fail，非 skip）；`native_extensions.py` 同步收紧。但 **push 待维护者 PAT（`workflow` scope）**，见 merge handoff §6；RC 内未推送。
+- **F8（A-2）**：字段契约已落地——`resip_runtime_log_contract.py` + 13 例契约测试 + [`m8-resip-runtime-log-contract.md`](m8-resip-runtime-log-contract.md) + `emit_native_log_event` JSON 富化；C++→Python JSON 回调 defer 到 post-RC（计划允许的二选一路径）。REQ-NF-13 断言挂此契约。详见 [`m8-phase-a-f6-f8-note-2026-10-06.md`](../reviews/m8-phase-a-f6-f8-note-2026-10-06.md)。
+- **F6（A-3）**：documented limitation——注册上限 + dialog 终止注销已验证存在；native transport-close 回调缺席为设计现状（reSIProcate Transport close hook 未接入，RC 范围外）；连接经 dialog 终止回收 + 指纹 LRU 淘汰兜底；风险接受待维护者裁决。
+- **A-4 / A-5 / A-6**：`make gate` 与 CI 关系已文档化（CONTRIBUTING）；`gate-strict`（REQ-G-3 ADR 标注扫描，`check_adr_annotations.py` 69 files clean）进 CI ① 且阻塞；`performance` 层自 M6 首个用例起阻塞；e2e 层仍 `continue-on-error`（0 tests）。
+- **A-7**：签收前 native 一致性 runbook 已落实：[`m8-native-consistency-runbook.md`](m8-native-consistency-runbook.md)（签收跑前 `make m2-platform-resip-build` 及 M7 recovery/two-leg 目标）。
+
+### 0.4 Phase B 小结：M5 REQ 链口径
+
+复评记录：[`m5-req-acceptance-review-2026-10-06.md`](../reviews/m5-req-acceptance-review-2026-10-06.md)（结论：有条件通过（工程切片）/ REQ 级不通过，10 项 defer；维护者会签待补）。
+
+- **B-1**：只执行 MINIMAL M5.1（Helm H-1…H-4 fail-closed 修补 + chart-check onprem 矩阵 + kind K-1/K-2 fail-closed 加固 + HLD/LLD M5 delta + ADR-0008/0013 amendments + REQ 链注记）；全量告警/指标接线、OTLP exporter、缩容守卫参控、NetworkPolicy egress、resources/probes 全部 defer 到 RC 后。
+- **B-2**：维持 2026-10-04 M5 工程关门签字（不撤销、不改写历史），含义明确降级为**工程关门（非 REQ 验收）**。
+- **B-3**：故事 C 保持 **L1（F10）**：只展示 chart/alerts 形态 + kind 摘要，不得表述为全链已验收或生产告警/缩容已闭环。
+- Defer 构成项（10 项；拟新增 plan §5 行 M5D-1…M5D-6 由维护者落定）：C-1/C-2/C-3/C-6/C-7/C-9、H-8、H-11、A-2、T-1（明细见复评 §6）。
+
+### 0.5 Phase C 小结：test-plan 签收矩阵（不宣称全绿）
+
+矩阵：[`m8-test-plan-matrix.md`](m8-test-plan-matrix.md)（回溯 `test-plan.md` §1–§5；所有行 `signed_by` 均为维护者待签）。
+
+**实际统计（以矩阵为准）**：pass **9**（NF-6、NF-8、NF-11、NF-12、G-1、G-2、G-3、G-4、KERNEL-§5；其中 G-1/G-2/G-3 为 pass-机制，逐变更评审仍需维护者）／ fail **0** ／ blocked **12** ／ n-a **4** ／ open **24**。
+
+**本 RC 明确不宣称全绿**：24 个 open 与 12 个 blocked 均未宣称为绿；4 个 n-a 为明确排除（主叫/正则 v1.1、PM/AM/UM、D1 Python 3.10 EOL、D10 极端扩展），永不记 pass。
+
+v1 明确排除（RC 计划 §3.1 / plan §5.3–§5.4）：PM/AM/UM 完整产品；REQ-F-13 live 轨迹（M4b-7.4）；主叫 / 正则（v1.1）；D1；Redis 故障转移 owner/CAS 极端场景与 mid-transaction 恢复（D10 不扩展）；NF-3 带固定容量数字条目（与 AGENT.md §2 冲突，待维护者裁决改写验收口径或标 N/A；plan §5.1 O1 仍 open）。
+
+### 0.6 Phase D 小结：环境证据
+
+记录：[`m8-environment-evidence.md`](m8-environment-evidence.md)；证据根目录 `acceptance/artifacts/m8/<date>/`（`req-s-2-pki/`、`req-s-3-rotation/`、`req-nf-1-live/`，均为待采证占位，脱敏约定见该文件 §0）。
+
+- **D-1**（运营商 PKI / 外网 S-SBC，REQ-S-2/S-3 尾）：本环境无 lab 与对端，无法采证——**明确 defer**，S-2/S-3 在矩阵中保持 blocked。
+- **D-2**（客户 K8s REQ-NF-1 live kill/restart/BYE）：本环境无客户集群——**明确 defer**，NF-1 在矩阵中保持 blocked。
+- **D-3**（D6 testbed 是否 v1 客户验收）：**维护者裁决 pending**；本 RC 建议 v1.1（架构基线；除非客户明确要求 v1），建议不生效力；裁决前 D6 行保持 blocked。
+
+### 0.7 E-6 打包校验结果
+
+- `tests/test_version_consistency.py`：**9 passed**；VERSION 维持 `0.2.0`，CHANGELOG 首标题 `== 0.2.0`（未新增版本节，未 bump）。
+- 密钥/抓包复检：新 M8 文档中 `BEGIN PRIVATE KEY` 零命中，`--password` / `passwd` 零命中；`artifacts/m8/` 占位不含任何伪造证据。
+- Helm 可重复构建：`make chart-check` → **chart-check: OK**（形状证据，不作为 REQ pass 依据；RC 内不重跑重型构建）。
+- README/runbook 与 `AS_SIP_*`/`AS_TLS_*` 一致性：实现侧变量定义于 `platform/src/as_platform/runtime/transport_env.py`（`AS_SIP_BIND_ADDRESS` / `AS_SIP_ADVERTISED_ADDRESS` / `AS_TLS_*` / `AS_PEER_*`）；README 未收录 env 名（无错名、无 typo 可改），runbook 仅引用 `AS_REQUIRE_NATIVE_EXTENSIONS=1`（与 `native_extensions.py` 一致）——记为**文档缺口（非阻塞）**：README 缺 env 变量表，建议维护者补一行指向 runbook / `transport_env.py` 的链接；未发现需改的拼写错误。
+- 镜像 push/tag：**明确留给维护者**（AGENT.md §10.4），本 RC 不执行。
+
+### 0.8 Defer / blocked 合并清单（签字前须逐项终态）
+
+| # | 项 | 状态 | 指向 |
+|---|---|---|---|
+| 1 | F9 workflow push | pending（待 PAT） | §0.3 |
+| 2 | 矩阵 12 blocked（F-13、5.4-F-13、F-15、5.4-F-15真AS、NF-1、NF-3、NF-4、NF-7、S-2、S-3、ADR-0008演练、D6） | blocked | 矩阵 |
+| 3 | 矩阵 24 open（F-1/2/3/4/5/6/7/8/9/10/11/12/14/16、NF-2/5/9/10/13/14/15、S-1/S-4、D12/O5-HA） | open（待 M8 退出评审签收） | 矩阵 |
+| 4 | D-1 / D-2 | 明确 defer（须维护者授权列入总审） | §0.6 |
+| 5 | D-3（D6） | 裁决 pending（建议 v1.1） | §0.6 |
+| 6 | M5D 10 项（C-1、C-2、C-3、C-6、C-7、C-9、H-8、H-11、A-2、T-1） | defer（M5 REQ 级不通过构成项） | §0.4 |
+| 7 | O1 目标裁决 / NF-3 口径 / D1 风险登记 | open（待维护者裁决） | plan §5.1 / §5.2 |
+
+### 0.9 维护者待办（RC 关门前必须由维护者执行）
+
+1. 以具 `workflow` scope 的 PAT（或等效授权）推送 `.github/workflows/ci.yml`（F9），确认 origin CI 绿。
+2. 排期运营商 PKI lab 与外网 S-SBC 联调（D-1）、客户 K8s live 基线（D-2），按 env-evidence §0 落脱敏证据；或在总审中书面接受风险。
+3. 对 D-3（D6 v1/v1.1）、O1 目标、NF-3 口径、M5D-1…M5D-6 行落定给出书面裁决。
+4. 完成 M1/M2/M6/M7/M8 退出签字（签字表见 [`m8-exit-review-2026-10-06.md`](../reviews/m8-exit-review-2026-10-06.md)，全为维护者待签）；tag 仅由维护者执行（AGENT.md §10.4）。
+
+> 术语说明：本章"RC 就绪"指 RC 产物齐备、可供维护者评审签字；"关门"仅维护者签字后成立。本 RC 不作"通过"结论。
+> 历史注记：本文件附录原文 M2a 节含一处"全绿"（2026-09-28 M2a unit/contract 门禁快照，非 M8 宣称），按保史要求原文保留；本 RC 章（§0）未新增任何肯定式全绿表述。
+
+## 附录：历史 M1 报告
+
+## 验收报告（Acceptance Report）— 3rdparty-as
 
 > 里程碑：**M1 —— 甄别与行为基线**
 > 日期：2026-09-28

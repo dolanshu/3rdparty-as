@@ -104,13 +104,21 @@ _m5_ingress_curl() {
 HTTP_CODE="$(_m5_ingress_curl http "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/")"
 HTTP_CODE="${HTTP_CODE:-000}"
 echo "in-cluster HTTP (expect 301/302/308): ${HTTP_CODE}"
+# K-1 (M5.1 minimal): a non-redirect HTTP code is evidence failure, not a
+# warning — WARN-only checks can never turn red. See ADR-0013.
 if [[ ! "${HTTP_CODE}" =~ ^(301|302|308)$ ]]; then
-  echo "WARN: ingress HTTP check not a redirect (kind/nginx flake or controller config); backend checked via port-forward below"
+  echo "ERROR: ingress HTTP check not a redirect (got ${HTTP_CODE})" >&2
+  exit 1
 fi
 
 HTTPS_CODE="$(_m5_ingress_curl https "https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/")"
 HTTPS_CODE="${HTTPS_CODE:-000}"
 echo "in-cluster HTTPS root: ${HTTPS_CODE}"
+# K-1 (M5.1 minimal): a missing HTTPS code fails the evidence run.
+if [[ "${HTTPS_CODE}" == "000" ]]; then
+  echo "ERROR: ingress HTTPS check returned no status code" >&2
+  exit 1
+fi
 
 m5_noproxy_env
 CFG_POD="$(kubectl -n "${NS}" get pod -l app.kubernetes.io/component=config-service -o jsonpath='{.items[0].metadata.name}')"
@@ -122,6 +130,11 @@ PF_CODE="$(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' http://127.0.0.1
 kill "${PF_PID}" 2>/dev/null || true
 wait "${PF_PID}" 2>/dev/null || true
 echo "config-service port-forward (NO_PROXY): ${PF_CODE}"
+# K-1 (M5.1 minimal): the port-forward code is asserted, not merely recorded.
+if [[ "${PF_CODE}" != "200" ]]; then
+  echo "ERROR: expected 200 from config-service port-forward (got ${PF_CODE})" >&2
+  exit 1
+fi
 
 echo "admission_job_ok=${ADMISSION_OK}"
-echo "ingress-evidence: recorded"
+echo "ingress-evidence: OK"

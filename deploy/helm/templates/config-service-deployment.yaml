@@ -2,7 +2,7 @@
 {{- if $config.enabled -}}
 {{- $secretName := include "as.configServiceRuntimeSecretName" . -}}
 {{- if not $secretName -}}
-{{- fail "services.configService.secretName is required when configService is enabled (or set stateStores.bootstrapDevCredentials for dev/kind)" -}}
+{{- fail "services.configService.secretName is required when configService is enabled (set it to the customer runtime Secret, see values-onprem.example.yaml placeholder, or set stateStores.bootstrapDevCredentials for dev/kind)" -}}
 {{- end -}}
 {{- $runtimeRole := required "services.configService.runtimeRole is required when configService is enabled" $config.runtimeRole -}}
 {{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]{0,62}$" $runtimeRole) -}}

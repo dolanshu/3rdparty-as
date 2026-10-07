@@ -14,8 +14,10 @@ echo "==> make chart-check"
 make chart-check
 
 if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx "kind-${CLUSTER}"; then
-  echo "SKIP: no kind-${CLUSTER} context (run make m5-cluster-evidence first)"
-  exit 0
+  # K-1 (M5.1 minimal): a missing cluster is evidence failure (nonzero exit),
+  # not a silent SKIP that still prints OK. See ADR-0013.
+  echo "ERROR: no kind-${CLUSTER} context (run make m5-cluster-evidence first)" >&2
+  exit 1
 fi
 
 kubectl config use-context "kind-${CLUSTER}"
@@ -39,7 +41,10 @@ if [[ -n "${CFG_POD}" ]]; then
   echo "config-service via port-forward (NO_PROXY): HTTP ${CODE}"
   [[ "${CODE}" == "200" ]] || { echo "ERROR: expected 200 from config-service" >&2; exit 1; }
 else
-  echo "WARN: no config-service pod (ingress evidence not run?)"
+  # K-1 (M5.1 minimal): a missing config-service Pod fails the run instead of
+  # WARN-skipping the assertion while still printing OK.
+  echo "ERROR: no config-service pod (ingress evidence not run?)" >&2
+  exit 1
 fi
 
 echo "m5-verify: OK"

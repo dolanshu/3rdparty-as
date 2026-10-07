@@ -26,12 +26,18 @@ stateStores:
 # When stateStores.enabled=true, postgres.host / redis.url default to chart Services.
 postgres:
   port: 5432
-  secretName: ""  # use release credentials Secret or customer Secret
+  # H-2 (M5.1 minimal): non-empty placeholder so the example renders. Replace
+  # with the customer-managed Secret (keys: CONFIG_DB_USER, CONFIG_DB_PASSWORD,
+  # CONFIG_DB_OWNER_PASSWORD, POSTGRES_SUPERUSER_PASSWORD, REDIS_PASSWORD).
+  secretName: "REPLACE_WITH_POSTGRES_SECRET"
 
 services:
   configService:
     enabled: true
-    secretName: ""  # required: customer Secret with AS_CONFIG_DSN + audit HMAC key
+    # H-2 (M5.1 minimal): non-empty placeholder so the example renders. Replace
+    # with the customer-managed runtime Secret (keys: AS_CONFIG_DSN,
+    # AS_AUDIT_RESOURCE_HMAC_KEY_B64).
+    secretName: "REPLACE_WITH_CONFIG_RUNTIME_SECRET"
     runtimeRole: as_config_runtime
 
 sip:
