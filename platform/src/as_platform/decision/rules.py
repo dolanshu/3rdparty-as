@@ -6,7 +6,7 @@ matches, the winner is chosen by ``(action_rank, prefix_length)`` descending:
 * ``BLOCK`` (2) outranks ``TRANSLATE`` (1) outranks ``FORWARD`` (0), so a block
   always wins over a translate even when the translate prefix is longer. That
   ordering is required by REQ-F-7 and stated in docs/acceptance/test-plan.md
-  §1.2 ("阻止规则 > 翻译规则 > 默认路由"): refusing a call is the safe answer
+    §1.2 ("block rules > translation rules > default route"): refusing a call is the safe answer
   whenever a block rule is in play.
 * Within one action, the longer prefix wins (longest-prefix-first, REQ-F-6).
 

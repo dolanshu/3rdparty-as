@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Story C — 平台能运维（Helm / kind / metrics / draining / 告警）
+# Story C - Operate the platform (Helm / kind / metrics / draining / alerts)
 set -euo pipefail
 # shellcheck source=scripts/demo-review/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
