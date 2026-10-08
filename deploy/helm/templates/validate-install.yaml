@@ -1,0 +1,13 @@
+{{/*
+Install-time guards (M5.1): fail closed before a broken release ships.
+See ADR-0016 (TLS + peer allowlist) and ADR-0026 (bundled state credentials).
+*/}}
+{{- if and .Values.tls.enabled (not .Values.tls.secretName) -}}
+{{- fail "tls.enabled=true requires tls.secretName (customer PKI Secret; ADR-0016)" -}}
+{{- end -}}
+{{- if not (trim .Values.sip.peerAllowlist) -}}
+{{- fail "sip.peerAllowlist must be non-empty (ADR-0016 fail-closed)" -}}
+{{- end -}}
+{{- if and .Values.stateStores.enabled (not .Values.stateStores.bootstrapDevCredentials) (not .Values.postgres.secretName) -}}
+{{- fail "stateStores.enabled with bootstrapDevCredentials=false requires postgres.secretName (Secret keys: POSTGRES_SUPERUSER_PASSWORD, CONFIG_DB_OWNER_PASSWORD, CONFIG_DB_PASSWORD)" -}}
+{{- end -}}

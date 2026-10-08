@@ -60,3 +60,40 @@ m5_noproxy_env() {
   export NO_PROXY="127.0.0.1,localhost,${host}"
   export no_proxy="127.0.0.1,localhost,${host}"
 }
+
+m5_strict_enabled() {
+  [[ "${M5_STRICT:-0}" == "1" ]]
+}
+
+m5_require_kind_context() {
+  local cluster="${KIND_CLUSTER_NAME:-as-m5}"
+  if kubectl config get-contexts -o name 2>/dev/null | grep -qx "kind-${cluster}"; then
+    kubectl config use-context "kind-${cluster}"
+    return 0
+  fi
+  if m5_strict_enabled; then
+    echo "ERROR: kind-${cluster} context missing (M5_STRICT=1)" >&2
+    exit 1
+  fi
+  echo "SKIP: no kind-${cluster} context (run make m5-cluster-evidence first)" >&2
+  exit 0
+}
+
+m5_verify_ingress_manifest() {
+  local root="${1:-$(m5_repo_root)}"
+  local manifest="${root}/deploy/kind/manifests/ingress-nginx-kind-deploy.yaml"
+  local checksum="${root}/deploy/kind/manifests/ingress-nginx-kind-deploy.sha256"
+  if [[ ! -f "${manifest}" ]]; then
+    echo "ERROR: missing pinned ingress manifest: ${manifest}" >&2
+    exit 1
+  fi
+  if [[ -f "${checksum}" ]]; then
+    local expected actual
+    expected="$(awk '{print $1}' "${checksum}")"
+    actual="$(sha256sum "${manifest}" | awk '{print $1}')"
+    if [[ "${expected}" != "${actual}" ]]; then
+      echo "ERROR: ingress manifest checksum mismatch (supply chain guard)" >&2
+      exit 1
+    fi
+  fi
+}

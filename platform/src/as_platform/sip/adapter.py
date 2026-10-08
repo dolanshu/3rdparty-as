@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from as_platform.decision.decide import DecisionAction, DecisionRequest
+from as_platform.telemetry.metrics import CallMetrics
 
 # RFC 3261 status codes the kernel decisions map onto (hld.md §5 step 4).
 STATUS_DECLINE = 603  # RFC 3261 §21.6.2 --- REQ-F-7
@@ -145,3 +146,20 @@ def decision_to_status_code(action: DecisionAction) -> int:
         return STATUS_NOT_FOUND
 
     return STATUS_CONTINUE
+
+
+def respond_with_metrics(
+    adapter: SipAdapter,
+    call_metrics: CallMetrics,
+    use_case: str,
+    view: SipRequestView,
+    status_code: int,
+) -> bytes:
+    """Send a SIP response and increment ``as_sip_responses_total`` (M5.1 / M7 path).
+
+    Stack bindings and the product adapter must use this (or
+    :func:`as_platform.sip.metrics_bridge.record_sip_status_code`) whenever a
+    SIP response is emitted on the wire.
+    """
+    call_metrics.record_response(use_case, status_code)
+    return adapter.respond(view, status_code)
