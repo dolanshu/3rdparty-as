@@ -7,7 +7,7 @@ Two namespaces:
 | Namespace | Workloads |
 |---|---|
 | `ims-sim` | simulated S-CSCF, S-SBC (north and south), callee, call-load UI |
-| `as-sut` | decision SIP front. It calls the product `decide()` kernel. It is not the product container: that image does not bind SIP yet, and this chart does not add a simulator switch to the product values. |
+| `as-sut` | the product chart `deploy/helm` with `values-product-as.yaml`: the translation SIP process (lab image `as-sut:dev` from `Dockerfile.product`), Redis, PostgreSQL, and config-service. The released image `deploy/docker/Dockerfile` does not bind SIP yet. |
 
 Call load opens SIP only toward the simulated S-CSCF. The system under test accepts SIP from the north S-SBC. The page is a Service inside `ims-sim`, not an Ingress on the product console, and it does not log in.
 

@@ -10,9 +10,9 @@ Artifacts: `artifacts/demo-review/<date>/story-{a,b,c,d,e}/`
 |-------|---------|------------------|
 | A 开通翻译号段 | `make demo-story-a` or `bash scripts/demo-review/story-a.sh` | control plane as before; signaling needs kind `as-m71` |
 | B 拦截诈骗号段 | `make demo-story-b` | kind `as-m71` test page, UDP/TCP/TLS, then local 487/608 checks |
-| C 平台运维 | `make demo-story-c` | 1–10 min (kind optional) |
-| D 恢复/checkpoint | `AS_REDIS_URL=redis://127.0.0.1:6379/0 make demo-story-d` | 2–5 min |
-| E 容量研究 | `make demo-story-e` | ~1 min (+ `--full-o1` for long batch) |
+| C 平台运维 | `make demo-story-c` | cluster shot is kind `as-m71`; 7.2d stays on `kind-as-m5` |
+| D 恢复/checkpoint | `AS_REDIS_URL=redis://127.0.0.1:6379/0 make demo-story-d` | harness unchanged; speech says `as-sut` Redis is not customer-K8s REQ-NF-1 |
+| E 容量研究 | `make demo-story-e` | research method, not an SLA; `as-m71` page counts stay out of the O1 report |
 | All (CI smoke) | `AS_REDIS_URL=redis://127.0.0.1:6379/0 make demo-review-all` | ~5–15 min |
 
 ### Story A flags
@@ -22,7 +22,7 @@ Artifacts: `artifacts/demo-review/<date>/story-{a,b,c,d,e}/`
 
 ### Story C flags
 
-- `--require-kind` — fail if `kind-as-m5` kubectl context missing
+- `--require-kind` — fail if `kind-as-m71` kubectl context missing. Story C's cluster shot is that cluster. 7.2d Ingress login stays on `kind-as-m5` and is skipped unless `M5_7_2D_E2E_PASSWORD` is set.
 
 ### Story D / E
 
@@ -41,4 +41,4 @@ Stories A and B use the compiled config-service bundle (`AS_CONFIG_BUNDLE_PATH`)
 
 Compose (story A live UI): [`deploy/compose/README.md`](../../deploy/compose/README.md).
 
-Kind (story C cluster): [`docs/acceptance/m5-evidence-summary.md`](../../docs/acceptance/m5-evidence-summary.md).
+Kind cluster shot: [`docs/acceptance/m71-sim-platform-evidence.md`](../../docs/acceptance/m71-sim-platform-evidence.md). Manual pass criteria: [`docs/handoff/pre-m8-demo-review-plan.md`](../../docs/handoff/pre-m8-demo-review-plan.md) section 4. 7.2d stays on [`docs/acceptance/m5-7.2d-ingress-runbook.md`](../../docs/acceptance/m5-7.2d-ingress-runbook.md).

@@ -64,8 +64,8 @@ else
   skip_story "story-d.sh" "no Redis at ${AS_REDIS_URL}"
 fi
 
-if [[ "${REQUIRE_KIND}" -eq 1 ]] && ! demo_kind_context; then
-  demo_die "kind context required (kind-as-m5)"
+if [[ "${REQUIRE_KIND}" -eq 1 ]] && ! demo_m71_present; then
+  demo_die "kind context required (kind-as-m71)"
 fi
 run_story story-c.sh
 

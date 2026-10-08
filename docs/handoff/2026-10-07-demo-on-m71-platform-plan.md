@@ -1,6 +1,6 @@
 # Demo 接到 M7.1 平台 — 准备（2026-10-07）
 
-> **状态**：第 3 步已跑通（2026-10-08）。判决规则来自 `as-sut` 上 config-service 的提案、批准、分发、激活；翻译进程读 `AS_CONFIG_BUNDLE_PATH`。`+86` 改号表仍是 `AS_TRANSLATION_RULES_JSON`（bundle 带不了 strip/add）。进程不拉包，本场把已激活的 JSON 挂进 Pod。UDP 与 TLS 短跑：T1/T4/T5/F1/F2，BYE 2xx，F2 是 603。下一步是第 4 步：故事 C 的集群镜头。故事 D/E 的口播还没改。
+> **状态**：第 4、5 步已跑通（2026-10-08）。故事 C 的集群镜头是 kind `as-m71`（`ims-sim` 五个仿真 Deployment，`as-sut` 的翻译、Redis、config-service；反诈没起），仍是 L1。7.2d 留在 `kind-as-m5`，本场跳过。故事 D 口播加上 `as-sut` Redis 不是客户 K8s 的 REQ-NF-1。故事 E 口播加上测试页几秒计数不进 O1 报告。测量脚本没改。M8 仍搁置。
 > **上游**：[`2026-10-07-m7.1-sim-platform-plan.md`](2026-10-07-m7.1-sim-platform-plan.md) §11，证据 [`../acceptance/m71-sim-platform-evidence.md`](../acceptance/m71-sim-platform-evidence.md)。
 > **不在本文**：重开 M8；改 `deploy/docker/Dockerfile`（SIP 监听留到重开 M8 之前）；签 REQ-S-2 / REQ-S-3 / REQ-S-4；把计数写成容量承诺。
 
@@ -61,20 +61,20 @@ config-service 镜像、Secret、runtime role 按 chart 现有约定接，不把
 
 ### 故事 C — 平台能运维
 
-`chart-check`、指标/draining 单测、告警 YAML 形态保留。集群镜头从 `kind-as-m5` 改成 `as-m71`：
+`chart-check`、指标/draining 单测、告警 YAML 形态保留。集群镜头已改到 `as-m71`（2026-10-08）：
 
 - `ims-sim`：S-CSCF、北向/南向 S-SBC、被叫、call-load
-- `as-sut`：`as-sut-translation`、Redis。反诈进程是停的，要说为什么
+- `as-sut`：`as-sut-translation`、Redis、config-service。反诈进程是停的，因为会和翻译抢 5060
 
 7.2d Ingress 登录仍挂在原来的 M5 集群证据上，不搬进 `as-m71`，也不把测试页说成那个登录。F10 的 L1 边界保留。
 
 ### 故事 D — 通话不随便丢
 
-脚本先不动：Redis、recovery 构建、工程 harness。口播加上：`as-sut` 里 Redis 在跑，但这不是客户集群上的杀 Pod 验收。
+脚本没改：Redis、recovery 构建、工程 harness 仍是原来的。口播已加上：`as-sut` 里 Redis 在跑，但这不是客户集群上的杀 Pod 验收。
 
 ### 故事 E — 我们能扛多少
 
-O1 报告和「不是 SLA」的口播保留。可选的现场短跑用测试页打一轮，摘要写明不是容量承诺。不把 M7.1 的 3 秒计数写进 O1 报告。
+O1 报告和「不是 SLA」的口播保留。测量脚本没加测试页短跑。口播已写明：`as-m71` 的几秒计数不进 O1 报告。
 
 ---
 
@@ -85,8 +85,8 @@ O1 报告和「不是 SLA」的口播保留。可选的现场短跑用测试页�
 | 1 | 本文被当作执行单。`pre-m8-demo-review-plan.md` 文首指向这里 | 脚本 |
 | 2 | 已跑通（2026-10-08）。故事 B 和故事 A 的信令步走 `as-m71` 测试页，T1/T4/T5/F1/F2，BYE 2xx | config-service |
 | 3 | 已跑通（2026-10-08）。判决规则来自 config-service 编译 bundle，进程读 `AS_CONFIG_BUNDLE_PATH`。改号表仍是 `AS_TRANSLATION_RULES_JSON` | 生产默认 values、发布 Dockerfile、控制台登录搬到 `as-m71` |
-| 4 | 故事 C 的集群镜头改到 `as-m71`，L1 话术还在 | 7.2d 搬集群、M8 |
-| 5 | 故事 D、E 只改口播和证据目录说明 | 它们的测量脚本和 harness |
+| 4 | 已跑通（2026-10-08）。故事 C 看 `as-m71` 两个命名空间，L1 话术还在。`as_active_calls` 从翻译 Pod 读到 | 7.2d 搬集群、M8 |
+| 5 | 已改口播（2026-10-08）。D：`as-sut` Redis 不是客户 K8s 的 REQ-NF-1。E：测试页计数不进 O1 | 测量脚本和 harness |
 
 口播不要把改号表说成 bundle 里的字段，也不要说 SIP 进程自己拉了包。控制台网页仍在 compose 的 `https://localhost:8443`。
 
@@ -99,3 +99,4 @@ O1 报告和「不是 SLA」的口播保留。可选的现场短跑用测试页�
 - 故事 B 的现场响应码是 200 / 404 / 603。
 - 故事 C 仍不能被听成 M5 全链签收。
 - 证据落在 `artifacts/demo-review/<date>/`，不提交 pcap、私钥、测试 CA 长期密钥。
+- 亲手验收按 [`pre-m8-demo-review-plan.md`](pre-m8-demo-review-plan.md) §4。每步分「做什么 / 看什么 / 说明什么」。

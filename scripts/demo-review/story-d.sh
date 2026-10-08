@@ -23,6 +23,7 @@ demo_step 1 "架构说明（对客户）"
 demo_show_customer "$(cat <<'EOF'
 多副本无状态 AS；必要会话状态 checkpoint 到 Redis
 进程重启后按 checkpoint 恢复（工程 harness）；正式 K8s 杀 Pod 验收在客户环境 M8
+as-m71 的 as-sut 里 Redis 在跑。这不是客户 K8s 上的 REQ-NF-1，Close 前不做那种杀 Pod 采证。
 EOF
 )"
 

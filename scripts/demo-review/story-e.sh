@@ -23,6 +23,7 @@ demo_step 1 "方法论（对客户必读）"
 demo_show_customer "$(cat <<'EOF'
 这是内部容量研究方法学与 dev-host 样本，不是对外 CPS/并发 SLA
 HPA 阈值在 O1 结论之后由运维填写 values
+kind as-m71 测试页上的几秒计数不是容量证据，不写进 O1 报告，也不写进本故事的 artifacts 当正式结果。
 EOF
 )"
 head -n 45 "${REPO_ROOT}/docs/acceptance/m6-o1-measurement-report-2026-10-05.md" | tee "${ART}/o1-report-head.md"

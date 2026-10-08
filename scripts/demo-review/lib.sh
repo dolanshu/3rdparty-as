@@ -103,9 +103,13 @@ demo_m71_kubectl() {
   kubectl --context kind-as-m71 "$@"
 }
 
-demo_m71_require() {
+demo_m71_present() {
   PATH="${REPO_ROOT}/.tools/m71-bin:${PATH}"
-  kubectl config get-contexts -o name 2>/dev/null | grep -qx "kind-as-m71" \
+  kubectl config get-contexts -o name 2>/dev/null | grep -qx "kind-as-m71"
+}
+
+demo_m71_require() {
+  demo_m71_present \
     || demo_die "kind context kind-as-m71 missing; run: bash testbed/sim-platform/kind-up.sh"
 }
 
