@@ -1,32 +1,32 @@
-# Helm values 骨架 —— 仅注释说明，不绑定任何实际配置值
-# 最终 values 结构参考 deploy/helm/README.md 里描述的旋钮，
-# 完整填充随各部署里程碑落地。
+# Helm values skeleton - comments only; no actual configuration values are bound.
+# The final values structure follows the knobs described in deploy/helm/README.md
+# and will be fully populated as deployment milestones are delivered.
 #
-# --- apps 层（用例容器，每用例独立 values 块） ---
+# --- apps layer (one values block per use-case container) ---
 # apps:
 #   translation:
-#     replicaCount:          # 副本数，来自话务模型
-#     minReplicas:           # HPA 最小副本
-#     draining:              # ADR-0009 ISPP 优雅退出
+#     replicaCount:          # Number of replicas, based on the traffic model
+#     minReplicas:           # Minimum HPA replicas
+#     draining:              # ADR-0009 ISPP graceful shutdown
 #       preStopSeconds:
 #       graceWindowSeconds:
 #       forceRelease:
 #     peers:
-#       allowlist:           # S-SBC 白名单（逗号分隔 IP/网段）
+#       allowlist:           # S-SBC allowlist (comma-separated IPs/CIDRs)
 #     transport:
 #       tls:
-#         enabled:           # ADR-0016 端到端 TLS
-#         secretRef:         # K8s Secret 引用，轮换不重启
-#   antiFraud:               # 同 translation 结构
+#         enabled:           # ADR-0016 end-to-end TLS
+#         secretRef:         # K8s Secret reference; rotation does not require a restart
+#   antiFraud:               # Same structure as translation
 #
-# --- services 层（控制面容器） ---
+# --- services layer (control-plane containers) ---
 # services:
 #   configService:
 #     replicaCount:
 #   console:
 #     replicaCount:
 #
-# --- 状态存储（外部依赖，chart 内不部署） ---
+# --- State stores (external dependencies, not deployed by this chart) ---
 # state:
 #   redis:
 #     sentinel:
@@ -36,23 +36,23 @@
 #   postgres:
 #     url:                   # CONFIG_DB_URL
 #
-# --- 观测性（ADR-0005，必须非阻塞） ---
+# --- Observability (ADR-0005; must be non-blocking) ---
 # observability:
 #   otlpEndpoint:
-#   exportMode:              # non-blocking | blocking（默认 non-blocking）
+#   exportMode:              # non-blocking | blocking (default: non-blocking)
 #
-# --- 进程通用 ---
+# --- Process-wide settings ---
 # logLevel:                  # DEBUG / INFO / WARNING / ERROR
-# configVersion:             # 由 config-service 灰度注入
+# configVersion:             # Injected by config-service during canary rollout
 #
 # =============================================================================
 # M5 values contract — consumed by deploy/helm/templates/*
 #
-# The commented skeleton above is kept verbatim for traceability (it is the
-# shape planned before M5). Everything below is the part the templates actually
+# The commented skeleton above is retained for traceability (it is the shape
+# planned before M5). Everything below is the part the templates actually
 # read. Comments in this file are English: deployment artifacts follow
-# AGENT.md §5 (artifact language is English); only the historical block above
-# is left in Chinese.
+# AGENT.md §5 (artifact language is English); the historical block above has
+# also been translated into English for traceability.
 #
 # Single-tenant, on-prem: one namespace holds one complete system
 # (its own Redis / PostgreSQL / AS Pod group). See REQ-NF-9.

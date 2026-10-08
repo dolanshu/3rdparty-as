@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Story A — 开通翻译号段（控制面 + 信令桥接）
+# Story A - Provision number translation ranges (control plane + signaling bridge)
 set -euo pipefail
 # shellcheck source=scripts/demo-review/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

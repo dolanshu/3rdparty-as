@@ -1,6 +1,7 @@
 """Outbound distribution-start notifications to fleet AS instances. REQ-F-15 / M4b-7.5.
 
-Full production AS stack re-test after fleet wiring remains 补测 (out of this engineering slice).
+Full production AS stack re-test after fleet wiring remains outstanding
+(outside this engineering slice).
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Story E — 我们能扛多少（容量研究，非 SLA）
+# Story E - Capacity research (not an SLA)
 set -euo pipefail
 # shellcheck source=scripts/demo-review/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Story B — 拦截诈骗号段（603 + 反诈判决）
+# Story B - Block fraudulent-number ranges (603 + anti-fraud decision)
 set -euo pipefail
 # shellcheck source=scripts/demo-review/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"

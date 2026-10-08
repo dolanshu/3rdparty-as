@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Story D — 通话不随便丢（checkpoint / NF-1 工程 harness）
+# Story D - Protect calls from unexpected drops (checkpoint / NF-1 engineering harness)
 set -euo pipefail
 # shellcheck source=scripts/demo-review/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
