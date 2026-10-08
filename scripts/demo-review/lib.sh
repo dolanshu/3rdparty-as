@@ -96,3 +96,105 @@ demo_kind_context() {
   local cluster="${KIND_CLUSTER_NAME:-as-m5}"
   kubectl config get-contexts -o name 2>/dev/null | grep -qx "kind-${cluster}"
 }
+
+demo_m71_kubectl() {
+  PATH="${REPO_ROOT}/.tools/m71-bin:${PATH}"
+  command -v kubectl >/dev/null 2>&1 || demo_die "kubectl not found on PATH or in ${REPO_ROOT}/.tools/m71-bin"
+  kubectl --context kind-as-m71 "$@"
+}
+
+demo_m71_require() {
+  PATH="${REPO_ROOT}/.tools/m71-bin:${PATH}"
+  kubectl config get-contexts -o name 2>/dev/null | grep -qx "kind-as-m71" \
+    || demo_die "kind context kind-as-m71 missing; run: bash testbed/sim-platform/kind-up.sh"
+}
+
+# Drive the ims-sim test page on kind as-m71. Rules are still the lab values,
+# not a config-service bundle. Counts describe this run only.
+demo_m71_signal() {
+  local transport="$1"
+  local art="$2"
+  case "${transport}" in
+    udp | tcp | tls) ;;
+    *) demo_die "unsupported transport ${transport}" ;;
+  esac
+  demo_m71_require
+  local out="${art}/m71-${transport}.json"
+  local product_log="${art}/m71-${transport}-product.log"
+  demo_log "as-m71 test page ${transport} -> ${out}"
+  demo_show_customer "$(cat <<EOF
+测试页在 ims-sim，不是产品控制台：无登录，不签 REQ-S-4。
+证书是测试 CA，不是运营商 PKI。本轮次数不是容量承诺。
+传输 ${transport}。规则来自实验室 values 的 AS_RULESET_JSON，还不是控制台下发。
+T1 改号后 200，T4 404，T5 / F1 200，F2 603（不是 608）。接通的对话 BYE 2xx。
+EOF
+)"
+  demo_m71_kubectl -n ims-sim exec -i deploy/call-load -- \
+    env "M71_TRANSPORT=${transport}" python - >"${out}" <<'PY'
+import json, os, time, urllib.request
+transport = os.environ["M71_TRANSPORT"]
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+def call(method, path, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(
+        "http://127.0.0.1:8088" + path,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method=method,
+    )
+    with opener.open(req, timeout=15) as response:
+        return json.loads(response.read().decode())
+
+call("POST", "/api/runs", {
+    "transport": transport,
+    "scenarios": ["T1", "T4", "T5", "F1", "F2"],
+    "duration_seconds": 3,
+    "cps": 5,
+    "workers": 8,
+    "hold_seconds": 0.2,
+})
+snap = {}
+for _ in range(40):
+    snap = call("GET", "/api/runs/latest")
+    if not snap.get("running"):
+        break
+    time.sleep(1)
+else:
+    raise SystemExit("call-load run still active")
+print(json.dumps(snap))
+PY
+  python3 - "${out}" <<'PY'
+import json, sys
+snap = json.load(open(sys.argv[1], encoding="utf-8"))
+if snap.get("running") or snap.get("error"):
+    raise SystemExit(f"run failed: running={snap.get('running')} error={snap.get('error')}")
+summary = snap.get("summary") or {}
+errors = summary.get("error_distribution") or {}
+bye = {name: count for name, count in errors.items() if name.startswith("bye_") or name == "timeout_bye"}
+if bye or summary.get("unresolved"):
+    raise SystemExit(f"BYE not clean: unresolved={summary.get('unresolved')} errors={bye}")
+by = summary.get("by_scenario") or {}
+
+def codes(scenario):
+    bucket = by.get(scenario) or {}
+    found = bucket.get("response_codes") or {}
+    if not found:
+        raise SystemExit(f"{scenario} missing from {list(by)}")
+    return found
+
+expected = {"T1": "200", "T4": "404", "T5": "200", "F1": "200", "F2": "603"}
+for scenario, code in expected.items():
+    found = codes(scenario)
+    if code not in found:
+        raise SystemExit(f"{scenario} expected {code}, got {found}")
+if "608" in codes("F2"):
+    raise SystemExit(f"F2 must stay 603, got {codes('F2')}")
+print("m71", summary.get("response_code_distribution"), "unresolved", summary.get("unresolved"))
+PY
+  demo_m71_kubectl -n as-sut logs deploy/as-sut-translation --since=3m >"${product_log}"
+  grep -q "013800138000" "${product_log}" \
+    || demo_die "product log missing T1 rewrite 013800138000 (${product_log})"
+  grep -q "OUTBOUND_BYE_FORWARD" "${product_log}" \
+    || demo_die "product log missing outbound BYE forward (${product_log})"
+}

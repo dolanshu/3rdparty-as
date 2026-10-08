@@ -68,20 +68,20 @@ cp "${FIXTURES_DIR}/bundle-forward-86755.json" "${ART}/bundle-forward-86755.json
 demo_log "sample bundle written: ${ART}/bundle-forward-86755.json"
 head -n 20 "${ART}/bundle-forward-86755.json"
 
-demo_step 4 "信令桥接（ConfigBundle 注入）"
+demo_step 4 "规则从哪来（本场仍是实验室 values）"
 demo_show_customer "$(cat <<'EOF'
-说明：生产由运维分发通道推送 bundle；本场用 AS_CONFIG_BUNDLE_PATH 注入翻译进程
-可选人工： AS_ENABLE_SIP_RUNTIME=1 AS_USE_CASE=translation AS_CONFIG_BUNDLE_PATH=<bundle> uv run python -m as_platform
+本场翻译进程读 AS_RULESET_JSON（testbed/sim-platform/values-product-as.yaml）。
+还不是控制台下发。config-service 接到这个集群是下一步。
+生产口径仍是分发通道；不要把本场说成已经下发。
 EOF
 )"
 
-demo_step 5 "SIP 形状验证（无匹配 404 + 产品栈）"
-demo_require_uv
-demo_require_native_runtime
-demo_show_customer "未命中规则 → 404；命中 block/forward 见故事 B / FORWARD 集成测"
-uv run pytest platform/tests/test_e1_contract_resip_runtime_full.py::test_e1_s2_no_match_from_contract_shape -m contract -v \
-  2>&1 | tee "${ART}/sip-404.log"
-uv run pytest platform/tests/test_m7_forward_two_leg_integration.py -m integration -v \
-  2>&1 | tee "${ART}/sip-forward-486.log"
+demo_step 5 "信令：测试页打到产品 AS（T1 改号 200，T4 404）"
+demo_show_customer "$(cat <<'EOF'
+路径：测试页 → 仿真 S-CSCF → 仿真北向 S-SBC → 产品 AS → 仿真南向 S-SBC → 被叫。
+观众看 T1 出腿用户 013800138000，以及 T4 的 404。五种类型都会跑，F2 是 603。
+EOF
+)"
+demo_m71_signal udp "${ART}"
 
 demo_log "Story A automated checks: OK (see ${ART})"

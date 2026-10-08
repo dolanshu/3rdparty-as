@@ -8,8 +8,8 @@ Artifacts: `artifacts/demo-review/<date>/story-{a,b,c,d,e}/`
 
 | Story | Command | Typical duration |
 |-------|---------|------------------|
-| A 开通翻译号段 | `make demo-story-a` or `bash scripts/demo-review/story-a.sh` | 2–5 min auto; +90 min with live console |
-| B 拦截诈骗号段 | `make demo-story-b` | ~1 min |
+| A 开通翻译号段 | `make demo-story-a` or `bash scripts/demo-review/story-a.sh` | control plane as before; signaling needs kind `as-m71` |
+| B 拦截诈骗号段 | `make demo-story-b` | kind `as-m71` test page, UDP/TCP/TLS, then local 487/608 checks |
 | C 平台运维 | `make demo-story-c` | 1–10 min (kind optional) |
 | D 恢复/checkpoint | `AS_REDIS_URL=redis://127.0.0.1:6379/0 make demo-story-d` | 2–5 min |
 | E 容量研究 | `make demo-story-e` | ~1 min (+ `--full-o1` for long batch) |
@@ -33,8 +33,11 @@ Artifacts: `artifacts/demo-review/<date>/story-{a,b,c,d,e}/`
 
 ```bash
 cd /path/to/3rdparty-as && uv sync
-make m2-platform-resip-build   # stories A, B, D, E
+make m2-platform-resip-build   # stories B (487), D, E
+bash testbed/sim-platform/kind-up.sh   # stories A step 5 and B step 2; context kind-as-m71
 ```
+
+Stories A and B tell the room that rules still come from lab `AS_RULESET_JSON`. That is not console distribution. The test page is not the product console.
 
 Compose (story A live UI): [`deploy/compose/README.md`](../../deploy/compose/README.md).
 
