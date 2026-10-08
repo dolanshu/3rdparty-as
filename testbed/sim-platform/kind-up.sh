@@ -83,6 +83,14 @@ docker build -t as-sut:dev \
   -f "$ROOT/testbed/sim-platform/Dockerfile.product" "$ROOT"
 kind load docker-image as-sut:dev --name "$CLUSTER"
 
+docker build -t as-config-service:m71-lab \
+  --build-arg "HTTP_PROXY=${http_proxy:-}" \
+  --build-arg "HTTPS_PROXY=${https_proxy:-}" \
+  --build-arg "http_proxy=${http_proxy:-}" \
+  --build-arg "https_proxy=${https_proxy:-}" \
+  -f "$ROOT/deploy/docker/config-service.Dockerfile" "$ROOT"
+kind load docker-image as-config-service:m71-lab --name "$CLUSTER"
+
 helm upgrade --install ims-sim "$CHART" \
   --namespace ims-sim \
   --set image.repository=ims-sim \
@@ -102,9 +110,14 @@ kubectl -n as-sut create secret generic as-sut-test-tls \
   --from-file=ca.crt="$CERT_DIR/ca.crt" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+kubectl -n as-sut delete job as-sut-config-migrate --ignore-not-found
+helm_files=(-f "$ROOT/testbed/sim-platform/values-product-as.yaml")
+if kubectl -n as-sut get configmap as-sut-runtime-bundle >/dev/null 2>&1; then
+  helm_files+=(-f "$ROOT/testbed/sim-platform/values-product-as-bundle.yaml")
+fi
 helm upgrade --install as-sut "$ROOT/deploy/helm" \
   --namespace as-sut \
-  -f "$ROOT/testbed/sim-platform/values-product-as.yaml" \
+  "${helm_files[@]}" \
   --set image.repository=as-sut \
   --set image.tag=dev
 
@@ -118,6 +131,8 @@ for deploy in scscf ssbc-north ssbc-south uas call-load; do
 done
 kubectl -n as-sut rollout status deploy/as-sut-translation --timeout=180s
 kubectl -n as-sut rollout status deploy/as-sut-redis --timeout=180s
+kubectl -n as-sut rollout status deploy/as-sut-config-service --timeout=180s
+kubectl -n as-sut wait --for=condition=complete job/as-sut-config-migrate --timeout=180s
 
 echo "UI: kubectl -n ims-sim port-forward svc/ims-sim-ui 8088:8088"
 echo "非运营商 PKI. Counts on the page are this run only."

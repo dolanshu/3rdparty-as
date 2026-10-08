@@ -8,10 +8,11 @@ demo_story_banner "B" "拦截诈骗号段（US-2 / REQ-F-7）"
 ART="$(demo_artifact_dir b)"
 demo_log "artifacts -> ${ART}"
 
-demo_step 1 "本场阻止号段（实验室规则，不是控制台下发）"
+demo_step 1 "本场阻止号段（编译 bundle 里的 F2）"
 demo_show_customer "$(cat <<'EOF'
 产品路径上 F2 被叫前缀 +15550003 → 603。不说成 608。
-规则在实验室 values 的 AS_RULESET_JSON。控制台下发还没接到这个集群。
+这条阻止规则在 config-service 编译的 bundle 里，进程读 AS_CONFIG_BUNDLE_PATH。
+不是实验室 AS_RULESET_JSON。控制台 HTTPS 登录不在这个集群。
 EOF
 )"
 

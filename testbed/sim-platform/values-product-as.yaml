@@ -35,6 +35,16 @@ tls:
 stateStores:
   enabled: true
   bootstrapDevCredentials: true
+  migrateJob:
+    enabled: true
+
+services:
+  configService:
+    enabled: true
+    runtimeRole: as_config_runtime
+    image:
+      repository: as-config-service
+      tag: m71-lab
 
 runtime:
   extraEnv:

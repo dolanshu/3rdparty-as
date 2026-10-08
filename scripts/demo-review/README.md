@@ -37,7 +37,7 @@ make m2-platform-resip-build   # stories B (487), D, E
 bash testbed/sim-platform/kind-up.sh   # stories A step 5 and B step 2; context kind-as-m71
 ```
 
-Stories A and B tell the room that rules still come from lab `AS_RULESET_JSON`. That is not console distribution. The test page is not the product console.
+Stories A and B use the compiled config-service bundle (`AS_CONFIG_BUNDLE_PATH`) for the kernel decision. The +86 rewrite stays in `AS_TRANSLATION_RULES_JSON`. The test page is not the product console, and this cluster does not serve the console login. `bash scripts/demo-review/publish-m71-bundle.sh` compiles and mounts the bundle. `kind-up.sh` keeps that mount when ConfigMap `as-sut-runtime-bundle` already exists.
 
 Compose (story A live UI): [`deploy/compose/README.md`](../../deploy/compose/README.md).
 

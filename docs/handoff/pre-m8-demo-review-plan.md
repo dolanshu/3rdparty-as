@@ -1,6 +1,6 @@
 # Pre-M8 产品 Demo / Review 计划
 
-> **状态（2026-10-08）**：故事 A 的信令步和故事 B 的现场已改走 kind `as-m71` 测试页。规则仍是实验室 values。执行单是 [`2026-10-07-demo-on-m71-platform-plan.md`](2026-10-07-demo-on-m71-platform-plan.md)。
+> **状态（2026-10-08）**：故事 A 的信令步和故事 B 的现场走 kind `as-m71` 测试页。判决规则来自 config-service 编译 bundle。改号表仍是 `AS_TRANSLATION_RULES_JSON`。执行单是 [`2026-10-07-demo-on-m71-platform-plan.md`](2026-10-07-demo-on-m71-platform-plan.md)。下一步是故事 C 的集群镜头。
 >
 > **对象**：运营商业务配置人员、运维负责人、信令/集成工程师（**客户与干系人**）。  
 > **目的**：在正式 M8 验收前，用可重复场景说明**产品做了什么**、边界在哪里。  
@@ -128,7 +128,7 @@ flowchart TB
 | 1 | 控制台双角色 | HTTPS 同源 UI、用户/审批分离 | **人工**：`https://localhost:8443`；脚本 `--with-compose` 仅跑 `smoke-https` |
 | 2 | 规则全生命周期 | 被叫+前缀 → 变更单 → 审批 → 分发 → 激活 | **人工** 或 **自动**：PG 集成测 `test_managed_rule_proposal_submit_approve_distribute_and_activate_compiled_bundle`（需 compose Postgres `:55432`） |
 | 3 | 规则编译 | ManagedRule → ConfigBundle JSON | 自动：`test_runtime_bundle.py`；样例 `fixtures/bundle-forward-86755.json` |
-| 4 | 规则来源 | 本场仍是实验室 `AS_RULESET_JSON`，还不是控制台下发 | 口播。config-service 接到 `as-sut` 是下一步 |
+| 4 | 规则来源 | 判决来自 config-service 编译 bundle（`AS_CONFIG_BUNDLE_PATH`）。改号表仍是 `AS_TRANSLATION_RULES_JSON`。进程不拉包 | 口播。发布：`bash scripts/demo-review/publish-m71-bundle.sh` |
 | 5 | 信令 | T1 改号 **200**（出腿 `013800138000`），T4 **404** | 自动：kind `as-m71` 测试页，`demo_m71_signal udp` |
 
 ---
@@ -139,7 +139,7 @@ flowchart TB
 
 | 步 | 做什么 | 对客户展示什么 | 执行方式 |
 |----|--------|----------------|----------|
-| 1 | 阻止号段 | 本场 `+15550003` → **603**，不是 608。规则仍是实验室 values | 口播 |
+| 1 | 阻止号段 | 本场 `+15550003` → **603**，不是 608。规则在编译 bundle 里 | 口播 |
 | 2 | 产品路径 | T5 200、T4 404、F2 603、T1 改号 200；BYE 2xx。UDP、TCP、TLS 各一轮短跑 | 自动：kind `as-m71` 测试页 |
 | 3 | 主叫取消 | **487** 只是契约形状，不是第一版呼叫类型 | 自动：`test_e1_s4_*`，不在集群现场 |
 | 4 | 反诈 608 | 另一个进程的判决。这条网上没起 | 自动：`apps/anti-fraud/tests/test_decision.py` |

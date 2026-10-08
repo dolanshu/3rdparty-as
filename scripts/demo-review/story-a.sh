@@ -68,11 +68,12 @@ cp "${FIXTURES_DIR}/bundle-forward-86755.json" "${ART}/bundle-forward-86755.json
 demo_log "sample bundle written: ${ART}/bundle-forward-86755.json"
 head -n 20 "${ART}/bundle-forward-86755.json"
 
-demo_step 4 "规则从哪来（本场仍是实验室 values）"
+demo_step 4 "规则从哪来（config-service 编译结果）"
 demo_show_customer "$(cat <<'EOF'
-本场翻译进程读 AS_RULESET_JSON（testbed/sim-platform/values-product-as.yaml）。
-还不是控制台下发。config-service 接到这个集群是下一步。
-生产口径仍是分发通道；不要把本场说成已经下发。
+四条判决（T1 翻译、T5/F1 转发、F2 阻止）在 as-sut 的 config-service 里走完提案、另一人批准、分发报告、激活，编译进版本库。
+翻译进程读 AS_CONFIG_BUNDLE_PATH，不再读 AS_RULESET_JSON。
+被叫 +86 改成 0 开头仍来自翻译应用的 AS_TRANSLATION_RULES_JSON。bundle 格式带不了 strip/add。
+进程不会自己拉 bundle。本场把已激活的 JSON 挂进 Pod。控制台 HTTPS 登录不在这个集群。
 EOF
 )"
 

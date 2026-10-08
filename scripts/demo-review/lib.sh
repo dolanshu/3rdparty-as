@@ -109,8 +109,8 @@ demo_m71_require() {
     || demo_die "kind context kind-as-m71 missing; run: bash testbed/sim-platform/kind-up.sh"
 }
 
-# Drive the ims-sim test page on kind as-m71. Rules are still the lab values,
-# not a config-service bundle. Counts describe this run only.
+# Drive the ims-sim test page on kind as-m71. Kernel rules come from the
+# mounted config-service bundle. Counts describe this run only.
 demo_m71_signal() {
   local transport="$1"
   local art="$2"
@@ -125,7 +125,9 @@ demo_m71_signal() {
   demo_show_customer "$(cat <<EOF
 测试页在 ims-sim，不是产品控制台：无登录，不签 REQ-S-4。
 证书是测试 CA，不是运营商 PKI。本轮次数不是容量承诺。
-传输 ${transport}。规则来自实验室 values 的 AS_RULESET_JSON，还不是控制台下发。
+传输 ${transport}。判决规则来自 config-service 编译的 bundle（AS_CONFIG_BUNDLE_PATH）。
++86 改成 0 开头仍是翻译应用的 AS_TRANSLATION_RULES_JSON，bundle 带不了这条改号表。
+进程不拉包；本场把已激活的 JSON 挂进 Pod。控制台 HTTPS 登录不在这个集群。
 T1 改号后 200，T4 404，T5 / F1 200，F2 603（不是 608）。接通的对话 BYE 2xx。
 EOF
 )"

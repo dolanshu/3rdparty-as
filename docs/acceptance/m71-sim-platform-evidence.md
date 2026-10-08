@@ -36,5 +36,5 @@ F1 / F2 走产品内核的 FORWARD / BLOCK（603），和第一版呼叫类型�
 
 ## 关门之后
 
-1. **重评 demo，把故事接到这个平台。** 执行单是 [`../handoff/2026-10-07-demo-on-m71-platform-plan.md`](../handoff/2026-10-07-demo-on-m71-platform-plan.md)。那时再接 config-service 下发。本关门不改 `scripts/demo-review/`。
+1. **重评 demo，把故事接到这个平台。** 执行单是 [`../handoff/2026-10-07-demo-on-m71-platform-plan.md`](../handoff/2026-10-07-demo-on-m71-platform-plan.md)。关门当时规则仍是 `AS_RULESET_JSON`。其后第 2 步把信令改到测试页；第 3 步（2026-10-08）把判决规则改成 config-service 编译 bundle，进程读 `AS_CONFIG_BUNDLE_PATH`。改号表仍是 `AS_TRANSLATION_RULES_JSON`。生产默认 values 和发布 Dockerfile 没改。
 2. **发布镜像带上 SIP 监听，放在重新打开 M8 之前。** `deploy/docker/Dockerfile` 仍是 M5 进程壳，不绑定 SIP。`as-sut:dev` 只用于这个 kind 实验。

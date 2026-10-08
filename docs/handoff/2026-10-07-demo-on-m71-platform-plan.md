@@ -1,6 +1,6 @@
 # Demo 接到 M7.1 平台 — 准备（2026-10-07）
 
-> **状态**：第 2 步已跑通（2026-10-08）。故事 A 的信令步和故事 B 的现场走 kind `as-m71` 测试页：T1/T4/T5/F1/F2，BYE 2xx，F2 是 603。规则仍是实验室 `AS_RULESET_JSON`。下一步是第 3 步：config-service 下发。故事 C 的集群镜头、故事 D/E 的口播还没改。
+> **状态**：第 3 步已跑通（2026-10-08）。判决规则来自 `as-sut` 上 config-service 的提案、批准、分发、激活；翻译进程读 `AS_CONFIG_BUNDLE_PATH`。`+86` 改号表仍是 `AS_TRANSLATION_RULES_JSON`（bundle 带不了 strip/add）。进程不拉包，本场把已激活的 JSON 挂进 Pod。UDP 与 TLS 短跑：T1/T4/T5/F1/F2，BYE 2xx，F2 是 603。下一步是第 4 步：故事 C 的集群镜头。故事 D/E 的口播还没改。
 > **上游**：[`2026-10-07-m7.1-sim-platform-plan.md`](2026-10-07-m7.1-sim-platform-plan.md) §11，证据 [`../acceptance/m71-sim-platform-evidence.md`](../acceptance/m71-sim-platform-evidence.md)。
 > **不在本文**：重开 M8；改 `deploy/docker/Dockerfile`（SIP 监听留到重开 M8 之前）；签 REQ-S-2 / REQ-S-3 / REQ-S-4；把计数写成容量承诺。
 
@@ -41,7 +41,7 @@
 控制面和信令拆开，都要在场。
 
 1. 控制台仍讲双角色、被叫+前缀、变更单、审批。compose 的 `https://localhost:8443` 可以继续当控制台镜头。
-2. 规则闭环改接到 `as-sut`：config-service 提案 → 批准 → 编译 bundle。现在 chart 里 `services.configService.enabled` 是 false，实验室 values 用的是 `AS_RULESET_JSON`。这一步要把编译结果送进翻译进程（进程已能读 `AS_CONFIG_BUNDLE_PATH`），并停掉「规则写死在环境变量里」的演示口播。
+2. 已接到 `as-sut`（2026-10-08）：`scripts/demo-review/publish-m71-bundle.sh` 对集群 Postgres 走提案、另一人批准、分发报告、激活，四条判决编译进版本库。翻译进程读 `AS_CONFIG_BUNDLE_PATH`，不再读 `AS_RULESET_JSON`。`+86` 去掉再加 `0` 仍是 `AS_TRANSLATION_RULES_JSON`。进程不拉包，脚本把已激活的 JSON 挂进 Pod。生产默认 `services.configService.enabled` 仍是 false。控制台 HTTPS 登录不在这个集群。
 3. 信令验证改走测试页，不再把 `test_e1_s2_*` 和双腿集成测当作现场。观众看到：T1 改号后 200，T4 404。出腿用户是 `013800138000`。
 
 config-service 镜像、Secret、runtime role 按 chart 现有约定接，不把仿真开关写进生产默认 values。实验室材料仍放 `testbed/sim-platform/`。
@@ -84,11 +84,11 @@ O1 报告和「不是 SLA」的口播保留。可选的现场短跑用测试页�
 |---|---|---|
 | 1 | 本文被当作执行单。`pre-m8-demo-review-plan.md` 文首指向这里 | 脚本 |
 | 2 | 已跑通（2026-10-08）。故事 B 和故事 A 的信令步走 `as-m71` 测试页，T1/T4/T5/F1/F2，BYE 2xx | config-service |
-| 3 | 故事 A 的规则从 config-service 编译结果进翻译进程，现场不再靠 `AS_RULESET_JSON` | 生产默认 values、发布 Dockerfile |
+| 3 | 已跑通（2026-10-08）。判决规则来自 config-service 编译 bundle，进程读 `AS_CONFIG_BUNDLE_PATH`。改号表仍是 `AS_TRANSLATION_RULES_JSON` | 生产默认 values、发布 Dockerfile、控制台登录搬到 `as-m71` |
 | 4 | 故事 C 的集群镜头改到 `as-m71`，L1 话术还在 | 7.2d 搬集群、M8 |
 | 5 | 故事 D、E 只改口播和证据目录说明 | 它们的测量脚本和 harness |
 
-第 2 步不挡第 3 步的设计，但给客户的信令场可以先用现在已经跑通的规则。第 3 步完成之前，口播必须说规则来自实验室 values，不能说已经是控制台下发。
+口播不要把改号表说成 bundle 里的字段，也不要说 SIP 进程自己拉了包。控制台网页仍在 compose 的 `https://localhost:8443`。
 
 ---
 

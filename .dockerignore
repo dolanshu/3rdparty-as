@@ -1,0 +1,13 @@
+.git
+.venv
+.cache
+.tools
+.mypy_cache
+.ruff_cache
+.pytest_cache
+artifacts
+**/__pycache__
+**/*.pyc
+testbed/simulators/resip-probe
+**/*.pcap
+**/*.pcapng

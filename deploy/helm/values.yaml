@@ -140,6 +140,10 @@ services:
 # Those keys are not simulator switches; they stay out of this file.
 runtime:
   extraEnv: {}
+  # When set, mount this ConfigMap at /etc/as/bundle (key bundle.json).
+  # Empty in shipped values. A lab sets AS_CONFIG_BUNDLE_PATH to that file
+  # and leaves AS_RULESET_JSON unset so the file is what the process loads.
+  bundleConfigMap: ""
 
 # SIP listener settings. Ports are protocol constants (5060/5061), not capacity
 # figures.

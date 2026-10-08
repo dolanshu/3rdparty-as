@@ -70,5 +70,7 @@ data:
   AS_DOWNSCALE_GUARD_ENABLED: {{ .Values.downscaleGuard.enabled | quote }}
   AS_DOWNSCALE_GUARD_PROTECT_ABOVE: {{ .Values.downscaleGuard.protectWhenActiveCallsAbove | quote }}
   {{- range $key, $value := .Values.runtime.extraEnv }}
+  {{- if $value }}
   {{ $key }}: {{ $value | quote }}
+  {{- end }}
   {{- end }}

@@ -144,27 +144,44 @@ spec:
                   # process stops accepting new calls (ADR-0009). The draining
                   # wait itself is done by the process shell.
                   - "sleep {{ $.Values.draining.preStopSleepSeconds }}"
-          {{- if and $.Values.tls.enabled $.Values.tls.secretName }}
+          {{- $mountTls := and $.Values.tls.enabled $.Values.tls.secretName }}
+          {{- $bundleConfigMap := $.Values.runtime.bundleConfigMap | default "" }}
+          {{- if or $mountTls $bundleConfigMap }}
           volumeMounts:
+            {{- if $mountTls }}
             # Mounted (not baked into the image): rotating the Secret updates
             # these files in place and the process reloads them hot. A restart
             # for a certificate change would drop in-flight calls (ADR-0016).
             - name: tls-certs
               mountPath: /etc/as/tls
               readOnly: true
+            {{- end }}
+            {{- if $bundleConfigMap }}
+            - name: runtime-bundle
+              mountPath: /etc/as/bundle
+              readOnly: true
+            {{- end }}
           {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-      {{- if and $.Values.tls.enabled $.Values.tls.secretName }}
+      {{- if or $mountTls $bundleConfigMap }}
       volumes:
+        {{- if $mountTls }}
         - name: tls-certs
           secret:
             secretName: {{ $.Values.tls.secretName }}
             # Group-readable so the non-root runtime (fsGroup below) can load
             # the chain. 0440 is not world-readable.
             defaultMode: 0440
+        {{- end }}
+        {{- if $bundleConfigMap }}
+        - name: runtime-bundle
+          configMap:
+            name: {{ $bundleConfigMap | quote }}
+            defaultMode: 0444
+        {{- end }}
       {{- end }}
       securityContext:
         runAsNonRoot: true

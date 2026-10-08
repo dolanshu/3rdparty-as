@@ -1,0 +1,11 @@
+# Second values file for the M7.1 lab, applied only after
+# scripts/demo-review/publish-m71-bundle.sh has written ConfigMap
+# as-sut-runtime-bundle. kind-up.sh adds this file when that ConfigMap exists.
+# Null drops AS_RULESET_JSON from the merged lab values so the translation
+# process loads the mounted bundle. The +86 rewrite table stays in
+# AS_TRANSLATION_RULES_JSON; ConfigBundle cannot carry strip/add.
+runtime:
+  bundleConfigMap: as-sut-runtime-bundle
+  extraEnv:
+    AS_RULESET_JSON: null
+    AS_CONFIG_BUNDLE_PATH: /etc/as/bundle/bundle.json
