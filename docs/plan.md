@@ -26,7 +26,7 @@
 | 日期 | 决策 | 方向 | 依据 |
 |------|------|------|------|
 | 2026-10-09 | 目标场景 | 3HK 内部上线评审（内部评审导向） | discussion.md 讨论确认；`docs/product-packaging-plan.md` §4.1 |
-| 2026-10-09 | 产品文档暂用名 | In-house IMS Application Server（首现标注 3GPP Third-Party AS role）；repo 名维持 `3rdparty-as` | discussion.md 讨论确认；`docs/product-packaging-plan.md` §4.3 |
+| 2026-10-09 | 产品文档暂用名 | In-house IMS Application Server（首现标注 3GPP Third-Party AS role）；git repo 名改为 `inhouse-ims-as`（仅仓库名/remote URL；chart name、镜像名、OTel 服务名保持 `3rdparty-as` 不变） | discussion.md 讨论确认；`docs/product-packaging-plan.md` §4.3 |
 
 **当前 config-service PostgreSQL integration 证据（2026-10-03）**：在与此前相同的本地 PostgreSQL 12.22（`wal_level=replica`）上，当前 API/bootstrap changes 后重跑完整 integration marker suite：**122 passed, 3 skipped, 432 deselected, 5 warnings**。3 个 publication DDL tests 因要求 `wal_level=logical` 而跳过。此为本地结果，未运行 CI，PG16 未测；该 suite 不证明 runtime factory 使用 DB-backed roles 的部署路径、生产 HTTPS ingress 或 browser workflow。它更新当前 integration evidence，不改写 M4b-6b 阶段历史快照中的 404 deselected，也不改变 M4b/M4、REQ acceptance 或 make-gate blocker。
 

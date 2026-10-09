@@ -14,7 +14,7 @@
 - **24 项 gap 已全部验证关闭（8 P0 + 10 P1 + 6 P2），P0 全部关闭**，该计划可作为内部上线评审基线。
 - 当前里程碑：M7.1 工程已关门（2026-10-07），M8 发布候选产物就绪但退出签字仍搁置（`docs/plan.md` §0）。
 - 遗留动作已全部关闭（2026-10-09）：
-  - **G-P0-6 目标场景、G-P2-6 产品命名**：已在 `docs/plan.md` §0 新增"产品决策记录"小节，包含 2 条决策行（目标场景、产品文档暂用名），来源为 discussion.md 讨论 + 维护者 2026-10-09 确认。
+  - **G-P0-6 目标场景、G-P2-6 产品命名与 repo 改名**：已在 `docs/plan.md` §0 新增"产品决策记录"小节，包含 2 条决策行（目标场景、产品文档暂用名），来源为 discussion.md 讨论 + 维护者 2026-10-09 确认；git repo 名改为 `inhouse-ims-as`（仅 git 仓库名与 remote URL），chart name、镜像名、OTel 服务名保持 `3rdparty-as` 不变，联动面极小，无需新增 ADR。
   - **G-P1-9（§3.5 版本生命周期 / EOL）**：已新增 REQ-NF-16（`docs/requirements/prd.md` L459-470）与 ADR-0027（`docs/architecture/adr/0027-version-lifecycle-and-eol.md`），并在 ADR 注册表注册。
   - **B 类交付物**（NE Datasheet 容量数值、PDPO 保留期限、性能基准报告、真实集群演练）仍被 M8 退出签字搁置与 O1/O4/D5 未决阻塞。
 
@@ -369,7 +369,7 @@
 | G-P2-3 | §2 | `sh-interface.json` 文件名与不做 Sh 范围冲突 | 接受 | 删除或改为 N/A 占位说明 | 已验证 | 文档更新 + 维护者验证（product-packaging-plan.md 2026-10-09 修订版 L125-L127） | 目录树已删除该文件项，仅保留 overview/sip-signaling 看板 |
 | G-P2-4 | §2 | `delivery/install-guide.md` 与 `deploy/helm/README.md` 边界不清 | 接受 | 明确两文档职责并互相链接 | 已验证 | 文档更新 + 维护者验证（product-packaging-plan.md 2026-10-09 修订版 L136-L143） | |
 | G-P2-5 | §3 | 3–4 周排期忽略 M8 搁置与 O1/O4/D5 | 接受 | 改为"先关闭 M8 与 O1/O4/D5，再定排期" | 已验证 | 文档更新 + 维护者验证（product-packaging-plan.md 2026-10-09 修订版 L148-L189） | 已改为带阻塞条件的 A/B 两类与多情景排期，不预设总工期 |
-| G-P2-6 | §4.3 | 产品名"已确认"仅 discussion 证据 | **部分接受** | 维护者 2026-10-09 确认文档采用暂用名 In-house IMS Application Server、repo 名 3rdparty-as 不改动；计划文档 §4.3 已改为"文档暂用名 / 建议名称（待补正式决策落点）"，不再表述为已正式批准产品名 | 已关闭 | 文档更新 + plan 决策行（docs/plan.md L21-28） | 正式命名决策落点已补：docs/plan.md §0 "产品决策记录"小节 |
+| G-P2-6 | §4.3 | 产品名"已确认"仅 discussion 证据 | **部分接受** | 维护者 2026-10-09 确认文档采用暂用名 In-house IMS Application Server、git repo 名改为 inhouse-ims-as（chart/镜像/服务名保持 3rdparty-as 不变）；计划文档 §4.3 已改为"文档暂用名 / 建议名称（待补正式决策落点）"，不再表述为已正式批准产品名 | 已关闭 | 文档更新 + plan 决策行（docs/plan.md L21-28） | 正式命名决策落点已补：docs/plan.md §0 "产品决策记录"小节 |
 
 ---
 
