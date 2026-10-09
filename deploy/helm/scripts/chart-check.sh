@@ -6,16 +6,10 @@ REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 CHART="${REPO_ROOT}/deploy/helm"
 RELEASE_NAME="${HELM_RELEASE_NAME:-as}"
 
-if [[ -n "${HELM_BIN:-}" && -x "${HELM_BIN}" ]]; then
-  HELM="${HELM_BIN}"
-elif command -v helm >/dev/null 2>&1; then
-  HELM=helm
-elif [[ -x /tmp/linux-amd64/helm ]]; then
-  HELM=/tmp/linux-amd64/helm
-else
-  echo "helm not found; install helm 3.x or set HELM_BIN" >&2
-  exit 1
-fi
+# shellcheck source=scripts/lib/repo-toolchain.sh
+source "${REPO_ROOT}/scripts/lib/repo-toolchain.sh"
+repo_toolchain_prepend_path "${REPO_ROOT}"
+HELM="$(repo_require_helm "${REPO_ROOT}")"
 
 echo "==> helm lint ${CHART}"
 "${HELM}" lint "${CHART}"

@@ -242,6 +242,11 @@ tls:
 #     process stops accepting new calls.
 #   - terminationGracePeriodSeconds: bounds how long the process shell may wait
 #     for active_calls to reach zero before it is SIGKILLed.
+#
+# Optional M5.1 kind evidence: emit one SIP status counter at startup (G-4).
+m5:
+  probeSipStatusCode: null
+
 draining:
   preStopSleepSeconds: 5
   terminationGracePeriodSeconds: 300

@@ -1,6 +1,14 @@
 # Shared helpers for M5 kind evidence (source from other m5-*.sh scripts).
 # shellcheck shell=bash
 
+if [[ -z "${_REPO_TOOLCHAIN_LOADED:-}" ]]; then
+  _M5_LIB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  # shellcheck source=scripts/lib/repo-toolchain.sh
+  source "${_M5_LIB_ROOT}/scripts/lib/repo-toolchain.sh"
+  repo_toolchain_prepend_path "${_M5_LIB_ROOT}"
+  _REPO_TOOLCHAIN_LOADED=1
+fi
+
 m5_repo_root() {
   cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
 }

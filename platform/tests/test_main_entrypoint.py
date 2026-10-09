@@ -81,6 +81,26 @@ def test_build_shell_accepts_new_requests() -> None:
     assert shell.accepts_new_requests() is True
 
 
+def test_main_records_probe_sip_status_on_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AS_M5_PROBE_SIP_STATUS", "404")
+    monkeypatch.setenv("AS_HEALTH_PORT", "0")
+    _deliver_sigterm(monkeypatch)
+    monkeypatch.setattr(entrypoint.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(entrypoint.time, "monotonic", lambda: 0.0)
+
+    captured: list[tuple[str, int]] = []
+
+    real_record = entrypoint.record_sip_status_code
+
+    def capture(metrics: object, use_case: str, status_code: int) -> None:
+        captured.append((use_case, status_code))
+        real_record(metrics, use_case, status_code)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(entrypoint, "record_sip_status_code", capture)
+    entrypoint.main(["--no-health-server"])
+    assert captured == [("unknown", 404)]
+
+
 def test_main_returns_zero_after_idle_process_receives_sigterm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -108,6 +128,14 @@ def test_main_returns_zero_after_idle_process_receives_sigterm(
     assert exit_code == 0
     assert sleeps == []
     assert installed_signals == [signal.SIGTERM, signal.SIGINT]
+
+
+def test_main_returns_runtime_error_on_invalid_guard_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AS_DOWNSCALE_GUARD_ENABLED", "not-a-bool")
+    exit_code = entrypoint.main(["--no-health-server"])
+    assert exit_code == entrypoint._RUNTIME_ERROR_EXIT_CODE
 
 
 def test_main_returns_nonzero_when_active_calls_do_not_drain(

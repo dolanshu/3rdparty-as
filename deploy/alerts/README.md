@@ -35,7 +35,7 @@ namespace of the customer system — one namespace holds one complete system
 | Kind | Convention | Example |
 |---|---|---|
 | Alert name | `AS` + PascalCase condition | `ASHighErrorRatio` |
-| Group name | `as.` + domain | `as.call-path`, `as.control-plane` |
+| Group name | `as.` + domain | `as.call-path` |
 | Metric name | `as_` prefix, snake_case, `_total` for counters, base unit suffix for seconds | `as_sip_responses_total`, `as_tls_certificate_expiry_seconds` |
 | Labels | `severity` + `component`; metrics carry `use_case` (and `pod` where per-instance) | `severity: critical`, `component: state` |
 
@@ -50,14 +50,16 @@ rule that silently stops matching is worse than no rule.
 
 | Metric | Type | Meaning |
 |---|---|---|
-| `as_sip_responses_total{use_case,status_class,status_code}` | counter | SIP responses by class and code |
+| `as_sip_responses_total{use_case,status_class,status_code}` | counter | SIP responses. Incremented by `respond_with_metrics` / `record_sip_status_code`. Kind/lab may set Helm `m5.probeSipStatusCode` (`AS_M5_PROBE_SIP_STATUS`) to prove the series exists. **Until the product SIP adapter calls that path on every response (M7), `ASHighErrorRatio` has no production samples and will not fire.** |
 | `as_active_calls{use_case,pod}` | gauge | calls currently in flight |
+| `as_downscale_removable{use_case,pod}` | gauge | 1 = scale-down guard allows removal |
 | `as_telemetry_dropped_total{use_case}` | counter | `dropped_count` of ADR-0005 (queue full) |
-| `as_state_store_available{use_case}` | gauge | 1 = Redis reachable, 0 = unreachable |
-| `as_config_rollbacks_total{use_case}` | counter | automatic config rollbacks (ADR-0006) |
-| `as_config_version_in_sync{use_case,pod}` | gauge | 1 = reported version == latest version |
-| `as_tls_certificate_expiry_seconds{use_case}` | gauge | seconds until the serving certificate expires |
+| `as_state_store_available{use_case}` | gauge | 1 = Redis reachable (`REDIS_URL` probe), 0 = unreachable |
 | `kube_pod_container_status_restarts_total{...}` | counter | kube-state-metrics, for restart loops |
+
+Control-plane alerts for config rollback, drift, and TLS expiry are **deferred**
+until those metrics are exported from the config-service / SIP transport paths.
+Do not add PromQL rules for metrics that are not emitted.
 
 ## Why there is no capacity alert
 
@@ -70,8 +72,7 @@ Every threshold in `as-alerts.yaml` is therefore one of:
 
 - a **ratio** (failure responses over all responses),
 - a **relative change** (active calls against their own trailing average),
-- a **state condition** (store reachable or not, version in sync or not,
-  certificate expires within N days, restart count over a fixed window).
+- a **state condition** (store reachable or not, restart count over a fixed window).
 
 None of them is the answer to O1, and each `description` says so explicitly —
 so that nobody later mistakes a threshold here for a measured capacity limit.

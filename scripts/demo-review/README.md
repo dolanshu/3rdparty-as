@@ -31,6 +31,8 @@ Artifacts: `artifacts/demo-review/<date>/story-{a,b,c,d,e}/`
 
 ## Prerequisites
 
+`kind` / `kubectl` / `helm` may live on your system `PATH`, or in the repo vendored dir **`.tools/m71-bin`** (see `pre-m8-demo-review-plan.md`). `make chart-check`, `kind-up.sh`, and demo scripts resolve that directory automatically when present.
+
 ```bash
 cd /path/to/3rdparty-as && uv sync
 make m2-platform-resip-build   # stories B (487), D, E

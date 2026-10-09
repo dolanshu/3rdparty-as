@@ -3,7 +3,7 @@
 # `make gate` is the same set of checks CI layer ① runs, in the same order.
 # Nothing is committed unless it is green here first (AGENT.md §Git rules).
 
-.PHONY: help sync fmt lint type test test-unit test-integration test-integration-compose test-e2e test-perf chart-check gate gate-strict \
+.PHONY: help sync fmt lint type test test-unit test-integration test-integration-compose test-e2e test-perf chart-check alert-check gate gate-strict \
 	m2-native-restore m2-native-build m2-native-smoke m2-native-smoke-tcp m2-native-smoke-tls-runtime m2-native-smoke-tcp-runtime m2-native m2-platform-resip-build m7-platform-two-leg-build m7-platform-recovery-build m71-sim
 
 # Matches deploy/compose/.env.example POSTGRES_SUPERUSER_PASSWORD on published port 55432.
@@ -41,6 +41,10 @@ test-integration-compose: ## ② integration using deploy/compose Postgres (AS_P
 
 chart-check: ## helm lint + template guards (M5-0c; requires helm 3.x)
 	deploy/helm/scripts/chart-check.sh
+
+alert-check: ## promtool check rules on deploy/alerts/as-alerts.yaml
+	@command -v promtool >/dev/null 2>&1 || { echo "promtool not found; install prometheus or set PATH" >&2; exit 1; }
+	promtool check rules deploy/alerts/as-alerts.yaml
 
 m5-cluster-evidence: ## kind cluster M5 rollout/ingress evidence (needs docker+kind)
 	bash deploy/kind/m5-cluster-evidence.sh

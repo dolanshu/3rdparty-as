@@ -23,11 +23,11 @@ groups:
       - alert: ASHighErrorRatio
         expr: |
           (
-            sum(rate(as_sip_responses_total{status_class="5xx"}[5m]))
+            sum(increase(as_sip_responses_total{status_class="5xx"}[5m]))
               +
-            sum(rate(as_sip_responses_total{status_class="4xx",status_code!="487"}[5m]))
+            sum(increase(as_sip_responses_total{status_class="4xx",status_code!="487"}[5m]))
           )
-            / clamp_min(sum(rate(as_sip_responses_total[5m])), 1)
+            / clamp_min(sum(increase(as_sip_responses_total[5m])), 1)
           > 0.01
         for: 10m
         labels:
@@ -46,22 +46,20 @@ groups:
 
       - alert: ASTelemetryDropped
         expr: |
-          sum(rate(as_telemetry_dropped_total[10m])) > 0
+          sum(increase(as_telemetry_dropped_total[15m])) >= 50
         for: 15m
         labels:
           severity: warning
           component: observability
         annotations:
-          summary: "Telemetry events are being dropped"
+          summary: "Telemetry export queue is dropping events"
           description: >-
-            The bounded export queue is full and events are discarded
-            (`dropped_count`, ADR-0005). Losing telemetry is by design
-            acceptable — back pressure on the call path is not — but a
-            continuously rising drop count usually means the OTLP backend is
-            unreachable or too slow. Alerts derived from these metrics are
-            unreliable while this fires. The threshold is a non-zero RATE
-            (a state condition), not a capacity figure; O1 / M6 is untouched by
-            it.
+            The bounded export queue discarded at least 50 events in 15 minutes
+            (`as_telemetry_dropped_total`, ADR-0005). Losing telemetry is by
+            design acceptable — back pressure on the call path is not — but
+            sustained drops usually mean the OTLP backend is unreachable or too
+            slow. The threshold is an event COUNT over a window, not a capacity
+            figure; O1 / M6 is untouched by it.
 
       - alert: ASRestartLoop
         expr: |
@@ -101,7 +99,8 @@ groups:
 
       - alert: ASActiveCallsSurge
         expr: |
-          sum(as_active_calls) > 1.3 * avg_over_time(sum(as_active_calls)[30m:1m])
+          sum by (use_case) (as_active_calls)
+            > 1.3 * avg_over_time(sum by (use_case) (as_active_calls)[30m:1m])
         for: 10m
         labels:
           severity: warning
@@ -110,61 +109,8 @@ groups:
           summary: "Active calls 30% above the trailing 30-minute average"
           description: >-
             A RELATIVE surge (REQ-NF-14): current active calls exceed 1.3x the
-            trailing 30-minute average. Relative by construction — there is no
-            absolute call or session number in this rule, because that number is
-            O1 and is measured in M6. Treat this as "traffic shape changed",
-            investigate before it becomes a problem; do not use it to infer a
-            capacity limit.
-
-  - name: as.control-plane
-    rules:
-      - alert: ASConfigRollbackTriggered
-        expr: |
-          increase(as_config_rollbacks_total[5m]) > 0
-        for: 0m
-        labels:
-          severity: critical
-          component: config
-        annotations:
-          summary: "Automatic configuration rollback was triggered"
-          description: >-
-            A distributed config version was rolled back (ADR-0006). Critical
-            because an automatic rollback means somebody's change was judged
-            harmful, and because the instances may now be converging on the
-            previous version: a human must confirm the outcome and decide
-            whether to re-submit, fix, or hold. Event COUNT, not a capacity
-            figure — O1 / M6 is unrelated to this rule.
-
-      - alert: ASTlsCertificateExpiring
-        expr: |
-          min by (use_case) (as_tls_certificate_expiry_seconds) < 30 * 24 * 3600
-        for: 1h
-        labels:
-          severity: warning
-          component: security
-        annotations:
-          summary: "TLS certificate expires within 30 days"
-          description: >-
-            The S-SBC-facing certificate expires in under 30 days. Rotation is
-            a hot reload of the mounted Secret and must never restart the Pod
-            or drop in-flight calls (ADR-0016). A time-to-expiry threshold —
-            a calendar fact, in no way a capacity figure (O1 / M6). Renew from
-            the customer PKI and update the Secret referenced by
-            `tls.secretName`.
-
-      - alert: ASConfigDrift
-        expr: |
-          min by (use_case, pod) (as_config_version_in_sync) == 0
-        for: 15m
-        labels:
-          severity: warning
-          component: config
-        annotations:
-          summary: "Instance reports a config version different from the latest"
-          description: >-
-            At least one instance still reports a config version other than the
-            latest one held by the control plane, for more than 15 minutes
-            (ADR-0006 canary distribution). A boolean CONSISTENCY state, not a
-            capacity figure: it says the fleet disagrees, not how much traffic
-            it can carry (O1 / M6). Check the canary rollout, the version
-            report path and any instance that stopped polling.
+            trailing 30-minute average per use case. Relative by construction —
+            there is no absolute call or session number in this rule, because
+            that number is O1 and is measured in M6. Treat this as "traffic
+            shape changed", investigate before it becomes a problem; do not use
+            it to infer a capacity limit.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=scripts/lib/repo-toolchain.sh
+source "${ROOT}/scripts/lib/repo-toolchain.sh"
+repo_toolchain_prepend_path "${ROOT}"
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-as-m5}"
 RELEASE="${HELM_RELEASE_NAME:-as}"
 PLATFORM_TAG="${AS_PLATFORM_IMAGE:-as-platform:m5}"
-HELM="${HELM_BIN:-helm}"
-if [[ ! -x "${HELM}" ]] && command -v helm >/dev/null 2>&1; then
-  HELM=helm
-fi
+HELM="$(repo_require_helm "${ROOT}")"
 
 kubectl config use-context "kind-${CLUSTER_NAME}"
 kubectl create namespace as-m5 --dry-run=client -o yaml | kubectl apply -f -
@@ -23,10 +23,19 @@ if [[ "${BUNDLED_STATE}" == "1" ]]; then
   echo "==> ADR-0026 bundled in-cluster PostgreSQL + Redis (M5 §4.6 / D12 kind profile)"
 fi
 
+kubectl create secret generic as-m5-dev-tls -n as-m5 \
+  --from-literal=tls.crt=dev \
+  --from-literal=tls.key=dev \
+  --from-literal=ca.crt=dev \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 "${HELM}" upgrade --install "${RELEASE}" "${ROOT}/deploy/helm" \
   --namespace as-m5 \
   --set image.repository="${PLATFORM_TAG%%:*}" \
   --set image.tag="${PLATFORM_TAG##*:}" \
+  --set sip.peerAllowlist=10.0.0.0/8 \
+  --set tls.secretName=as-m5-dev-tls \
+  --set m5.probeSipStatusCode=404 \
   "${STATE_SET[@]}" \
   --wait --timeout 300s
 

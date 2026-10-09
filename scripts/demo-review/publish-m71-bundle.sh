@@ -7,8 +7,9 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 demo_m71_require
-PATH="${REPO_ROOT}/.tools/m71-bin:${PATH}"
-export PATH
+# shellcheck source=scripts/lib/repo-toolchain.sh
+source "${REPO_ROOT}/scripts/lib/repo-toolchain.sh"
+repo_toolchain_prepend_path "${REPO_ROOT}"
 
 proxy_args=(
   --build-arg "HTTP_PROXY=${http_proxy:-}"

@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from as_platform.ops.downscale_guard import InstanceLoad, may_remove
+
 
 @dataclass(frozen=True)
 class DownscaleGuardConfig:
@@ -44,3 +46,23 @@ def load_downscale_guard_config() -> DownscaleGuardConfig:
     except ValueError as error:
         raise ValueError("AS_DOWNSCALE_GUARD_PROTECT_ABOVE must be an integer") from error
     return DownscaleGuardConfig(enabled=enabled, protect_when_active_calls_above=threshold)
+
+
+def pod_removable_under_guard(
+    config: DownscaleGuardConfig,
+    *,
+    instance_id: str,
+    active_calls: int,
+    draining: bool,
+) -> bool:
+    """Whether this process may be selected for scale-down removal (ADR-0010).
+
+    When the guard is disabled, only an instance already draining is blocked;
+    active-call protection is not applied.
+    """
+    if not config.enabled:
+        return not draining
+    return may_remove(
+        InstanceLoad(instance_id, active_calls, draining=draining),
+        config.protect_when_active_calls_above,
+    )

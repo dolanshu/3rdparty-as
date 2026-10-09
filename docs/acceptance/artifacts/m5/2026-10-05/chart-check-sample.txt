@@ -1,0 +1,16 @@
+deploy/helm/scripts/chart-check.sh
+==> helm lint /home/shudong/project/3rdparty-as/deploy/helm
+engine.go:227: [INFO] Fail: tls.enabled=true requires tls.secretName (customer PKI Secret; ADR-0016)
+engine.go:227: [INFO] Fail: sip.peerAllowlist must be non-empty (ADR-0016 fail-closed)
+==> Linting /home/shudong/project/3rdparty-as/deploy/helm
+[INFO] Chart.yaml: icon is recommended
+
+1 chart(s) linted, 0 chart(s) failed
+==> helm template default (AS-only, expect 7 objects)
+==> helm template config-service enabled
+==> helm template config-service ingress (7.2d template path)
+==> autoscaling.enabled without minReplicas must fail
+==> helm template stateStores.enabled (ADR-0026 bundled state)
+==> helm template stateStores + config-migrate Job
+==> helm template on-prem profile (values-onprem.example.yaml)
+chart-check: OK

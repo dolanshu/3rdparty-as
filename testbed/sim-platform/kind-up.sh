@@ -6,6 +6,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=scripts/lib/repo-toolchain.sh
+source "${ROOT}/scripts/lib/repo-toolchain.sh"
+repo_toolchain_prepend_path "${ROOT}"
 CLUSTER="${M71_KIND_CLUSTER:-as-m71}"
 CHART="$ROOT/testbed/sim-platform/chart"
 CERT_DIR="${M71_CERT_DIR:-$(mktemp -d)}"

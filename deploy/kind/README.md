@@ -5,7 +5,7 @@
 ## 前置
 
 - Docker
-- `kind`, `kubectl`, `helm`（`HELM_BIN` 可指向本地二进制）
+- `kind`, `kubectl`, `helm`（优先 `PATH`；否则仓库 `.tools/m71-bin`；或 `HELM_BIN`）
 - 仓库根目录执行
 
 **PostgreSQL（M5-1d）**：生产 Chart 默认 **不**内建 PG（`stateStores.enabled=false`）。**kind 默认** `M5_BUNDLED_STATE=1`（§4.6 / ADR-0026）：同 namespace `postgres-0` + `m5-config-migrate-kind.sh`。可选 `M5_BUNDLED_STATE=0` + compose 宿主机 `:55432`（`m5-lib.sh` 网关 DSN）。
@@ -22,6 +22,7 @@
 
 ```sh
 make m5-kind-verify   # gate + chart-check + Pod metrics + config-service port-forward
+M5_STRICT=1 make m5-kind-verify   # 无 kind 集群或非 0 断言 → exit 1（M5.1-P1-1）
 ```
 
 ## 分步

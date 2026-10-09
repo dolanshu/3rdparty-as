@@ -11,10 +11,16 @@ import time
 from collections.abc import Callable, Sequence
 from types import FrameType
 
-from as_platform.ops.downscale_config import load_downscale_guard_config
+from as_platform.ops.downscale_config import (
+    DownscaleGuardConfig,
+    load_downscale_guard_config,
+    pod_removable_under_guard,
+)
 from as_platform.runtime.active_calls import ActiveCallSource, resolve_instance_id
 from as_platform.runtime.health import HealthServer, HealthServerConfig
+from as_platform.runtime.state_probe import probe_redis_available
 from as_platform.shell import ProcessShell, ShellConfig
+from as_platform.sip.metrics_bridge import record_sip_status_code
 from as_platform.telemetry import BoundedQueueSink, default_sink
 from as_platform.telemetry.metrics import CallMetrics, MetricsRegistry, emit_snapshot
 
@@ -79,20 +85,55 @@ def _optional_int_env(name: str) -> int | None:
     return int(raw)
 
 
+def _apply_m5_metrics_probes(call_metrics: CallMetrics, use_case: str) -> None:
+    """Optional Helm/kind probes that prove ``as_sip_responses_total`` wiring (M5.1 G-4).
+
+    Production on-prem leaves ``AS_M5_PROBE_SIP_STATUS`` unset. Kind/M5 evidence may set
+    one terminal status (for example ``404``) once at process start.
+    """
+    raw_status = os.environ.get("AS_M5_PROBE_SIP_STATUS", "").strip()
+    if not raw_status:
+        return
+    record_sip_status_code(call_metrics, use_case, int(raw_status))
+
+
 def _start_metrics_loop(
     registry: MetricsRegistry,
     call_metrics: CallMetrics,
     active_calls: ActiveCallSource,
     instance_id: str,
     use_case: str,
+    guard: DownscaleGuardConfig,
+    is_draining: Callable[[], bool],
     sink: BoundedQueueSink | object,
     stop: threading.Event,
 ) -> threading.Thread:
+    last_telemetry_drops = 0
+
     def loop() -> None:
+        nonlocal last_telemetry_drops
         while not stop.is_set():
             count = active_calls.count()
             call_metrics.set_active_calls(instance_id, use_case, count)
+            removable = pod_removable_under_guard(
+                guard,
+                instance_id=instance_id,
+                active_calls=count,
+                draining=is_draining(),
+            )
+            call_metrics.set_downscale_removable(instance_id, use_case, removable)
+            redis_url = os.environ.get("REDIS_URL", "").strip()
+            if redis_url:
+                call_metrics.set_state_store_available(
+                    use_case,
+                    probe_redis_available(redis_url),
+                )
             if isinstance(sink, BoundedQueueSink):
+                dropped = sink.dropped_count
+                delta = dropped - last_telemetry_drops
+                if delta > 0:
+                    call_metrics.record_telemetry_dropped(use_case, delta)
+                last_telemetry_drops = dropped
                 emit_snapshot(sink, registry)
             stop.wait(_METRICS_INTERVAL_SECONDS)
 
@@ -116,7 +157,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         runtime exception.
     """
     config, disable_health = _parse_config(argv)
-    guard = load_downscale_guard_config()
+    try:
+        guard = load_downscale_guard_config()
+    except ValueError:
+        logging.exception("Invalid downscale guard configuration")
+        return _RUNTIME_ERROR_EXIT_CODE
     logging.info(
         "downscale guard enabled=%s protect_above=%s",
         guard.enabled,
@@ -141,6 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     use_case = os.environ.get("AS_USE_CASE", "unknown")
     registry = MetricsRegistry()
     call_metrics = CallMetrics(registry)
+    _apply_m5_metrics_probes(call_metrics, use_case)
 
     telemetry_sink = default_sink()
     bounded_sink: BoundedQueueSink | None = None
@@ -166,23 +212,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         call_source,
         instance_id,
         use_case,
+        guard,
+        is_terminating,
         bounded_sink if bounded_sink is not None else telemetry_sink,
         metrics_stop,
     )
-
-    sip_stack_service = None
-    try:
-        from as_platform.runtime.sip_stack_service import SipStackService
-
-        sip_stack_service = SipStackService.from_env(call_source)
-        if sip_stack_service is not None:
-            sip_stack_service.start()
-            logging.info(
-                "SIP runtime listener started on udp port=%s", sip_stack_service.listen_port
-            )
-    except Exception:
-        logging.exception("Failed to start SIP runtime service")
-        return _RUNTIME_ERROR_EXIT_CODE
 
     def request_terminate(_signum: int, _frame: FrameType | None) -> None:
         shell.request_terminate()
@@ -202,8 +236,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         logging.exception("The AS process shell failed")
         return _RUNTIME_ERROR_EXIT_CODE
     finally:
-        if sip_stack_service is not None:
-            sip_stack_service.stop()
         metrics_stop.set()
         metrics_thread.join(timeout=2.0)
         if bounded_sink is not None:

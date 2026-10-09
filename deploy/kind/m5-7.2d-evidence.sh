@@ -11,9 +11,11 @@ HTTP_PORT="${M5_INGRESS_HTTP_PORT:-18080}"
 HTTPS_PORT="${M5_INGRESS_HTTPS_PORT:-18443}"
 DATE="$(date -u +%Y-%m-%d)"
 ART="${ROOT}/artifacts/m5/${DATE}"
-mkdir -p "${ART}"
+COMMIT_ART="${ROOT}/docs/acceptance/artifacts/m5/${DATE}"
+mkdir -p "${ART}" "${COMMIT_ART}"
 LOG="${ART}/7.2d-evidence.log"
-exec > >(tee -a "${LOG}") 2>&1
+COMMIT_LOG="${COMMIT_ART}/7.2d-evidence-redacted.txt"
+exec > >(tee -a "${LOG}" | tee -a "${COMMIT_LOG}") 2>&1
 
 : "${M5_7_2D_E2E_PASSWORD:?Set M5_7_2D_E2E_PASSWORD (12+ chars, dev-only)}"
 
@@ -36,9 +38,21 @@ PG_PF=$!
 sleep 2
 export AS_CONFIG_OWNER_DSN="postgresql://as_config_owner:${AS_CONFIG_OWNER_PASSWORD:-as_config_owner_dev}@127.0.0.1:${LOCAL_PG}/as_config"
 export M4B8_E2E_PASSWORD="${M5_7_2D_E2E_PASSWORD}"
-if ! printf 'admin\n%s\n%s\n' "${M5_7_2D_E2E_PASSWORD}" "${M5_7_2D_E2E_PASSWORD}" \
-  | uv run as-config-bootstrap-admin 2>/dev/null; then
-  echo "bootstrap-admin: already complete or skipped"
+BOOTSTRAP_RC=0
+BOOTSTRAP_OUT=""
+set +e
+BOOTSTRAP_OUT="$(printf 'admin\n%s\n%s\n' "${M5_7_2D_E2E_PASSWORD}" "${M5_7_2D_E2E_PASSWORD}" \
+  | uv run as-config-bootstrap-admin 2>&1)"
+BOOTSTRAP_RC=$?
+set -e
+if [[ "${BOOTSTRAP_RC}" -eq 0 ]]; then
+  echo "bootstrap-admin: created"
+elif [[ "${BOOTSTRAP_RC}" -eq 1 ]] && grep -q 'unavailable' <<<"${BOOTSTRAP_OUT}"; then
+  echo "bootstrap-admin: already complete"
+else
+  echo "${BOOTSTRAP_OUT}"
+  echo "ERROR: bootstrap-admin failed (exit ${BOOTSTRAP_RC})" >&2
+  exit 1
 fi
 uv run --directory "${ROOT}/services/config-service" python "${ROOT}/deploy/compose/scripts/m4b-8-seed-users.py"
 kill "${PG_PF}" 2>/dev/null || true
@@ -56,7 +70,8 @@ echo "==> runbook item 2: controller no-tls-redirect-locations (document)"
 CM="$(kubectl -n ingress-nginx get configmap ingress-nginx-controller -o yaml 2>/dev/null || true)"
 if grep -q 'no-tls-redirect-locations' <<<"${CM}"; then
   if grep -E 'no-tls-redirect-locations:.*/' <<<"${CM}" | grep -qvE '=.*\^?/'; then
-    echo "WARN: review no-tls-redirect-locations value in controller ConfigMap"
+    echo "ERROR: no-tls-redirect-locations may exempt console routes" >&2
+    exit 1
   fi
   echo "item-2: documented (ConfigMap lists no-tls-redirect-locations)"
 else
@@ -65,7 +80,11 @@ fi
 
 echo "==> runbook item 3: TLS secret on Ingress"
 TLS_SECRET="$(kubectl -n "${NS}" get ingress -o jsonpath='{.items[0].spec.tls[0].secretName}')"
-[[ -n "${TLS_SECRET}" ]] && kubectl -n "${NS}" get secret "${TLS_SECRET}" >/dev/null
+if [[ -z "${TLS_SECRET}" ]]; then
+  echo "ERROR: Ingress has no tls.secretName" >&2
+  exit 1
+fi
+kubectl -n "${NS}" get secret "${TLS_SECRET}" >/dev/null
 echo "item-3: PASS secret=${TLS_SECRET}"
 
 echo "==> runbook item 6: trustedProxies on config-service"

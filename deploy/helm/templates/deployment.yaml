@@ -109,6 +109,10 @@ spec:
             - name: AS_M5_SIMULATED_ACTIVE_CALLS
               value: {{ $uc.simulatedActiveCalls | quote }}
             {{- end }}
+            {{- if $.Values.m5.probeSipStatusCode }}
+            - name: AS_M5_PROBE_SIP_STATUS
+              value: {{ $.Values.m5.probeSipStatusCode | quote }}
+            {{- end }}
           {{- with $uc.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

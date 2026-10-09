@@ -1,0 +1,5 @@
+M5_STRICT=1 cluster=kind-as-m5
+host has no guarantee of a live kind cluster; this transcript records the fail-closed path.
+ERROR: kind-as-m5 context missing (M5_STRICT=1)
+exit=1
+no live kind-as-m5; fail-closed transcript is /home/shudong/project/3rdparty-as/docs/acceptance/artifacts/m5/2026-10-05/m5-strict-context.txt

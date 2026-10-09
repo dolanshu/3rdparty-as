@@ -98,13 +98,17 @@ demo_kind_context() {
 }
 
 demo_m71_kubectl() {
-  PATH="${REPO_ROOT}/.tools/m71-bin:${PATH}"
+  # shellcheck source=scripts/lib/repo-toolchain.sh
+  source "${REPO_ROOT}/scripts/lib/repo-toolchain.sh"
+  repo_toolchain_prepend_path "${REPO_ROOT}"
   command -v kubectl >/dev/null 2>&1 || demo_die "kubectl not found on PATH or in ${REPO_ROOT}/.tools/m71-bin"
   kubectl --context kind-as-m71 "$@"
 }
 
 demo_m71_present() {
-  PATH="${REPO_ROOT}/.tools/m71-bin:${PATH}"
+  # shellcheck source=scripts/lib/repo-toolchain.sh
+  source "${REPO_ROOT}/scripts/lib/repo-toolchain.sh"
+  repo_toolchain_prepend_path "${REPO_ROOT}"
   kubectl config get-contexts -o name 2>/dev/null | grep -qx "kind-as-m71"
 }
 

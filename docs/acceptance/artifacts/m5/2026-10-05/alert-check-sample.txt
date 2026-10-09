@@ -1,0 +1,4 @@
+promtool check rules deploy/alerts/as-alerts.yaml
+Checking deploy/alerts/as-alerts.yaml
+  SUCCESS: 5 rules found
+

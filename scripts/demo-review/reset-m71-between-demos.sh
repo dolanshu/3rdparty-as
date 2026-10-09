@@ -6,8 +6,9 @@ set -euo pipefail
 # shellcheck source=scripts/demo-review/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-PATH="${REPO_ROOT}/.tools/m71-bin:${PATH}"
-export PATH
+# shellcheck source=scripts/lib/repo-toolchain.sh
+source "${REPO_ROOT}/scripts/lib/repo-toolchain.sh"
+repo_toolchain_prepend_path "${REPO_ROOT}"
 
 CHECK_ONLY=0
 case "${1:-}" in

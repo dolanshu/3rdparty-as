@@ -32,6 +32,8 @@ from enum import Enum
 from as_platform.telemetry import TelemetryEvent, TelemetrySink
 
 ACTIVE_CALLS = "as_active_calls"
+DOWNSCALE_REMOVABLE = "as_downscale_removable"
+STATE_STORE_AVAILABLE = "as_state_store_available"
 SIP_RESPONSES_TOTAL = "as_sip_responses_total"
 RULE_HITS_TOTAL = "as_rule_hits_total"
 TELEMETRY_DROPPED_TOTAL = "as_telemetry_dropped_total"
@@ -185,6 +187,25 @@ class CallMetrics:
             ACTIVE_CALLS,
             float(count),
             {_LABEL_POD: instance_id, _LABEL_USE_CASE: use_case},
+        )
+
+    def set_downscale_removable(self, instance_id: str, use_case: str, removable: bool) -> None:
+        """Report whether scale-down may select this instance (ADR-0010).
+
+        ``1`` means the guard would allow removal; ``0`` means protected or draining.
+        """
+        self._registry.set_gauge(
+            DOWNSCALE_REMOVABLE,
+            1.0 if removable else 0.0,
+            {_LABEL_POD: instance_id, _LABEL_USE_CASE: use_case},
+        )
+
+    def set_state_store_available(self, use_case: str, available: bool) -> None:
+        """Report Redis reachability for alert rules (ADR-0007)."""
+        self._registry.set_gauge(
+            STATE_STORE_AVAILABLE,
+            1.0 if available else 0.0,
+            {_LABEL_USE_CASE: use_case},
         )
 
     def active_calls_for(self, instance_id: str) -> int:
