@@ -456,6 +456,21 @@
 
 ---
 
+#### REQ-NF-16：版本生命周期与 EOL 策略
+
+**业务描述。** 每个正式发布版本（GA）应定义明确的生命周期：
+- 支持周期：从 GA 到 EOL 的最短时长（建议 ≥ 12 个月）
+- EOL 提前通知期：至少 6 个月
+- 升级路径：相邻 minor 版本可直接升级；跨 major 版本须提供迁移指南
+- LTS 版本：当前不定义 LTS；如未来需要，须新增 ADR
+- 安全补丁：EOL 后不再提供安全补丁
+
+**对应 ADR**：ADR-0027
+
+**验收标准。** （验收标准见 ../acceptance/test-plan.md §2-REQ-NF-16）
+
+---
+
 ## 4. 安全需求（REQ-S-*）— 新增（推翻 requirements-m1-review Gap 3 裁决）
 
 **说明**：M1 阶段裁决"安全需求由 REQ-NF 隐含覆盖"（requirements-m1-review Gap 3），**现推翻该裁决**。AGENT.md §13 明确说"trunk 是不可信的"，安全语义不能隐含，必须 formalize 为可追溯可验收的 REQ-S-* 条目。
