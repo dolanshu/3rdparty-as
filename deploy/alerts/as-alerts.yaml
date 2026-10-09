@@ -17,6 +17,51 @@
 # Metric names follow the naming contract in README.md; they are exported by the
 # OTel metrics of ADR-0005 / REQ-NF-13. `$AS_NAMESPACE` is a placeholder
 # substituted at load time (README.md §"Loading").
+#
+# ADDED 2026-10-10 (delivery 2.2, alert hardening). Two groups were appended;
+# the five original rules in `as.call-path` above are byte-for-byte unchanged.
+#
+#   as.runtime  — ASPodNotReady, ASDeploymentReplicasUnavailable,
+#                 ASDownscaleBlocked
+#   as.platform — ASStatefulSetUnavailable, ASServiceEndpointsAbsent
+#
+# Why these and only these:
+#
+#   * Three of the five new rules read kube-state-metrics series (pod readiness,
+#     Deployment available replicas, StatefulSet ready replicas, Endpoint
+#     addresses). That source is cluster-provided, not invented here, and
+#     `ASRestartLoop` already depends on it — so these rules inherit exactly the
+#     same single prerequisite ("the cluster runs kube-state-metrics") and add no
+#     new assumption about the AS itself.
+#   * Two of the five read `as_*` metrics that this repository really exports
+#     AND really writes from a production code path. `as_active_calls` and
+#     `as_downscale_removable` are written unconditionally every 15s by the
+#     metrics loop in `platform/src/as_platform/__main__.py`
+#     (`_start_metrics_loop`), with no dependency on OTLP being configured.
+#     `as_downscale_removable` had a writer but no reader; ADR-0010 makes it a
+#     genuine operational signal (a drain that never completes), so it now has
+#     one rule.
+#   * Nothing else was added, on purpose. Every candidate that failed the
+#     "is there a producer?" test stays out of this file and is listed with its
+#     blocking condition in README.md §"Deferred alerts". In particular: no rule
+#     was written for latency, ISC timeouts, session leak, TLS certificate
+#     expiry, or rule-hit rate, because no such metric is exported anywhere in
+#     this repository (`MetricKind` is COUNTER/GAUGE only — there is no
+#     histogram), and README.md forbids PromQL for metrics that are not emitted.
+#
+# STILL NO CAPACITY ALERT, and the reason is unchanged: O1 is measured in M6, and
+# AGENT.md §2 / §6 forbid publishing a capacity figure before that. Every
+# threshold below remains a ratio, a relative change, a fixed-window count, or a
+# binary state condition. `as.capacity` does not exist yet and is not
+# pre-declared here.
+#
+# KNOWN WIRING GAP (not fixed by this change, stated so nobody reads the rules
+# below as "already firing"): the AS Pod template carries NO
+# `prometheus.io/scrape` annotation and this chart contains no ServiceMonitor
+# and no PodMonitor. Until one of those is added, a standard deployment has a
+# working `/metrics` endpoint that no scraper is wired to, so the `as_*` rules
+# have no data. See README.md §"Scrape wiring status". Do not read this file as
+# an acceptance record.
 groups:
   - name: as.call-path
     rules:
@@ -114,3 +159,138 @@ groups:
             that number is O1 and is measured in M6. Treat this as "traffic
             shape changed", investigate before it becomes a problem; do not use
             it to infer a capacity limit.
+
+  # ---------------------------------------------------------------------------
+  # as.runtime — the lifecycle of the AS engine workloads themselves.
+  #
+  # Added 2026-10-10 (delivery 2.2). Two of the three rules below read
+  # kube-state-metrics, which is cluster-provided and already required by
+  # ASRestartLoop above; the third reads an `as_*` gauge this repository writes
+  # on every metrics tick. None of them states a capacity claim.
+  # ---------------------------------------------------------------------------
+  - name: as.runtime
+    rules:
+      - alert: ASPodNotReady
+        expr: |
+          max by (namespace, pod) (
+            kube_pod_status_ready{namespace=~"$AS_NAMESPACE",condition="true"}
+          ) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: runtime
+        annotations:
+          summary: "A Pod in the AS namespace has been not-ready for 5 minutes"
+          description: >-
+            The Pod's Ready condition has been false for 5 minutes. Readiness is
+            the AS process refusing new work: `/health/ready` answers 503 while
+            the shell is draining or shutting down (ADR-0009), so a Pod that
+            stays not-ready is either stuck draining or never became ready.
+            This is a binary READINESS STATE, not a capacity figure — it says
+            nothing about how many calls per second the system carries; that is
+            O1, measured in M6. Check `/health/ready` and the previous container
+            log before assuming a load problem.
+
+      - alert: ASDeploymentReplicasUnavailable
+        expr: |
+          (
+            kube_deployment_status_replicas_available{namespace=~"$AS_NAMESPACE"}
+              <
+            kube_deployment_spec_replicas{namespace=~"$AS_NAMESPACE"}
+          )
+        for: 10m
+        labels:
+          severity: warning
+          component: runtime
+        annotations:
+          summary: "A Deployment in the AS namespace has fewer available replicas than it wants"
+          description: >-
+            Available replicas are below the desired replica count of the same
+            Deployment for 10 minutes: pods exist but are not available (not
+            ready, or being replaced). This compares two integers the Kubernetes
+            API already publishes; it is a REPLICA AVAILABILITY STATE, not a
+            capacity figure, and it deliberately does not say how many replicas
+            the system SHOULD have — that count is O1 and comes from M6. Note
+            this selector is namespace-scoped, so it also covers the bundled
+            state-redis and config-service Deployments; use the `deployment`
+            label on the series to tell them apart.
+
+      - alert: ASDownscaleBlocked
+        expr: |
+          max by (pod, use_case) (
+            (as_downscale_removable == 0)
+              and on (pod, use_case) (as_active_calls == 0)
+          ) == 1
+        for: 30m
+        labels:
+          severity: warning
+          component: runtime
+        annotations:
+          summary: "An AS instance is not removable by the scale-down guard while carrying zero calls"
+          description: >-
+            `as_downscale_removable` is 0 and `as_active_calls` is 0 at the same
+            time, sustained for 30 minutes. The guard (ADR-0010) blocks removal
+            for exactly two reasons — the instance still carries calls, or it is
+            already draining — so this combination means the instance is stuck
+            draining: a rollout, a scale-down or a termination that never
+            completes, and in-flight calls are being held on a Pod that will not
+            go away. A binary GUARD STATE plus a zero count, not a capacity
+            figure; no CPS, concurrency or session target is implied, and O1 is
+            untouched. Cross-check with ASPodNotReady and `/health/ready`.
+
+  # ---------------------------------------------------------------------------
+  # as.platform — the bundled state stores and the config-service.
+  #
+  # Added 2026-10-10 (delivery 2.2). Both rules read kube-state-metrics series.
+  # They cover a different failure mode from ASCallStateStoreUnavailable above:
+  # that rule reports "AS cannot reach Redis", these report "the workload or its
+  # Service has no healthy backend at all", which is what an operator sees first
+  # when the Pod itself is gone.
+  # ---------------------------------------------------------------------------
+  - name: as.platform
+    rules:
+      - alert: ASStatefulSetUnavailable
+        expr: |
+          max by (namespace, statefulset) (
+            kube_statefulset_status_replicas_ready{namespace=~"$AS_NAMESPACE"}
+          ) < max by (namespace, statefulset) (
+            kube_statefulset_replicas{namespace=~"$AS_NAMESPACE"}
+          )
+        for: 5m
+        labels:
+          severity: critical
+          component: state
+        annotations:
+          summary: "A StatefulSet in the AS namespace has no ready replicas"
+          description: >-
+            A StatefulSet reports fewer ready replicas than it wants. In this
+            chart that is the governance PostgreSQL (ADR-0008), which holds the
+            configuration versions, change orders and the append-only audit
+            trail, so nothing can be approved or distributed while it is down.
+            A REPLICA READINESS STATE, not a capacity figure — the bundled store
+            is single-replica by design (HA is the customer's, and Redis HA is
+            still the open items O5 / D3); that design choice is not a statement
+            about how much traffic one replica carries, which is O1 / M6. Check
+            the StatefulSet's pod events and the last migration Job before
+            suspecting load.
+
+      - alert: ASServiceEndpointsAbsent
+        expr: |
+          sum by (namespace, service) (
+            kube_endpoint_address_available{namespace=~"$AS_NAMESPACE"}
+          ) == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: state
+        annotations:
+          summary: "A Service in the AS namespace has no available endpoint address"
+          description: >-
+            A Service has zero available endpoint addresses for 5 minutes: its
+            selector matches no ready Pod, so clients of that Service cannot be
+            routed. In this chart it covers the state-redis and config-service
+            Services. This is a ROUTING STATE derived from ready endpoints, not a
+            capacity figure — it says the Service is empty, not that the system
+            is too busy, and it carries no CPS, concurrency or throughput number
+            (O1 / M6). Check whether the backing Pod is missing, not-ready or
+            simply being rolled, and compare with ASCallStateStoreUnavailable.

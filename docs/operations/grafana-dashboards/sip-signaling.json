@@ -1,0 +1,411 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "In-house IMS Application Server（文档暂用名）SIP 信令明细看板。只使用 as_sip_responses_total / as_rule_hits_total / as_active_calls / as_downscale_removable 四个真实存在的 as_* 指标与 ALERTS 系列。**没有 direction（入腿/出腿）维度可用——该 label 在本仓库不存在，故不按入腿/出腿拆分**；**不含时延面板**（仓库无 histogram）、**不含 Diameter Sh 面板**、**不含任何容量数字**。⚠️ as_sip_responses_total 与 as_rule_hits_total 在生产路径都没有数据生产者，抓取接线也未闭环，详见同目录 README.md。",
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "SIP 响应速率（按 use_case + status_class）",
+      "description": "指标 as_sip_responses_total{use_case,status_class,status_code}（counter），速率用 rate()。⚠️ 生产路径**无数据生产者**：唯一写入点是启动时一次性探针 AS_M5_PROBE_SIP_STATUS（生产 on-prem 不设置），真实响应路径尚未逐条接线（M7）。因此标准部署下本面板预期为 No data。⚠️ **没有入腿/出腿维度**：本仓库导出的 label 只有 use_case / status_class / status_code，metrics.py 里没有 direction 之类的标签，所以本看板不按入腿/出腿拆分，也不编造标签。速率观测，**不是吞吐能力**，O1 未裁决。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (use_case, status_class) (rate(as_sip_responses_total[5m]))",
+          "legendFormat": "{{use_case}} / {{status_class}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "mode": "normal", "group": "A" },
+            "axisPlacement": "auto",
+            "scaleDistribution": { "type": "linear" }
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "响应状态类分布（2xx / 4xx / 5xx / 1xx / 3xx / 6xx）",
+      "description": "指标 as_sip_responses_total，按 status_class 聚合（status_class 由 status_code // 100 生成，形如 \"2xx\"）。与面板 1 同一数据源、同一缺口：无生产者时无数据。判读口径：2xx 是正常终态、487 属主叫取消的正常行为、404 与 603 是**业务判决结果**（预期行为，不是故障）、502 是下游非 2xx 的统一映射。⚠️ 本面板只呈现响应构成，**不给出任何「正常比例应该是多少」的门限**：比例类门限只写在 deploy/alerts/as-alerts.yaml（ASHighErrorRatio），看板不复制阈值。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (status_class) (rate(as_sip_responses_total[5m]))",
+          "legendFormat": "{{status_class}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "mode": "normal", "group": "A" },
+            "axisPlacement": "auto",
+            "scaleDistribution": { "type": "linear" }
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "关注响应码计数：403 / 404 / 603 / 502（每 5 分钟窗口增量）",
+      "description": "四个独立查询，按 status_code 精确过滤。口径（证据见 docs/product/compliance-matrix.md §3）：**403 Forbidden = 入腿未授权**（明文被拒与白名单未命中共用 403，resip_runtime.py）；**404 Not Found = 无匹配规则的判决结果**，属预期行为（adapter.py）；**603 Decline = 策略拒绝的判决结果**，属预期行为（adapter.py / anti-fraud decision.py；注意本产品发 603 而非 RFC 8688 的 608）；**502 Bad Gateway = 下游非 2xx 的统一映射**（透传集合为 {408,480,486,503,504}，其余 4xx–6xx 映射为 502）。因此 404 / 603 上升**不一定是故障**，先看规则集与判决输入；502 上升才是下游问题的信号。⚠️ 依赖 as_sip_responses_total，生产路径无生产者；**窗口内计数是观测值，不是容量或速率承诺**。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(increase(as_sip_responses_total{status_code=\"403\"}[5m]))",
+          "legendFormat": "403 入腿未授权",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(as_sip_responses_total{status_code=\"404\"}[5m]))",
+          "legendFormat": "404 无匹配规则（判决结果 / 预期）",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(increase(as_sip_responses_total{status_code=\"603\"}[5m]))",
+          "legendFormat": "603 策略拒绝（判决结果 / 预期）",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(increase(as_sip_responses_total{status_code=\"502\"}[5m]))",
+          "legendFormat": "502 下游非 2xx 映射（下游失败信号）",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "scaleDistribution": { "type": "linear" },
+            "min": 0
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "按规则的判决命中速率 —— 当前无生产者，预期无数据",
+      "description": "指标 as_rule_hits_total{rule}（counter）。⚠️ **本面板预期为 No data**：CallMetrics.record_rule_hit 已定义，但 src/ 下没有任何调用方，序列从不被写入；deploy/alerts/README.md 明确「不要照着它写规则」。保留面板是为了让缺口可查。若将来接线，异常口径必须是相对自身滚动基线的**相对**变化 —— 绝对阈值就是伪装成阈值的容量数字。判决本身的状态（是否 404 / 603）请看面板 3。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+      "targets": [
+        {
+          "expr": "sum by (rule) (rate(as_rule_hits_total[5m]))",
+          "legendFormat": "{{rule}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "scaleDistribution": { "type": "linear" }
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull"],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "告警状态（ALERTS：firing / pending）",
+      "description": "指标 ALERTS，**需要集群运行 Prometheus + Alertmanager，且已加载 deploy/alerts/as-alerts.yaml**；两者缺一则本面板无数据（ALERTS 是 Prometheus 由规则计算出的告警状态序列，不是本仓库导出的指标）。图例为 {{alertname}}，可用 severity / component 标签区分（规则标签约定见 deploy/alerts/README.md §Naming conventions）。⚠️ 即便面板有数据，也不等于规则可触发：as_sip_responses_total 与 as_telemetry_dropped_total 在生产路径没有生产者，as_state_store_available 需要 REDIS_URL，且 AS 抓取接线未闭环 —— 可触发的只有依赖 kube-state-metrics 的几条。处置动作见 docs/operations/alert-response-matrix.md。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+      "targets": [
+        {
+          "expr": "count by (alertname, severity) (ALERTS{alertstate=\"firing\"})",
+          "legendFormat": "FIRING {{alertname}} ({{severity}})",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "count by (alertname, severity) (ALERTS{alertstate=\"pending\"})",
+          "legendFormat": "PENDING {{alertname}} ({{severity}})",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "vertical",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "会话与 draining 联动（as_active_calls 左轴 / as_downscale_removable 右轴）",
+      "description": "两个真实存在的指标放在同一面板：左轴 as_active_calls{use_case,pod}（该实例在途呼叫数，gauge），右轴 as_downscale_removable{use_case,pod}（1 = 守卫允许摘除，0 = 仍在承载呼叫**或**已在 draining，gauge）。联动读法：as_downscale_removable 掉到 0 而 as_active_calls 仍大于 0 = 正常保护；两者都为 0 却持续不下 = draining 未收敛（对应告警 ASDownscaleBlocked）。⚠️ 抓取接线未闭环前两者都无数据。数量与二值状态的观测，**不含任何容量门限** —— 「多少呼叫算多」是 O1，未裁决。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 25 },
+      "targets": [
+        {
+          "expr": "max by (pod, use_case) (as_active_calls)",
+          "legendFormat": "{{pod}} / {{use_case}} 在途呼叫",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (pod, use_case) (as_downscale_removable)",
+          "legendFormat": "{{pod}} / {{use_case}} 可摘除",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "scaleDistribution": { "type": "linear" }
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "可摘除" },
+            "properties": [
+              { "id": "unit", "value": "none" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "max", "value": 1 },
+              { "id": "min", "value": 0 },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": { "color": "orange", "index": 1, "text": "受保护 / draining" },
+                      "1": { "color": "green", "index": 0, "text": "可摘除" }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "各用例失败响应占比（5xx + 非 487 的 4xx）/ 全部响应",
+      "description": "与告警 ASHighErrorRatio 同一比率口径，但**按 use_case 拆分**以便定位到具体业务用例。比率（除 clamp_min(…,1) 防止零窗口放大），**不是容量指标**：它只说明失败构成，不说明系统能承载多少呼叫，O1 未裁决。面板刻意不画阈值线 —— 门限唯一维护点是 deploy/alerts/as-alerts.yaml，避免两处漂移。487（主叫取消）按正常行为排除。⚠️ 依赖 as_sip_responses_total，生产路径无生产者，因此本面板预期无数据。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 34 },
+      "targets": [
+        {
+          "expr": "(sum by (use_case) (increase(as_sip_responses_total{status_class=\"5xx\"}[5m])) + sum by (use_case) (increase(as_sip_responses_total{status_class=\"4xx\", status_code!=\"487\"}[5m]))) / clamp_min(sum by (use_case) (increase(as_sip_responses_total[5m])), 1)",
+          "legendFormat": "{{use_case}} 失败占比",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "scaleDistribution": { "type": "linear" },
+            "min": 0
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["3rdparty-as", "ims-as", "operations", "sip"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "数据源",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "as-prod",
+          "value": "as-prod"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "命名空间（$AS_NAMESPACE，导入后必须改成客户命名空间）",
+        "multi": false,
+        "name": "AS_NAMESPACE",
+        "options": [
+          {
+            "selected": true,
+            "text": "as-prod",
+            "value": "as-prod"
+          }
+        ],
+        "query": "as-prod",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h"] },
+  "timezone": "browser",
+  "title": "AS SIP 信令明细（sip-signaling）— In-house IMS Application Server（文档暂用名）",
+  "uid": "as-sip-signaling",
+  "version": 1,
+  "weekStart": ""
+}

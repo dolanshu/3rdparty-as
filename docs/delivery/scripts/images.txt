@@ -1,0 +1,71 @@
+# images.txt — 依赖镜像清单模板（交付物 3.2，Helm-only，ADR-0013）
+#
+# 用途
+#   联网侧：docs/delivery/scripts/bundle-images.sh 读本文件，逐条 docker pull +
+#   docker save，生成 images/*.tar + SHA256SUMS + MANIFEST.txt + chart tgz。
+#   离线侧：docs/delivery/scripts/load-images.sh 先校验 SHA256SUMS，再导入镜像。
+#   详见 docs/delivery/airgap-package.md。
+#
+# 格式
+#   每行一个镜像：repository:tag[@sha256:<digest>]
+#   - `#` 开头为注释；行尾 `#` 之后的内容也会被忽略
+#   - 空行忽略
+#   - tag 必须显式写（不要依赖 latest）
+#   - 需要按 digest 固定时写成 repository:tag@sha256:...
+#
+# 禁止事项（AGENT.md §11 / §13）
+#   * 禁止在本文件里写任何真实凭据（用户名、密码、token、私钥、证书）
+#   * 禁止把 `docker login` 的凭据写进本文件或提交进仓库；registry 认证由调用方
+#     在受控环境里用 docker 自己的凭据配置完成
+#   * 仓库内一律使用占位地址 registry.example.com；真实地址在交付时由客户内网
+#     registry 替换（用 bundle-images.sh --repository 重打标签，或直接改本文件）
+#
+# 如何按客户 registry 改写
+#   方式 A（改本文件）：把 registry.example.com 换成客户内网 registry 前缀，
+#           并把 <VERSION> 换成实际交付版本（与根 VERSION 一致，AGENT.md §8）。
+#   方式 B（不改本文件）：bundle-images.sh --repository registry.customer.internal/as
+#           --tag-prefix rel-  —— 脚本按 basename 重打标签后再 pull/save。
+#
+# 如何按 digest 固定（供应链优先做法）
+#   写成 repository:tag@sha256:<64 位十六进制>。先例写法见
+#   deploy/kind/manifests/ingress-nginx-kind-deploy.yaml（镜像字段形如
+#   `registry.k8s.io/ingress-nginx/controller:v1.11.3@sha256:...`）——
+#   那是 kind 开发用的固定清单；生产请按客户实际使用的 ingress 版本与 digest 填写。
+#   digest 从客户内网 registry 取得：`docker inspect --format '{{index .RepoDigests 0}}' <image>`
+#
+# 多架构：一个 tar 只承载一个平台。跨架构请用 --platform 分别执行并分别成包，
+# bundle-images.sh 会把平台写进 tar 文件名（见 airgap-package.md §7）。
+
+# ---------------------------------------------------------------------------
+# 1) 产品镜像（必填）
+#    repository 与 deploy/helm/values.yaml 的默认值一致：
+#      image.repository: "registry.example.com/3rdparty-as"
+#      services.configService.image.repository: "registry.example.com/3rdparty-as-config-service"
+#    tag 留空时 chart 回退到 Chart.appVersion（当前是 0.0.0）；请显式填交付版本。
+#    构建方式（联网侧执行，见 deploy/docker/）：
+#      docker build -t <repo>/3rdparty-as:<VERSION> -f deploy/docker/Dockerfile .
+#      docker build -t <repo>/3rdparty-as-config-service:<VERSION> -f deploy/docker/config-service.Dockerfile .
+# ---------------------------------------------------------------------------
+registry.example.com/3rdparty-as:<VERSION>
+registry.example.com/3rdparty-as-config-service:<VERSION>
+
+# ---------------------------------------------------------------------------
+# 2) 内建状态存储镜像（可选）
+#    仅当 values 走 stateStores.enabled=true（ADR-0026 内建 PostgreSQL + Redis）时需要。
+#    版本与 deploy/helm/values.yaml 默认值一致：postgres:12.22 / redis:7-alpine。
+#    走外部依赖（stateStores.enabled=false，postgres.host + redis.url）时删掉这两行。
+# ---------------------------------------------------------------------------
+# postgres:12.22
+# redis:7-alpine
+
+# ---------------------------------------------------------------------------
+# 3) ingress-nginx（可选）
+#    只有启用 config-service Ingress（services.configService.ingress.enabled=true）
+#    且集群里没有 ingress-nginx controller 时才需要。本 chart 的 Ingress 模板
+#    只支持 ingress-nginx（className 必须为 nginx，见 deploy/helm/README.md）。
+#    生产请按客户实际使用的 ingress 版本与 digest 填写；
+#    kind 开发用固定清单见 deploy/kind/manifests/ingress-nginx-kind-deploy.yaml
+#    （其中 controller 与 kube-webhook-certgen 均已按 digest 固定，可作为写法先例）。
+# ---------------------------------------------------------------------------
+# registry.k8s.io/ingress-nginx/controller:v1.11.3@sha256:REPLACE_WITH_CUSTOMER_DIGEST
+# registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.4.4@sha256:REPLACE_WITH_CUSTOMER_DIGEST

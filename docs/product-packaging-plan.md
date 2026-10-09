@@ -121,7 +121,7 @@ docs/
 │   ├── responsibility-matrix.md # 责任边界矩阵（RACI）
 │   ├── version-lifecycle.md    # 版本生命周期与 EOL 策略
 │   └── security-privacy.md     # 安全与隐私合规（PDPO）
-├── operations/                 # 运维文档（新增；该目录当前尚未创建；创建时把 docs/acceptance/ 现有 runbook 迁移或建立链接）
+├── operations/                 # 运维文档（已落盘；已归集 docs/acceptance/ 现有 runbook 的索引与操作正文，原件保留不动）
 │   ├── grafana-dashboards/     # Grafana 看板 JSON 模板（不含 Diameter Sh 看板，Sh 不在范围内）
 │   │   ├── overview.json
 │   │   └── sip-signaling.json
@@ -139,7 +139,7 @@ docs/
 ### 说明
 
 - **新增** **`product/`**：集中存放面向评审/客户的产品级文档，和工程类文档（architecture）分离。
-- **新增** **`operations/`**：归集 `docs/acceptance/` 现有 runbook（m5-downscale、m5-state-stores、m4b-8、m8-native-consistency 等）及告警、回退等运维文档，创建目录时统一迁移或建立链接；该目录当前尚未创建。
+- **新增** **`operations/`**：归集 `docs/acceptance/` 现有 runbook（m5-downscale、m5-state-stores、m4b-8、m8-native-consistency 等）及告警、回退等运维文档，创建目录时统一迁移或建立链接；该目录已创建，其中 runbook 采用「归集 + 索引 + 重写面向值班的操作正文」的方式，`docs/acceptance/` 下原 runbook **原件保留不动**。
 - **新增** **`delivery/`**：交付物相关（安装脚本、离线包、部署指南），让交付团队拿到就能用；`install-guide.md` 只覆盖交付清单、镜像同步与 helm install 命令序列，Helm 参数与行为以 `deploy/helm/README.md` 为权威，两文档互相链接、不重复。
 - 现有 `README.md` 重写为产品入口页，链接到上述三个新目录。
 
@@ -225,3 +225,39 @@ testbed 仿真结果（含 M7.1 仿真平台、callload）属于研发/演示资
 ***
 
 > 本计划为带阻塞条件的框架性文档：§4 所列方向与命名中，目标场景和产品名目前仅为讨论确认（维护者 2026-10-09 确认方向/暂用名），待补正式决策落点；A 类交付物可立即启动，B 类交付物以前置依赖闭合为条件。各交付物的详细模板和内容可基于上述方向进一步细化。
+
+---
+
+## 5. 执行状态（2026-10-10）
+
+> 本节是**执行状态回写**，只追加，不修改 §0–§4 任何既有内容。落盘明细与验证证据见 [`reviews/product-packaging-execution-record-2026-10-10.md`](reviews/product-packaging-execution-record-2026-10-10.md)；上一轮计划评审见 [`reviews/product-packaging-plan-review-2026-10-09.md`](reviews/product-packaging-plan-review-2026-10-09.md)。
+>
+> **状态口径**：下表「已落盘」= 文件已写入并经执行者自检，**不等于已验收**。维护者评审**待进行**（评审人待指定）。本次**未提交任何 commit**。
+
+| 编号 | 交付物 | 落盘路径 | 状态 | 阻塞源 |
+|---|---|---|---|---|
+| 1.1 | 产品一页纸 + 命名（文档暂用名） | `docs/product/one-pager.md` | 已落盘，待维护者评审 | — |
+| 1.2 | 3GPP 规范符合性矩阵 | `docs/product/compliance-matrix.md` | 已落盘，待维护者评审 | — |
+| 1.3 | 网元档案（NE Datasheet） | `docs/product/ne-datasheet.md` | 已落盘（§3 只给容量**模型结构与测量方法学**，未填数值） | **O1**（容量取值） |
+| 1.4 | 故障定界手册 | `docs/operations/fault-demarcation.md` | 已落盘，待维护者评审 | — |
+| 1.5 | README 重写为产品入口 | 根 `README.md`、`docs/README.md` | 已落盘，待维护者评审 | — |
+| 2.1 | Grafana 看板模板 | `docs/operations/grafana-dashboards/{overview.json,sip-signaling.json,README.md}` | 已落盘；**不含 Sh 面板 / 时延面板 / 容量数字**；抓取接线缺口已显式标注为**未闭合** | 接线闭环属 chart 工作，未做 |
+| 2.2 | 告警规则补强 + 告警-动作对照表 | `docs/operations/alert-response-matrix.md`、`deploy/alerts/as-alerts.yaml`、`deploy/alerts/README.md` | 已落盘；新增 `as.runtime` / `as.platform` 两组共 5 条规则，**`as.call-path` 原 5 条未改**；`promtool check rules` **未执行**（本机无 `promtool`） | 同上（抓取接线） |
+| 2.3 | L1 / L2 Runbook 分册 | `docs/operations/{runbook-l1.md,runbook-l2.md,README.md}` | 已落盘；`docs/acceptance/` 原件**保留不动**，只做归集与索引 | — |
+| 2.4 | 摘流 / 回退 + iFC 配合 | `docs/operations/rollback-playbook.md` | 已落盘（方案与边界）；**真实集群演练未做** | 真实集群（**M8 7.2d blocked**）+ S-CSCF / HSS 侧配合 |
+| 2.5 | 备份恢复方案 + 演练记录 | `docs/operations/backup-restore.md` | 已落盘（方案 + 记录**模板**）；**演练记录为空**；未给 RPO / RTO 数值 | 真实集群；客户侧 HA 未决（O5 / D3） |
+| 3.1 | Preflight 环境校验脚本 | `docs/delivery/preflight.sh` | 已落盘；`bash -n` 通过，`--dry-run` 行为与退出码已验证 | 本机无 `kubectl` / `helm`，真实环境校验未跑 |
+| 3.2 | 离线安装包（air-gapped） | `docs/delivery/airgap-package.md`、`docs/delivery/scripts/{bundle-images.sh,load-images.sh,images.txt}` | 已落盘；范围限定 image save/load + 清单 + 校验和 + `helm package`，不产生第二套安装形态 | `helm package` 未实测（本机无 `helm`） |
+| 3.3 | 责任边界矩阵（RACI） | `docs/product/responsibility-matrix.md` | 已落盘，待维护者评审 | — |
+| 3.4 | 安全合规说明（PDPO） | `docs/product/security-privacy.md` | 已落盘；**未写保留天数**，只写留存范围 / 删除机制 / 数据留港原则 | **O4**（保留期）、**D5**（存储选型） |
+| 3.5 | 版本生命周期与 EOL 策略 | `docs/product/version-lifecycle.md` | 已落盘；§3 逐条**转述** ADR-0027 已接受的决定，不新增承诺 | — |
+| 4.1 | 性能基准报告 | `docs/product/ne-datasheet.md` §3（方法学章节） | **只交付方法学**，正式报告未做 | **O1** |
+| 4.2 | 7×24 长稳测试报告 | — | **按计划未做**（v1.1 / 按需，不纳入当前里程碑） | — |
+| 4.3 | API 版本兼容策略 | `docs/product/version-lifecycle.md` §7 | 以「**候选、未决策**」形式列出待决点与出口条件；无 ADR | 需维护者决策 + 新 ADR + review record |
+| 4.4 | 产品白皮书 / 架构白皮书 | — | **按计划未做**（第四批，不纳入当前里程碑） | — |
+| 4.5 | 多业务平台能力开放机制文档 | — | **按计划未做**（v1.1 / 按需，不纳入当前里程碑） | — |
+
+**代码侧改动面**：仅 `deploy/alerts/as-alerts.yaml` 与 `deploy/alerts/README.md`（新增告警规则组与说明），**未改任何产品代码**。**未执行任何 git 写操作**（无 `commit` / `add` / 改分支 / 改 remote / 打 tag）。
+
+**遗留缺口（不在本次改动面内，仅记录）**：① 告警抓取接线未闭合（chart 无 `prometheus.io/scrape`、无 ServiceMonitor / PodMonitor）；② `promtool check rules` 未运行；③ `Chart.yaml` 的 `version` / `appVersion` 与根 `VERSION` 不同步；④ chart 无 `kubeVersion` 声明（`preflight.sh` 按模板实际使用的 API 推导下限作为补偿）。
+

@@ -32,6 +32,17 @@
 
 上方当前状态摘要中所称的历史 PG12.22 integration，仅指 M4b-6b 阶段的 **404 deselected** 快照；当前结果为本段的 **432 deselected**。`cur` 上直接 `make gate` 已于 2026-10-03 通过；这不构成 M4/M4b/REQ acceptance。
 
+### 产品化包装交付状态（2026-10-10）
+
+> 本小节只追加产品化包装的**交付状态**，不改动任何里程碑状态、未决项或决策行。明细见 [`product-packaging-plan.md`](product-packaging-plan.md) §5 与 [`reviews/product-packaging-execution-record-2026-10-10.md`](reviews/product-packaging-execution-record-2026-10-10.md)。
+
+- **已落盘的三个目录**：`docs/product/`（6 份：one-pager、compliance-matrix、ne-datasheet、responsibility-matrix、security-privacy、version-lifecycle）、`docs/operations/`（8 份文档 + 2 份 Grafana 看板 JSON + 看板 README）、`docs/delivery/`（3 份文档 + `preflight.sh` + `scripts/{bundle-images.sh,load-images.sh,images.txt}`）。根 `README.md` 已重写为产品入口，`docs/README.md` 导航已更新。
+- **本次未做**：交付物 4.2（7×24 长稳报告）、4.4（白皮书）、4.5（能力开放机制文档）—— 按计划为 v1.1 / 按需，不纳入当前里程碑；4.1 只交付容量**方法学**章节。
+- **受阻项**：**O1**（容量目标）阻塞 Datasheet 容量取值、容量类告警与 4.1 正式报告；**O4**（呼叫轨迹保留期）与 **D5**（轨迹存储选型）阻塞 PDPO 保留期限与存储方案；**M8 7.2d**（真实集群）阻塞 2.4 摘流演练与 2.5 备份恢复演练记录。
+- **代码侧**：仅 `deploy/alerts/` 两个文件新增告警规则组（`as.runtime` / `as.platform`，原 5 条未改），**未改任何产品代码**。
+- **未提交任何 commit**：本次**无** `git commit` / `git add` / 改分支 / 改 remote / 打 tag；工作树改动面为包装交付物 + 2 处链接修正 + 执行记录 + 两处状态回写。
+- **待维护者评审**：本批文档状态一律为「**已落盘，待维护者评审**」，**未验收**。另 `promtool check rules` 因本机无该工具**未执行**；告警抓取接线（chart 侧）**未闭合**，已在文档中如实标注，未描述为已生效。
+
 ### 当前仓库状态说明
 
 - `master` 分支当前领先 `origin/master` 3 个 commit，其中 1 个为已 push 的 pre-roadmap 骨架（commit `7b36c0d`，消息 `M0 done- except sip-stack selection`）。该 commit 是在 SIP 栈选型完成前生成的临时骨架，**不作为正式基线**。
