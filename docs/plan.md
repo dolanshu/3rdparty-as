@@ -346,7 +346,7 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 |---|---|---|---|
 | O1 | 容量目标：CPS、并发会话、建立时延预算。**已有量级估计**（见 [`architecture/容量量级估算.md`](architecture/容量量级估算.md)）与 **dev-host 实测草稿**（[`acceptance/m6-o1-measurement-report-2026-10-05.md`](acceptance/m6-o1-measurement-report-2026-10-05.md)，非 SLA） | M7 集成容量验收、HPA 阈值（M5） | **维护者目标裁决仍 open**；C6 1s 峰值已在低 CPS 批次记录；C1–C5/C7 与饱和点待更高保真测量 |
 | O2 | **已选定 reSIProcate C++**（ADR-0019 Accepted）；生产栈方向不变。DUM/controller 集成与 E1/E4/E5 仍未验证 | D9、D10、M7 | ADR-0019 的选型结论不代替集成或需求验收；K2 未解除 |
-| O3 | reSIProcate 生产路径的 SIP 行为验收（E1，S1–S11） | M7 / M8 | native DUM S1/S4 smoke 不是产品 E1；完成集成 spike 后由产品 adapter 通过真实 socket probe 验证 |
+| O3 | reSIProcate 生产路径的 SIP 行为验收（E1，S1–S11） | M7 / M8 | native DUM S1/S4 smoke 不是产品 E1。2026-10-09：产品栈 gate 覆盖 S1 harness 的 100/180/200（带 SDP）；14 条 B2BUA 与 S5–S11 全文回放仍推迟，见 `docs/acceptance/test-plan.md` REQ-F-1 真栈边界 |
 | O4 | 呼叫轨迹保留期 | M4 | 客户合规要求 |
 | O5 | 容灾等级：N+1（节点）还是 N+M（机架 / AZ） | M5 Redis 拓扑 | 客户 SLA |
 

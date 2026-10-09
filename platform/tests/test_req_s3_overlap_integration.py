@@ -8,10 +8,11 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+from native_extensions import require_resip_runtime_extension
 
 from as_platform.decision import RuleSet
 from as_platform.sip.ingress import TransportIngressGate
-from as_platform.sip.resip_runtime import ResipRuntimeListener, load_resip_runtime_extension
+from as_platform.sip.resip_runtime import ResipRuntimeListener
 from as_platform.sip.transport import PeerIdentity, PeerPolicy, TlsConfig, TransportSeam
 
 pytestmark = pytest.mark.integration
@@ -48,9 +49,7 @@ def _generate_certs(directory: Path) -> None:
 
 def test_req_s3_overlap_policy_and_native_reload(tmp_path: Path) -> None:
     """Maps test-plan REQ-S-3 engineering bullets (overlap policy + in-process reload)."""
-    extension = load_resip_runtime_extension()
-    if extension is None:
-        pytest.skip("platform resip_runtime extension not built; run make m2-platform-resip-build")
+    extension = require_resip_runtime_extension()
 
     cert_a = tmp_path / "cert-a"
     cert_b = tmp_path / "cert-b"

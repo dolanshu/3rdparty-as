@@ -4,6 +4,8 @@
 
 `ResipRuntimeListener` binds reSIProcate DUM on a background thread and calls Python
 ``decide()`` for inbound INVITEs (unless ``accept_all_invites`` harness mode is on).
+``accept_all_invites`` is testbed-only: it answers 100/180/200 with a minimal SDP
+after ingress, and is not the production routing path.
 
 Native module: ``platform/native/resip_runtime`` → ``_resip_runtime``.
 

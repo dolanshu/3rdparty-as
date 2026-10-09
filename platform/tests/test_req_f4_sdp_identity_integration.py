@@ -7,11 +7,12 @@ import uuid
 from pathlib import Path
 
 import pytest
+from native_extensions import require_resip_runtime_extension
 
 from as_platform.decision import Rule, RuleSet
 from as_platform.decision.rules import Action
 from as_platform.sip.ingress import TransportIngressGate
-from as_platform.sip.resip_runtime import ResipRuntimeListener, load_resip_runtime_extension
+from as_platform.sip.resip_runtime import ResipRuntimeListener
 from as_platform.sip.transport import PeerPolicy, TlsConfig, TransportSeam
 
 _FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "two_leg_udp_peer.py"
@@ -42,11 +43,8 @@ def _load_offer_bytes(name: str) -> bytes:
     return path.read_bytes()
 
 
-def _require_extension():
-    extension = load_resip_runtime_extension()
-    if extension is None:
-        pytest.skip("platform _resip_runtime extension not built; run make m2-platform-resip-build")
-    return extension
+def _require_extension() -> object:
+    return require_resip_runtime_extension()
 
 
 def _invite_with_sdp(server_port: int, caller_port: int, call_id: str, sdp: bytes) -> bytes:

@@ -167,9 +167,7 @@ def main() -> int:
     try:
         cursor = connection.cursor()
         cursor.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(_ROLE)))
-        cursor.execute(
-            sql.SQL("SET search_path TO {}, pg_catalog").format(sql.Identifier(_SCHEMA))
-        )
+        cursor.execute(sql.SQL("SET search_path TO {}, pg_catalog").format(sql.Identifier(_SCHEMA)))
         cursor.close()
         connection.commit()
 

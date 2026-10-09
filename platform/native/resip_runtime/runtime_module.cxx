@@ -28,6 +28,7 @@
 #include "resip/stack/Headers.hxx"
 #include "resip/stack/MethodTypes.hxx"
 #include "resip/stack/NameAddr.hxx"
+#include "resip/stack/SdpContents.hxx"
 #include "resip/stack/SipMessage.hxx"
 #include "resip/stack/SipStack.hxx"
 #include "resip/stack/Tuple.hxx"
@@ -818,20 +819,22 @@ InviteCallbackResult callPythonOnInvite(ListenerState* state, const SipMessage& 
 
 SdpContents minimalHarnessAnswer(const std::string& advertisedAddress)
 {
-   const std::string answerText =
-      "v=0\r\n"
-      "o=as-runtime 0 0 IN IP4 " +
-      advertisedAddress +
-      "\r\n"
-      "s=as-runtime-harness\r\n"
-      "c=IN IP4 " +
-      advertisedAddress +
-      "\r\n"
-      "t=0 0\r\n"
-      "m=audio 9 RTP/AVP 0\r\n"
-      "a=rtpmap:0 PCMU/8000\r\n";
-   HeaderFieldValue answerValue(answerText.data(), static_cast<unsigned int>(answerText.size()));
-   return SdpContents(answerValue, SdpContents::getStaticType());
+   // SdpContents(HeaderFieldValue) stores the buffer with NoOwnership. A
+   // temporary string would be destroyed on return and DUM would encode a
+   // dangling body (400, ParseBuffer expected 'v'). Session fields are owned.
+   SdpContents answer;
+   const Data address(advertisedAddress.c_str());
+   SdpContents::Session::Origin origin(Data("as-runtime"), 0, 0, SdpContents::IP4, address);
+   SdpContents::Session session(0, origin, Data("as-runtime-harness"));
+   session.connection() = SdpContents::Session::Connection(SdpContents::IP4, address);
+   session.addTime(SdpContents::Session::Time(0, 0));
+
+   SdpContents::Session::Medium medium(Data("audio"), 9, 0, Data("RTP/AVP"));
+   medium.addFormat("0");
+   medium.addAttribute("rtpmap", "0 PCMU/8000");
+   session.addMedium(medium);
+   answer.session() = session;
+   return answer;
 }
 
 PyObject* buildRouteSetList(const SipMessage& message)

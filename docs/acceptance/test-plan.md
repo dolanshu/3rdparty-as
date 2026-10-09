@@ -1,8 +1,8 @@
 # 验收测试计划（Test Plan）— 3rdparty-as
 
-**版本**：v0.2（占位）
-**日期**：2026-09-28
-**状态**：占位 — 验收标准从 PRD v0.2 同步挪入，具体 test case 待 M2 设计阶段补充
+**版本**：v0.3（验收标准 + 自动化边界）
+**日期**：2026-09-28（正文）；**2026-10-09** 增补真栈 / e2e 边界
+**状态**：REQ 勾选仍多为 open。自动化分层见下节；**端到端（e2e）套件尚未落地**，计划见 [`2026-10-09-e2e-test-plan.md`](2026-10-09-e2e-test-plan.md)。
 
 **M4b-8 BLOCKED 矩阵（2026-10-03）**：维护者裁决见 [`reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md`](../reviews/m4-req-calling-regex-lossless-adjudication-2026-10-03.md)。**M4 工程关门**（2026-10-04）后，下列项为 **补测/后置**，不阻塞 §4.3：见 [`plan.md`](../plan.md) **§5.4**（F-13、F-15 真 AS、主叫/正则 v1.1、REQ 全绿）。dev HTTPS 上已采证：**被叫+前缀** CRUD→审批、fleet、distribution start 等（[`m4b-8-runbook.md`](m4b-8-runbook.md)）。**步骤 3（F-13）**：BLOCKED→**§5.4**。**7.2d**：**M5**。
 
@@ -10,11 +10,25 @@
 > 具体 test case（步骤、断言、数据准备）由 M2 设计阶段补充。
 > **协议章节号说明**：同 PRD，文中 RFC 3261 章节号以 IETF 2002 年发布的 RFC 3261 原文为准。
 
+## 自动化分层（2026-10-09）
+
+| 层 | pytest 标记 | 现状 |
+|----|-------------|------|
+| ① | `unit or contract` | `make gate`。绝大多数不经 `_resip_runtime`。E1 有 `.so` 时跑真栈；**S1/S4** 用 `accept_all_invites` harness（旁路 `decide()`）；**S2/S3** 走 `decide()`。 |
+| ② | `integration` | 真栈子集：TCP/TLS、FORWARD 双腿、SDP、`test_product_path`（仿真链 + `demo_rules`，**无** accept-all）。CI job `native-contract` 只阻塞其中列出的文件；job ② 全量 integration **不编** native。 |
+| ③ | `e2e` | **0 条**。完整呼叫 + 控制台不在此标记下。规划见 e2e 计划。 |
+| 容量 | `performance` / `as_load` | M6 产品 runtime 压测对端是 `load_uas_runtime.py`（**accept-all harness**），不是业务判决路径。 |
+
+`accept_all_invites` **不是** ims-sim，也 **不是** 生产路径：真栈上固定 100/180/200，用于栈/SDP 探针。REQ-F-1 的 14 条 B2BUA **未**由 harness 签收。
+
 ---
 
 ## §1.1 呼叫信令核心路径（REQ-F-1 到 REQ-F-5）
 
 ### REQ-F-1 验收标准
+
+**真栈自动化边界（2026-10-09）**：`accept_all_invites` harness 在产品 `_resip_runtime` 上覆盖入向可见前缀 **100 → 180 → 200（带 SDP）**（`test_e1_contract_resip_runtime.py`、`test_e1_contract_resip_runtime_full.py`）。这不是下面 14 条 B2BUA 全文。出腿 INVITE、独立 Call-ID、SDP 逐字节透传、Route 消费、ACK/BYE 仍在 integration（`test_m7_forward_two_leg_integration.py`、`test_req_f4_sdp_identity_integration.py`、`test_resip_two_leg_integration.py`），**未**并入 `make gate`。S5–S11 的真栈全文回放同样推迟。跨仿真 S-SBC 且 **不**用 accept-all 的路径见 `test_product_path.py`（`integration`）。**pytest `e2e` 标记仍为空**；补齐计划见 [`2026-10-09-e2e-test-plan.md`](2026-10-09-e2e-test-plan.md)。不作为 REQ-F-1 全文签收。
+
 - [ ] 启动仿真 S-SBC 和仿真对端（Return UAS）
 - [ ] 从仿真 S-CSCF 发送 INVITE（目标号码命中业务规则）
 - [ ] 依次断言收到 14 条消息：INVITE(上游) → 100 Trying(下游) → 100 Trying(上游) → 180 Ringing(上游) → 180 Ringing(下游) → 200 OK(上游) → 200 OK(下游) → ACK(下游) → ACK(上游) → BYE(上游) → 200 OK(下游) → BYE(下游) → 200 OK(上游) → BYE 之后的 200 OK 确认

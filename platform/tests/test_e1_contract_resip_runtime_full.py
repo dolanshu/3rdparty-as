@@ -100,14 +100,39 @@ def _rewrite_request_uri(
     return "\r\n".join(out).encode("latin-1")
 
 
-def _final_response_status(peer: socket.socket) -> int:
+def _status_code(response: bytes) -> int | None:
+    status_line = response.split(b"\r\n", 1)[0]
+    fields = status_line.split()
+    if len(fields) >= 2 and fields[1].isdigit():
+        return int(fields[1])
+    return None
+
+
+def _collect_until_final(peer: socket.socket) -> list[bytes]:
     peer.settimeout(_RESPONSE_TIMEOUT_SECONDS)
+    messages: list[bytes] = []
     while True:
         response, _address = peer.recvfrom(65535)
-        status_line = response.split(b"\r\n", 1)[0]
-        fields = status_line.split()
-        if len(fields) >= 2 and fields[1].isdigit() and int(fields[1]) >= 200:
-            return int(fields[1])
+        messages.append(response)
+        status = _status_code(response)
+        if status is not None and status >= 200:
+            return messages
+
+
+def _final_response_status(peer: socket.socket) -> int:
+    messages = _collect_until_final(peer)
+    status = _status_code(messages[-1])
+    assert status is not None
+    return status
+
+
+def _assert_s1_harness_accept(messages: list[bytes]) -> None:
+    """Trunk-visible prefix of S1 on the contract INVITE: 100, 180, 200 with SDP."""
+    statuses = [_status_code(message) for message in messages]
+    assert statuses == [100, 180, 200]
+    final = messages[-1]
+    assert b"Content-Type: application/sdp" in final
+    assert b"\r\n\r\nv=0\r\n" in final
 
 
 def _wait_provisional(peer: socket.socket, code: int) -> None:
@@ -134,7 +159,7 @@ def test_e1_s1_accept_all_from_contract_invite() -> None:
             peer.getsockname()[1],
         )
         peer.sendto(invite, (_HOST, listener.port))
-        assert _final_response_status(peer) == 200
+        _assert_s1_harness_accept(_collect_until_final(peer))
     finally:
         listener.stop()
         peer.close()

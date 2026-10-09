@@ -6,10 +6,11 @@ import socket
 import uuid
 
 import pytest
+from native_extensions import require_resip_runtime_extension
 
 from as_platform.decision import RuleSet
 from as_platform.sip.ingress import TransportIngressGate
-from as_platform.sip.resip_runtime import ResipRuntimeListener, load_resip_runtime_extension
+from as_platform.sip.resip_runtime import ResipRuntimeListener
 from as_platform.sip.transport import PeerPolicy, TlsConfig, TransportSeam
 
 pytestmark = pytest.mark.integration
@@ -25,8 +26,7 @@ _RESPONSE_TIMEOUT_SECONDS = 5.0
 
 
 def _require_extension() -> None:
-    if load_resip_runtime_extension() is None:
-        pytest.skip("platform resip_runtime extension not built; run make m2-platform-resip-build")
+    require_resip_runtime_extension()
 
 
 def _seam(*addresses: str) -> TransportSeam:
