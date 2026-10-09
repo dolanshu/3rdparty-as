@@ -33,6 +33,8 @@
 - **A-4 / A-5 / A-6**：`make gate` 与 CI 关系已文档化（CONTRIBUTING）；`gate-strict`（REQ-G-3 ADR 标注扫描，`check_adr_annotations.py` 69 files clean）进 CI ① 且阻塞；`performance` 层自 M6 首个用例起阻塞；e2e 层仍 `continue-on-error`（0 tests）。
 - **A-7**：签收前 native 一致性 runbook 已落实：[`m8-native-consistency-runbook.md`](m8-native-consistency-runbook.md)（签收跑前 `make m2-platform-resip-build` 及 M7 recovery/two-leg 目标）。
 
+**追加更正（2026-10-10）：** 本节 F9（A-1）所述的 workflow 能力，当时**未随任何提交入库**；经 `git log --all -S` / `git stash list` / 分支与 remote-tracking 引用核对，**当前仓库的工作树、git 历史、所有分支与所有 stash 中均不存在该内容**（它既不是「已写但待推送」，也不是「在别的分支上」）。因此，在 CI 工作按维护者 2026-10-10 裁决**后置**、并重启之前，本条 **不计为 F9 已修复**，该增强版的引出范围仍需重写而非推送；同时**不得**将本条理解为「origin CI 已阻塞真栈行为」——当前 origin 上没有 native job，缺 `_resip_runtime` 时不会 fail。**同理适用于本节的 A-4 一句**（「`gate-strict` 进 CI ① 且阻塞」）：该表述同样依赖同一份尚不存在的 workflow，现阶段同样不成立。本次更正为**纯文档追加**，不依赖也不改动流水线；上层导引见 [`../handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](../handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0 第 1 项与 §3.4（§3-a 随 A1 后置，§3-b 为纯文档、可立即执行）。
+
 ### 0.4 Phase B 小结：M5 REQ 链口径
 
 复评记录：[`m5-req-acceptance-review-2026-10-06.md`](../reviews/m5-req-acceptance-review-2026-10-06.md)（结论：有条件通过（工程切片）/ REQ 级不通过，10 项 defer；维护者会签待补）。

@@ -27,6 +27,15 @@
 |------|------|------|------|
 | 2026-10-09 | 目标场景 | 3HK 内部上线评审（内部评审导向） | discussion.md 讨论确认；`docs/product-packaging-plan.md` §4.1 |
 | 2026-10-09 | 产品文档暂用名 | In-house IMS Application Server（首现标注 3GPP Third-Party AS role）；git repo 名改为 `inhouse-ims-as`（仅仓库名/remote URL；chart name、镜像名、OTel 服务名保持 `3rdparty-as` 不变） | discussion.md 讨论确认；`docs/product-packaging-plan.md` §4.3 |
+| 2026-10-10 | **CI 整体工作** | **hold、后置** —— 含 A1 CI workflow 重写与推送、N1（`workflow` scope PAT 授权）、以及 `docs/acceptance/report.md` §0.3 中「重写 workflow」这一纠正路径。目标保留，**已被 decision 后置而非取消**；当前不在工作范围内 | 维护者 2026-10-10 裁决；见 §0「未完成项评估与后续计划（2026-10-10）」小节与 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0 第 1 项、§3.4 |
+| 2026-10-10 | **外部 IOT 与真实环境采证** | **hold、后置** —— 含 D-1（运营商 PKI + 外网 S-SBC）、D-2（客户 K8s REQ-NF-1 live）、以及包装 2.4 摘流 / iFC 配合与 2.5 备份恢复的真实集群演练。本地真栈部分（S1–S4 harness、自签证书 TLS 热轮换 smoke）**不在此列**，仍随 A2 / A3 推进 | 维护者 2026-10-10 裁决；见 §0「未完成项评估与后续计划（2026-10-10）」小节与 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0 第 2 项、§5 W0 范围调整 |
+| 2026-10-10 | **M8 退出签字** | **后置** —— 排队在上述两项（CI 整体工作、外部 IOT 与真实环境采证）完成之后再处理 | 维护者 2026-10-10 裁决；见 §0「未完成项评估与后续计划（2026-10-10）」小节与 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0 第 3 项 |
+| 2026-10-10 | **E1 / E4 / E5 边界划分** | **认可（非整项裁决）** —— 本地真栈部分（S1–S4 harness、自签证书的 TLS 热轮换 smoke、checkpoint / 恢复的工程 harness）继续推进；**仅**需要运营商 PKI 或客户 K8s 的**外部部分**后置 | 维护者 2026-10-10 认可；见 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0.2 第 1 项、§0.1 例外段、§5「W0 范围调整」 |
+| 2026-10-10 | **`promtool` 本机 docker 执行授权** | **认可（非整项裁决）—— 已授权，待 review 后执行**：授权执行 `docker run --rm -v $PWD/deploy/alerts:/a prom/prometheus promtool check rules /a/as-alerts.yaml`（本机有 `docker`、无 `promtool`）；**本次未开工、未执行**，待 review 后再由维护者批准后执行 | 维护者 2026-10-10 认可；见 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0.2 第 2 项、§8.2、§5「W0 范围调整」、§10 |
+| 2026-10-10 | **A6 版本口径：`AGENT.md` §8 的解释** | **认可（非整项裁决）** —— `Chart.yaml` 的 `version` / `appVersion` 字段**不受** `AGENT.md` §8「任何成员不得拥有 `VERSION` 文件」约束，因此「release 流程从根 `VERSION` 同步到 chart」这一路径**不违反**该条；**A / B / C 三方案取值仍待裁决** | 维护者 2026-10-10 认可；见 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0.2 第 3 项、§8.3 |
+| 2026-10-10 | **D3 定位（B3）** | **认可（非整项裁决）** —— D3 的 Redis **客户端接线已于 2026-10-05 resolved**，当前未决的**只剩 HA 拓扑**（N+1 vs N+M、Sentinel vs Cluster 等）；**拓扑取值仍待裁决** | 维护者 2026-10-10 认可；见 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0.2 第 4 项、§8.6 |
+
+> **注记（2026-10-10）**：上表这四条是**边界 / 口径 / 定位 / 许可**层面的认可，**不等同于** A4、A5、A6、B1、B2、B3 六项建议的**取值**已被裁决 —— 该六项的取值**仍全部待维护者裁决**；本次**只落盘、未开工**。详见 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md) §0.2「口径边界」段与 §10「当前开工状态」。
 
 **当前 config-service PostgreSQL integration 证据（2026-10-03）**：在与此前相同的本地 PostgreSQL 12.22（`wal_level=replica`）上，当前 API/bootstrap changes 后重跑完整 integration marker suite：**122 passed, 3 skipped, 432 deselected, 5 warnings**。3 个 publication DDL tests 因要求 `wal_level=logical` 而跳过。此为本地结果，未运行 CI，PG16 未测；该 suite 不证明 runtime factory 使用 DB-backed roles 的部署路径、生产 HTTPS ingress 或 browser workflow。它更新当前 integration evidence，不改写 M4b-6b 阶段历史快照中的 404 deselected，也不改变 M4b/M4、REQ acceptance 或 make-gate blocker。
 
@@ -42,6 +51,10 @@
 - **代码侧**：仅 `deploy/alerts/` 两个文件新增告警规则组（`as.runtime` / `as.platform`，原 5 条未改），**未改任何产品代码**。
 - **未提交任何 commit**：本次**无** `git commit` / `git add` / 改分支 / 改 remote / 打 tag；工作树改动面为包装交付物 + 2 处链接修正 + 执行记录 + 两处状态回写。
 - **待维护者评审**：本批文档状态一律为「**已落盘，待维护者评审**」，**未验收**。另 `promtool check rules` 因本机无该工具**未执行**；告警抓取接线（chart 侧）**未闭合**，已在文档中如实标注，未描述为已生效。
+
+### 未完成项评估与后续计划（2026-10-10）
+
+> 本节只做入口，明细见 [`handoff/2026-10-10-unfinished-assessment-and-next-plan.md`](handoff/2026-10-10-unfinished-assessment-and-next-plan.md)：未完成项盘点（含一条需纠正的 CI workflow 文档事实）与分波后续计划。**待维护者评审**，不签收任何 REQ / 里程碑。（2026-10-10 更新：**已完成评审** —— 结论「有条件通过（accepted as a planning baseline）」，签字栏由维护者 2026-10-10 授权的 AI agent 代签；仍不签收任何 REQ / 里程碑，其中所有取值仍待维护者裁决，执行项（含 W0）仍须维护者另行批准后方可启动。）
 
 ### 当前仓库状态说明
 
@@ -374,7 +387,7 @@ M6 是一个带决策的研究里程碑，不是对某个数字的承诺。容�
 
 | # | 条目 | 阻塞 | 说明 |
 |---|---|---|---|
-| D1 | **Python 3.10 在 2026 年 10 月到达生命周期终点。** 产品锁 3.10 是因为那是 sippy 验证过的版本。 | 该日期之后的任何交付 | 尽早验证 sippy 在 3.11 / 3.12 上的行为；要么迁移，要么在 ADR 里把 EOL 运行时登记为已接受的 risk。这里不定。 |
+| D1 | **Python 3.10 在 2026 年 10 月到达生命周期终点。** 产品锁 3.10 是因为那是 sippy 验证过的版本。 | 该日期之后的任何交付 | 尽早验证 sippy 在 3.11 / 3.12 上的行为；要么迁移，要么在 ADR 里把 EOL 运行时登记为已接受的 risk。这里不定。（2026-10-10 追加：该行所述「因 sippy 验证过才锁 3.10」的理由已失效 —— 仓库当前无任何依赖指向 sippy；重新定位与处置选项见 §0 决策记录与 `handoff/2026-10-10-unfinished-assessment-and-next-plan.md` §9。） |
 | D2 | ~~同一用例的第二个语言实现放置位置~~ **已不适用**：当前产品决策模块保持 Python；reSIProcate 集成边界由 D9 spike 处理 | — | 不启动第二个业务实现；跨实现一致性仍按语言无关契约验证（ADR-0012） |
 | D3 | Redis 客户端与 Sentinel 接线；脑裂窗口下的判决幂等 | **M2 客户端接线 resolved（2026-10-05）**；HA 拓扑 **O5**；幂等契约已有 | 风险 R5；[`m2-d3-sentinel-adjudication-2026-10-05.md`](reviews/m2-d3-sentinel-adjudication-2026-10-05.md) |
 | D4 | ~~控制台前端形态：保留 vendored 单包、无构建步骤，还是接受一套工具链~~ **已裁决（2026-10-01）**：使用纯 HTML/CSS/JavaScript，不引入 bundler、build tool 或前端 runtime 依赖 | —（已解决） | 当前 console 尚无 HTTP/runtime 前端；无构建步骤适合简单的 on-premises 交付。M4b-1 只交付可直接打开的静态预览，不代表 M4b 后端、鉴权、持久化、workflow integration 或验收已完成 |
