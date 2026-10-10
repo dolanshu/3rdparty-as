@@ -47,6 +47,29 @@
 
 开场若发现 G1–G8 任一项已被裁决，须在本块**追加**一行写明裁决结果与日期，并同步到 `plan.md` §0 决策记录；**不得静默删除本块**。
 
+### 0-A.6 裁决记录（2026-10-10）
+
+| 门禁 | 裁决结果 | 边界与保留事项 |
+|---|---|---|
+| **G1 / B4** | 选项①：做 Python 3.12 验证 spike | 仅完成处置选择；本次**未授权/未执行**该 spike。是否与 W0 的 native build 绑定执行**未裁决**。本次不改 pin、不改 lockfile、不运行任何相关动作。 |
+| **G2 / A4-1** | e2e 采用**单独文件**：`testbed/e2e/test_sip_first_edition.py` | 保留现有 integration tests，不做替换。 |
+| **G2 / A4-2** | 缺少必需 native extension 时，e2e **fail** | 不使用 skip 作为缺失原生扩展时的通过替代。 |
+| **G2 / A4-3** | Wave 2 的 14 条回放用例后置到独立 issue | 本迭代仅登记为 gap；本任务**不创建 issue**。 |
+| **G2 / A4-4** | kind e2e 的方向是纳入 PR required 的 E2E policy | 该方向**不构成** CI workflow 变更授权；CI 仍处于 hold，本任务不改任何 CI 文件。 |
+| **G3 / A5** | 维持待决：annotation vs ServiceMonitor/PodMonitor **暂不选边** | 等待运营商 monitoring-integration 标准输入；当前不改 chart。FM 指 Fault Management，按新 feature 流程管理，实施时补 demo/功能文档；本次不发明需求、不实现。 |
+| **G4 / A6** | 根 `VERSION` 为唯一源；release 时同步 Chart `version` / `appVersion` | `kubeVersion` 需要声明；其最小值由所用 API 反推，本次不作数值裁决。当前不修改 `VERSION` 与 `Chart.yaml`。 |
+| **G5 / B1 + NF-3** | 采纳 O1 三级决策流程，并区分内部目标与外部承诺 | 在 M6 证据与维护者决策前，不落容量取值、不落 HPA 阈值、不落容量类告警。REQ-NF-3 继续适用且 blocked；其固定数值型验收断言需另行修订/后置处理，不能把整条 requirement 标记 N/A。 |
+| **G6 / B2 + D5** | O4 默认呼叫轨迹保留期为 10 天（部署可配）；D5 选 in-cluster PostgreSQL；Redis 保持 runtime checkpoint 存储 | 本次不实现轨迹存储/查询/删除能力。清理触发点与时间起算口径归入实现细节待定义，不作为保留期未决项。 |
+| **G7 / B3 + D3** | O5 基线为站点内 N+1、跨站 1+1 warm standby；D3 选 Redis primary/replica + Sentinel（沿用 ADR-0008 拓扑），不选 Redis Cluster | 当前不承诺机架/AZ 级容错，不裁决 RTO/RPO 数值；本次不授权实现或上线验收。 |
+| **G8-1** | 目标场景正式口径：3HK 内部生产就绪/发版评审 | 同步记录到 `docs/plan.md`；除非架构边界变化，不新增 ADR。 |
+| **G8-2** | 正式采用 `In-house IMS Application Server` 作为产品/文档描述名 | 描述名属性，不作为商标/品牌宣称。 |
+| **G8-3** | GitHub repo 重命名 `inhouse-ims-as` 记为维护者报告已完成 | 本仓库内不执行 remote 或本地路径改动。 |
+
+> 以上均为**裁决落盘记录**，不是执行授权；所有执行动作仍需维护者逐次明确批准。
+
+> **口径优先级追加说明（2026-10-10）**：对 G1–G8 中已在 §0-A.6 记载的事项，**以本节同日裁决记录为准**；§0-A.2 的阻断清单与 §0.2 中「A4/A5/A6/B1/B2/B3 全待裁决」等较早表述保留为历史审计链，不作删改。**G3（A5 监控接线）仍待运营商 monitoring-integration 标准输入，当前不改 chart。**本节及相关裁决记录仅用于状态落盘，**不构成执行授权、外部验收通过或 REQ/里程碑签收**。
+> 对已在本节落盘为 resolved 的事项，文首状态块末行「所有取值仍待维护者裁决」及同类全量待决表述按历史语境保留，但以 §0-A.6 记录为控制口径；CI hold、外部 IOT/真实环境采证 hold 与执行授权冻结口径维持不变。
+
 ---
 
 > **本文状态：已落盘，待维护者评审。**
